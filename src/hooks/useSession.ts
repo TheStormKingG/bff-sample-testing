@@ -26,6 +26,15 @@ export interface UseSessionResult {
 interface CallbackSnapshot {
   /** A PKCE authorization code was present in the query string. */
   readonly sawCode: boolean;
+  /**
+   * The authorization code itself, captured at module load.
+   *
+   * Kept rather than discarded because the exchange is performed EXPLICITLY
+   * below. Relying on the library to find the code in `window.location` made
+   * sign-in depend on which of two asynchronous things happened first, and the
+   * wrong one won — see the note on `cleanCallbackParams`.
+   */
+  readonly code: string | null;
   /** A problem the redirect itself reported, already made readable. */
   readonly problem: string | null;
 }
@@ -45,7 +54,7 @@ interface CallbackSnapshot {
  *    once per page load, which is the right granularity for a redirect.
  */
 function snapshotCallback(): CallbackSnapshot {
-  if (typeof window === 'undefined') return { sawCode: false, problem: null };
+  if (typeof window === 'undefined') return { sawCode: false, code: null, problem: null };
 
   const search = new URLSearchParams(window.location.search);
 
@@ -57,6 +66,7 @@ function snapshotCallback(): CallbackSnapshot {
     const detail = errorDescription ?? error ?? errorCode ?? 'unspecified error';
     return {
       sawCode: false,
+      code: null,
       problem: `Google sign-in was not completed: ${detail.replace(/\+/g, ' ')}`,
     };
   }
@@ -77,6 +87,7 @@ function snapshotCallback(): CallbackSnapshot {
     if (fragment.has('access_token')) {
       return {
         sawCode: false,
+        code: null,
         problem:
           'The sign-in response came back in the page fragment, which this app ' +
           'cannot read because the fragment holds the page address. Ask an ' +
@@ -87,12 +98,14 @@ function snapshotCallback(): CallbackSnapshot {
     if (fragmentError !== null) {
       return {
         sawCode: false,
+        code: null,
         problem: `Google sign-in was not completed: ${fragmentError.replace(/\+/g, ' ')}`,
       };
     }
   }
 
-  return { sawCode: search.has('code'), problem: null };
+  const code = search.get('code');
+  return { sawCode: code !== null, code, problem: null };
 }
 
 const CALLBACK = snapshotCallback();
@@ -101,9 +114,24 @@ const CALLBACK = snapshotCallback();
  * Remove the spent callback parameters from the address bar, keeping the
  * HashRouter route intact.
  *
- * supabase-js already deletes `code` after a successful exchange; this also
- * clears the error parameters and a `code` that was never redeemed, so a
- * reload does not replay a stale sign-in attempt.
+ * MUST NOT RUN BEFORE THE EXCHANGE. This previously ran in its own effect on
+ * mount, on the stated assumption that supabase-js had already taken its own
+ * copy of the URL. Both halves of that assumption were wrong:
+ *
+ *   - supabase-js does not read the URL synchronously when the client is
+ *     constructed. `_initialize()` is async, so `_getSessionFromURL()` runs in
+ *     a later microtask.
+ *   - `main.tsx` loads the app through `await import(...)`, so the client is
+ *     constructed in a lazily-fetched chunk, after React has begun mounting.
+ *
+ * The effect therefore stripped `?code=` before the library ever looked, and
+ * the library then found nothing to exchange. Measured, not inferred: with a
+ * code in the query string and a valid verifier in localStorage, the page load
+ * issued 23 network requests and NOT ONE of them went to the Supabase host.
+ * The symptom was a sign-in that reported failure while the server had already
+ * created the user.
+ *
+ * It is now called once, after the exchange has been attempted and settled.
  */
 function cleanCallbackParams(): void {
   if (typeof window === 'undefined') return;
@@ -122,32 +150,63 @@ export function useSession(): UseSessionResult {
   const [session, setSession] = useState<Session | null>(null);
   const [checking, setChecking] = useState(true);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  /** What the server said when the authorization code was refused. */
+  const [exchangeError, setExchangeError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     let active = true;
 
-    // `getSession()` awaits the client's own initialization, which is where the
-    // PKCE code exchange happens, so this resolves only after the callback has
-    // been fully processed. That ordering is what lets the app distinguish
-    // "still checking" from "really signed out".
-    void supabase.auth
-      .getSession()
-      .then(({ data, error }) => {
-        if (!active) return;
-        if (error !== null) setLookupError(error.message);
-        setSession(data.session);
-        setChecking(false);
-      })
-      .catch((cause: unknown) => {
-        if (!active) return;
-        setLookupError(
-          cause instanceof Error
-            ? cause.message
-            : 'Could not check the sign-in state. Check the connection and retry.',
-        );
-        setChecking(false);
-      });
+    /**
+     * Resolve the session, redeeming the callback code ourselves.
+     *
+     * The exchange is explicit rather than left to `detectSessionInUrl`. The
+     * library's own URL handling is a race against this module cleaning the
+     * address bar, and against whenever the dynamically-imported client chunk
+     * happens to finish initialising. Passing the code we captured at module
+     * load removes the ordering question entirely: there is exactly one place
+     * that redeems it, and it runs after the client is known to exist.
+     *
+     * `exchangeCodeForSession` is safe to call when the library already
+     * succeeded — `getSession()` returns the session first and we never reach
+     * the exchange — and safe when it did not, which is the case that was
+     * silently failing.
+     */
+    async function resolveSession(): Promise<void> {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error !== null && active) setLookupError(error.message);
+
+        let current = data.session;
+
+        if (current === null && CALLBACK.code !== null) {
+          const { data: exchanged, error: exchangeFailure } =
+            await supabase.auth.exchangeCodeForSession(CALLBACK.code);
+          if (exchangeFailure !== null) {
+            if (active) setExchangeError(exchangeFailure.message);
+          } else {
+            current = exchanged.session;
+          }
+        }
+
+        if (active) setSession(current);
+      } catch (cause: unknown) {
+        if (active) {
+          setLookupError(
+            cause instanceof Error
+              ? cause.message
+              : 'Could not check the sign-in state. Check the connection and retry.',
+          );
+        }
+      } finally {
+        if (active) setChecking(false);
+        // Only now: the code has been redeemed or definitively refused, so
+        // removing it from the address bar cannot destroy a pending sign-in.
+        cleanCallbackParams();
+      }
+    }
+
+    void resolveSession();
 
     const { data } = supabase.auth.onAuthStateChange((_event, next) => {
       if (!active) return;
@@ -159,11 +218,6 @@ export function useSession(): UseSessionResult {
       active = false;
       data.subscription.unsubscribe();
     };
-  }, []);
-
-  // Runs after the library has read the URL (see snapshotCallback).
-  useEffect(() => {
-    cleanCallbackParams();
   }, []);
 
   const status: SessionStatus = checking
@@ -185,13 +239,17 @@ export function useSession(): UseSessionResult {
      * return to the sign-in button with no explanation.
      */
     if (CALLBACK.sawCode && status === 'signed_out') {
-      return (
-        'Sign-in could not be completed. Start sign-in again in this same ' +
-        'browser, and do not open the Google link on another device.'
-      );
+      // Say what the server actually refused, when it said anything. The
+      // generic advice below is a guess about the cause; the server's own
+      // message is evidence, and without it this screen sent people to retry
+      // in the same browser when the browser was never the problem.
+      return exchangeError !== null
+        ? `Sign-in could not be completed: ${exchangeError}`
+        : 'Sign-in could not be completed. Start sign-in again in this same ' +
+            'browser, and do not open the Google link on another device.';
     }
     return null;
-  }, [dismissed, lookupError, status]);
+  }, [dismissed, exchangeError, lookupError, status]);
 
   const dismissAuthError = useCallback(() => setDismissed(true), []);
 
