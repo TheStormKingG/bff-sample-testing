@@ -314,4 +314,47 @@ grant execute on function public.assert_function_privileges() to service_role;
 comment on function public.assert_function_privileges() is
   'Fails if anon can execute anything in public, if any function still grants EXECUTE to PUBLIC, or if authenticated can execute anything outside the RLS-helper allowlist. Called at the end of every migration that creates a function, so a forgotten per-signature revoke fails the migration instead of shipping.';
 
+-- ---------------------------------------------------------------------------
+-- Enforce the invariant before asserting it.
+--
+-- `public` is not exclusively ours on a hosted Supabase project. Turning on the
+-- project's "automatic RLS" option creates `public.rls_auto_enable()`, owned by
+-- `postgres` and left with DEFAULT privileges — and a function's default ACL
+-- includes EXECUTE for PUBLIC. The assertion below correctly refused to pass
+-- with it present, which is the control doing its job; but refusing alone would
+-- mean this migration can never apply to any project with that option enabled,
+-- and the obvious "fix" is to weaken the assertion. Revoking is the right
+-- answer instead.
+--
+-- Safe to do: an event trigger invokes its function as part of DDL processing
+-- under the trigger's own authority and does not consult EXECUTE, so removing
+-- the PUBLIC grant does not disable the feature it belongs to.
+--
+-- Locally this loop matches nothing and is a no-op, because every function this
+-- project creates already carries an explicit per-signature revoke.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  r record;
+begin
+  for r in
+    select p.oid::regprocedure as sig
+    from pg_catalog.pg_proc p
+    join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and exists (
+        select 1
+        from pg_catalog.aclexplode(
+               coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
+             ) a
+        where a.grantee = 0            -- 0 is PUBLIC
+          and a.privilege_type = 'EXECUTE'
+      )
+  loop
+    execute pg_catalog.format('revoke all on function %s from public', r.sig);
+    raise notice 'revoked PUBLIC execute on % (not created by this project)', r.sig;
+  end loop;
+end
+$$;
+
 select public.assert_function_privileges();
