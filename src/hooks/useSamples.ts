@@ -17,7 +17,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { STAGES, type Stage } from '@/forms/types';
-import { getSchema } from '@/forms/registry';
+import { getField, getSchema } from '@/forms/registry';
 import { plantLocalDate } from '@/lib/time';
 import {
   counted,
@@ -150,11 +150,29 @@ export const FUNCTIONS = {
  * the type level. `Array.prototype.join` returns the widened `string` type,
  * which the parser cannot read, so every query built from it inferred the
  * parser's failure branch instead of a row — and the failure was invisible
- * until something tried to use the result. Keep it a literal, and keep it in
- * step with `SampleRow` below.
+ * until something tried to use the result. Keep it a literal.
+ *
+ * THESE ARE THE DATABASE'S COLUMN NAMES, which are not the field names of
+ * `SampleRow`. Ten of the names this list used to carry did not exist on
+ * `public.samples` at all, so the list screen — the first screen an operator
+ * opens — failed on every load, and the free-text search failed on every
+ * keystroke. The names were invisible to `scripts/check-frontend-schema.py`
+ * because that checker only matches `.select('<literal>')` written inline:
+ * passing this constant to `.select()` hides the whole call site from it. The
+ * translation from these columns to `SampleRow` is `toSampleRow()` below, and
+ * that function is the one place to change when either side moves.
  */
 export const SAMPLE_COLUMNS =
-  'id,sample_id,stage,sampling_point,material,feed_type,supplier,lot_no,batch_no,run_no,collection_local_date,collection_local_time,collection_instant,registered_by,registered_by_name,revision,capture_state,disposition,hold_active,sync_state,sheet_confirmed_at,created_at,updated_at' as const;
+  'id,sample_id,stage,stage_detail,material_code,supplier_code,supplier_label,feed_type_label,source_reference,upstream_reference,collection_local_date,collection_local_time,collection_instant,registered_by,revision,capture_state,disposition,hold_flag,sheet_sync_state,sheet_confirmed_at,created_at,updated_at' as const;
+
+/**
+ * The measurement select list, for the same reason and with the same caveat.
+ *
+ * `parameter_key` and `recorded_by_name` are NOT selected: neither column
+ * exists. See `toMeasurementRow()` for what this slice does instead.
+ */
+export const MEASUREMENT_COLUMNS =
+  'id,sample_uuid,stage,field_key,numeric_value,text_value,entered_text,unit,recorded_by,recorded_at' as const;
 
 // ---------------------------------------------------------------------------
 // Row shapes
@@ -177,12 +195,22 @@ export const SYNC_STATES = [
 ] as const;
 export type SyncState = (typeof SYNC_STATES)[number];
 
+/**
+ * The shape the record screens consume.
+ *
+ * Its field names are NOT the database's column names — see `SAMPLE_COLUMNS`
+ * and `toSampleRow()`. Every field below is either a column under another
+ * name, a derivation from one, or explicitly documented as having no source
+ * at all.
+ */
 export interface SampleRow {
   readonly id: string;
   /** Null while the record is still a draft: a draft reserves no official ID. */
   readonly sample_id: string | null;
   readonly stage: Stage;
+  /** `samples.stage_detail` — the structured point code, Ground only. */
   readonly sampling_point: string | null;
+  /** `samples.material_code`. A CODE; `samples` carries no material label. */
   readonly material: string | null;
   readonly feed_type: string | null;
   readonly supplier: string | null;
@@ -196,10 +224,12 @@ export interface SampleRow {
   /** Full UTC instant of collection. */
   readonly collection_instant: string;
   readonly registered_by: string | null;
+  /** The registrar's profile ID, not a name. See `toSampleRow()`. */
   readonly registered_by_name: string | null;
   readonly revision: number;
   readonly capture_state: CaptureState;
   readonly disposition: Disposition;
+  /** `samples.hold_flag` — true while any hold on the sample is uncleared. */
   readonly hold_active: boolean;
   readonly sync_state: SyncState;
   readonly sheet_confirmed_at: string | null;
@@ -207,10 +237,151 @@ export interface SampleRow {
   readonly updated_at: string;
 }
 
+/** A row exactly as `SAMPLE_COLUMNS` returns it, before translation. */
+export interface SampleDbRow {
+  readonly id: string;
+  readonly sample_id: string | null;
+  readonly stage: Stage;
+  readonly stage_detail: string | null;
+  readonly material_code: string | null;
+  readonly supplier_code: string | null;
+  readonly supplier_label: string | null;
+  readonly feed_type_label: string | null;
+  readonly source_reference: string | null;
+  readonly upstream_reference: string | null;
+  readonly collection_local_date: string;
+  readonly collection_local_time: string;
+  readonly collection_instant: string;
+  readonly registered_by: string | null;
+  readonly revision: number;
+  readonly capture_state: CaptureState;
+  readonly disposition: Disposition;
+  readonly hold_flag: boolean;
+  readonly sheet_sync_state: string;
+  readonly sheet_confirmed_at: string | null;
+  readonly created_at: string;
+  readonly updated_at: string;
+}
+
+/**
+ * Which identity field `samples.source_reference` is carrying, by stage.
+ *
+ * The schema keeps ONE reference column — its own comment reads "Delivery or
+ * lot no. / batch or bin no. / batch no. / run no., by stage" — while this
+ * contract exposes three. The routing is read off the forms, not guessed:
+ * each stage schema in `src/forms/registry.ts` defines exactly one of those
+ * keys, and `sampleCsv.ts` already folds `delivery_or_lot_no` onto `lot_no`
+ * and `batch_or_bin_no` onto `batch_no`.
+ */
+const SOURCE_REFERENCE_FIELD: Readonly<Record<Stage, 'lot_no' | 'batch_no' | 'run_no'>> = {
+  raw_materials: 'lot_no', // delivery_or_lot_no
+  ground: 'batch_no', // batch_or_bin_no
+  conditioned: 'batch_no',
+  pellets: 'batch_no',
+  extruded_soya: 'run_no',
+  crumble: 'batch_no',
+  mash: 'batch_no',
+};
+
+/**
+ * `samples.sheet_sync_state` speaks the database's vocabulary, which is a
+ * third one: the enum is pending/leased/confirmed/failed/dead_letter/
+ * superseded, the RPC boundary's is pending/in_flight/.../superseded, and
+ * `SYNC_STATES` above is this module's. `outbox_state_to_client()` in
+ * migration 0011 is the authority for what each database value means to a
+ * client, and it is where 'leased' = in flight comes from.
+ *
+ * Two values never arrive here. 'superseded' is excluded from the rollup that
+ * maintains this column (`tg_refresh_sample_sync_state`, migration 0011:
+ * `and o.state <> 'superseded'`), and `not_queued` has no database value at
+ * all because that rollup reports a sample with no outbox event as 'pending'.
+ */
+const DB_SYNC_STATES: Readonly<Record<string, SyncState>> = {
+  pending: 'pending',
+  leased: 'in_progress',
+  confirmed: 'confirmed',
+  failed: 'failed',
+  dead_letter: 'dead_letter',
+};
+
+/**
+ * An unrecognised value reads as `dead_letter`, never as `confirmed`.
+ *
+ * A state this build does not know is something an administrator should look
+ * at, and saying so is honest; resolving it to `confirmed` would be the false
+ * "Confirmed in Google Sheets" that Master Prompt §7 forbids, which is the
+ * same reason the database-side translation has no default branch either.
+ */
+function toSyncState(value: string): SyncState {
+  return DB_SYNC_STATES[value] ?? 'dead_letter';
+}
+
+/**
+ * Translate one row of `SAMPLE_COLUMNS` into the screens' contract.
+ *
+ * EXPORTED because `SAMPLE_COLUMNS` is: any hook selecting with that list gets
+ * database-named rows and must come through here. Casting the result straight
+ * to `SampleRow` compiles and then reads `undefined` out of every renamed
+ * field, which is the failure mode this module exists to prevent.
+ */
+export function toSampleRow(row: SampleDbRow): SampleRow {
+  // Typed as possibly absent on purpose: if the stage enum ever grows a member
+  // this contract has not been taught, every reference field reads blank
+  // rather than printing a batch number under "Lot".
+  const reference: 'lot_no' | 'batch_no' | 'run_no' | undefined =
+    SOURCE_REFERENCE_FIELD[row.stage];
+
+  return {
+    id: row.id,
+    sample_id: row.sample_id,
+    stage: row.stage,
+    // `stage_detail` IS the sampling point: the column is a foreign key into
+    // `sampling_points (code)` and the schema constrains it to be non-null for
+    // Ground alone — the one stage whose form has a `sampling_point` field.
+    sampling_point: row.stage_detail,
+    material: row.material_code,
+    feed_type: row.feed_type_label,
+    // Label preferred, code as the fallback. Both name the same supplier and
+    // the schema lets either be null, so this picks the more readable of two
+    // real values rather than inventing one.
+    supplier: row.supplier_label ?? row.supplier_code,
+    lot_no:
+      reference === 'lot_no'
+        ? row.source_reference
+        : // Extruded soya's form carries `raw_soya_lot_no` beside `run_no`, and
+          // the schema keeps that second identity in `upstream_reference`.
+          row.stage === 'extruded_soya'
+          ? row.upstream_reference
+          : null,
+    batch_no: reference === 'batch_no' ? row.source_reference : null,
+    run_no: reference === 'run_no' ? row.source_reference : null,
+    collection_local_date: row.collection_local_date,
+    collection_local_time: row.collection_local_time,
+    collection_instant: row.collection_instant,
+    registered_by: row.registered_by,
+    // There is no `registered_by_name` column. This is the registrar's profile
+    // ID, so the detail screen's "Registered by" row shows an ID rather than a
+    // name — traceable, and not the false "Not recorded" that null would print
+    // whenever a registrar IS on the record. `samples.sampled_by_name` does
+    // hold a real name, but it names whoever TOOK the sample, which is a
+    // different person from whoever registered it.
+    registered_by_name: row.registered_by,
+    revision: row.revision,
+    capture_state: row.capture_state,
+    disposition: row.disposition,
+    hold_active: row.hold_flag,
+    sync_state: toSyncState(row.sheet_sync_state),
+    sheet_confirmed_at: row.sheet_confirmed_at,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
 export interface MeasurementRow {
   readonly id: string;
   readonly sample_uuid: string;
   readonly field_key: string;
+  /** Derived from `field_key` through the form registry, not stored. */
   readonly parameter_key: string | null;
   /** Null means not measured. Zero is a real measured value. */
   readonly numeric_value: number | null;
@@ -218,8 +389,50 @@ export interface MeasurementRow {
   /** The characters the operator typed, so entered precision survives. */
   readonly entered_text: string | null;
   readonly unit: string | null;
+  /** The recorder's profile ID, not a name. See `toMeasurementRow()`. */
   readonly recorded_by_name: string | null;
   readonly recorded_at: string | null;
+}
+
+/** A row exactly as `MEASUREMENT_COLUMNS` returns it, before translation. */
+export interface MeasurementDbRow {
+  readonly id: string;
+  readonly sample_uuid: string;
+  readonly stage: string;
+  readonly field_key: string;
+  readonly numeric_value: number | null;
+  readonly text_value: string | null;
+  readonly entered_text: string | null;
+  readonly unit: string | null;
+  readonly recorded_by: string | null;
+  readonly recorded_at: string | null;
+}
+
+/** Exported for the same reason as `toSampleRow`. */
+export function toMeasurementRow(row: MeasurementDbRow): MeasurementRow {
+  return {
+    id: row.id,
+    sample_uuid: row.sample_uuid,
+    field_key: row.field_key,
+    // `sample_measurements` stores no `parameter_key`, and should not: the
+    // form registry already states each field's `parameterKey`, so a stored
+    // copy would be a second truth that can disagree with the form the
+    // operator filled in. A field with no `parameterKey` is recorded only and
+    // can never be assessed, so null here is the right answer rather than a
+    // missing one — it must not be read as "no limit was applied".
+    parameter_key: isStage(row.stage)
+      ? (getField(row.stage, row.field_key)?.parameterKey ?? null)
+      : null,
+    numeric_value: row.numeric_value,
+    text_value: row.text_value,
+    entered_text: row.entered_text,
+    unit: row.unit,
+    // There is no `recorded_by_name` column. This is the recorder's profile
+    // ID: an export of a quality record keeps the traceable identifier rather
+    // than a name the database does not hold.
+    recorded_by_name: row.recorded_by,
+    recorded_at: row.recorded_at,
+  };
 }
 
 export interface SpecificationVersionRow {
@@ -250,6 +463,95 @@ export interface SpecificationVersionRow {
   readonly workbook_status: string | null;
   readonly sample_label: string | null;
   readonly test_label: string | null;
+}
+
+/**
+ * The specification-version select list.
+ *
+ * A LITERAL for the reason given on `SAMPLE_COLUMNS`, and a NAMED constant so
+ * that both readers use one list. There were two: this hook's and the
+ * specifications screen's, and only one of them had been corrected. The other
+ * still asked for `material`, `feed_type`, `source_note`, `proposed_by_name`,
+ * `approved_by_name`, `sample_label` and `test_label` — seven names this table
+ * has never had — so the limits screen errored on every load while the sample
+ * detail page read the same table successfully. One list, one mapper.
+ */
+export const SPECIFICATION_VERSION_COLUMNS =
+  'id,specification_id,version,parameter_key,stage,material_code,feed_type_code,sampling_point,test_method,unit,lower_bound,upper_bound,status,effective_from,effective_to,proposed_by,approved_by,approved_at,source_evidence,workbook_entry_no,workbook_status' as const;
+
+export interface SpecificationVersionDbRow {
+  readonly id: string;
+  readonly specification_id: string | null;
+  readonly version: number;
+  readonly parameter_key: string;
+  readonly stage: Stage;
+  readonly material_code: string | null;
+  readonly feed_type_code: string | null;
+  readonly sampling_point: string | null;
+  readonly test_method: string | null;
+  readonly unit: string | null;
+  readonly lower_bound: number | null;
+  readonly upper_bound: number | null;
+  readonly status: string;
+  readonly effective_from: string;
+  readonly effective_to: string | null;
+  readonly proposed_by: string | null;
+  readonly approved_by: string | null;
+  readonly approved_at: string | null;
+  readonly source_evidence: string | null;
+  readonly workbook_entry_no: number | null;
+  readonly workbook_status: string | null;
+}
+
+export function toSpecificationVersionRow(row: SpecificationVersionDbRow): SpecificationVersionRow {
+  return {
+    id: row.id,
+    specification_id: row.specification_id,
+    version: row.version,
+    parameter_key: row.parameter_key,
+    stage: row.stage,
+    // `specification_versions` stores both of these as CODES.
+    //
+    // `material` lines up: `assess()` compares it against the sample's
+    // `material_code`, so both sides are codes. `feed_type` DOES NOT: the
+    // samples table carries `feed_type_label` and no code, so a feed-type
+    // scoped rule is compared code-against-label and `filterMatches` will not
+    // match it. The schema is authoritative and there is no other column to
+    // select here, so the mismatch is left visible rather than papered over.
+    // It fails safe — an unmatched rule leaves the measurement
+    // `not_assessable`, never wrongly accepted — but an approved feed-type
+    // specific limit would silently never apply. Resolving one vocabulary to
+    // the other belongs in `assess()` or in the samples mapping, not here.
+    material: row.material_code,
+    feed_type: row.feed_type_code,
+    sampling_point: row.sampling_point,
+    test_method: row.test_method,
+    unit: row.unit,
+    lower_bound: row.lower_bound,
+    upper_bound: row.upper_bound,
+    status: row.status,
+    effective_from: row.effective_from,
+    effective_to: row.effective_to,
+    proposed_by: row.proposed_by,
+    approved_by: row.approved_by,
+    approved_at: row.approved_at,
+    // NULL because no name column exists. `SpecificationsPage` already falls
+    // back to the id (`proposed_by_name ?? proposed_by`), so null lets that
+    // fallback work; copying the id into both fields would make the page's own
+    // "Not recorded" branch unreachable and claim a name had been stored.
+    proposed_by_name: null,
+    approved_by_name: null,
+    source_note: row.source_evidence,
+    workbook_entry_no: row.workbook_entry_no,
+    workbook_status: row.workbook_status,
+    // NULL: nothing records the workbook Limits row in words. The provenance
+    // those labels carried is `workbook_entry_no` + `workbook_status` above,
+    // so a screen can cite "Limits entry 13" instead. The consequence is that
+    // `SpecificationsPage` falls back to `parameter_key` for its heading and
+    // shows no sample label, which is the honest state of the data.
+    sample_label: null,
+    test_label: null,
+  };
 }
 
 export interface AuditEventRow {
@@ -374,12 +676,17 @@ export async function fetchSampleList(
 
   const term = sanitiseSearchTerm(filters.text);
   if (term.length > 0) {
+    // `batch_no`, `lot_no` and `run_no` are not columns — the schema keeps
+    // whichever of them a stage uses in `source_reference`, plus the raw soya
+    // lot in `upstream_reference`. Searching those two covers the same ground
+    // for every stage; searching the old names made the query fail outright,
+    // so the search box returned an error on every keystroke rather than
+    // simply missing rows.
     query = query.or(
       [
         `sample_id.ilike.%${term}%`,
-        `batch_no.ilike.%${term}%`,
-        `lot_no.ilike.%${term}%`,
-        `run_no.ilike.%${term}%`,
+        `source_reference.ilike.%${term}%`,
+        `upstream_reference.ilike.%${term}%`,
       ].join(','),
     );
   }
@@ -391,9 +698,21 @@ export async function fetchSampleList(
   if (filters.fromDate) query = query.gte('collection_local_date', filters.fromDate);
   if (filters.toDate) query = query.lte('collection_local_date', filters.toDate);
 
-  if (filters.material) query = query.eq('material', filters.material);
-  if (filters.supplier) query = query.ilike('supplier', `%${sanitiseSearchTerm(filters.supplier)}%`);
-  if (filters.holdOnly) query = query.eq('hold_active', true);
+  // Exact match on the CODE, which is what `useMaterialOptions` offers.
+  if (filters.material) query = query.eq('material_code', filters.material);
+  if (filters.supplier) {
+    // Matched against BOTH supplier columns. The schema allows a raw-material
+    // sample to carry a code with no label, and an `ilike` on the label alone
+    // is false for those rows rather than unknown — so a filter on the label
+    // silently returned nothing for them. supabase-js appends each `or` as its
+    // own parameter and PostgREST ANDs them, so this still intersects with the
+    // free-text filter above instead of replacing it.
+    const supplier = sanitiseSearchTerm(filters.supplier);
+    query = query.or(
+      [`supplier_label.ilike.%${supplier}%`, `supplier_code.ilike.%${supplier}%`].join(','),
+    );
+  }
+  if (filters.holdOnly) query = query.eq('hold_flag', true);
 
   // Capture state and testing status both constrain `capture_state`, so they
   // are INTERSECTED. An empty intersection must return nothing; applying no
@@ -411,7 +730,7 @@ export async function fetchSampleList(
   if (error) throw new Error(error.message);
 
   return {
-    rows: (data ?? []) as SampleRow[],
+    rows: ((data ?? []) as SampleDbRow[]).map(toSampleRow),
     total: count ?? 0,
     totalUnknown: count === null || count === undefined,
   };
@@ -485,12 +804,11 @@ export async function fetchSamplesForExport(
     if (ids.length === 0) continue;
     const { data, error } = await db
       .from(TABLES.measurements)
-      .select(
-        'id,sample_uuid,field_key,parameter_key,numeric_value,text_value,entered_text,unit,recorded_by_name,recorded_at',
-      )
+      .select(MEASUREMENT_COLUMNS)
       .in('sample_uuid', ids);
     if (error) throw new Error(error.message);
-    for (const m of (data ?? []) as MeasurementRow[]) {
+    for (const raw of (data ?? []) as MeasurementDbRow[]) {
+      const m = toMeasurementRow(raw);
       const list = measurementsBySample.get(m.sample_uuid);
       if (list) list.push(m);
       else measurementsBySample.set(m.sample_uuid, [m]);
@@ -500,20 +818,28 @@ export async function fetchSamplesForExport(
   return { rows: capped, measurementsBySample, truncated };
 }
 
-/** Distinct material codes present in the data, for the filter dropdown. */
+/**
+ * Distinct material codes present in the data, for the filter dropdown.
+ *
+ * These are CODES from `samples.material_code`, which the schema constrains to
+ * raw-material samples only — so the dropdown is empty until a raw-material
+ * sample exists, and that is the data's answer, not a fault. `samples` holds
+ * no material label, so the filter offers the code the record actually
+ * carries rather than a prettier name it does not.
+ */
 export function useMaterialOptions() {
   return useQuery({
     queryKey: ['samples', 'materials'],
     queryFn: async (): Promise<readonly string[]> => {
       const { data, error } = await db
         .from(TABLES.samples)
-        .select('material')
-        .not('material', 'is', null)
+        .select('material_code')
+        .not('material_code', 'is', null)
         .limit(1000);
       if (error) throw new Error(error.message);
       const seen = new Set<string>();
-      for (const row of (data ?? []) as { material: string | null }[]) {
-        if (row.material) seen.add(row.material);
+      for (const row of (data ?? []) as { material_code: string | null }[]) {
+        if (row.material_code) seen.add(row.material_code);
       }
       return [...seen].sort();
     },
@@ -744,7 +1070,7 @@ export function useOperationsReport() {
       // sample counts in its own Guyana day.
       const todayPromise = db
         .from(TABLES.samples)
-        .select('id,stage,collection_instant,capture_state,disposition,hold_active,updated_at')
+        .select('id,stage,collection_instant,capture_state,disposition,hold_flag,updated_at')
         .eq('collection_local_date', plantDate)
         .in('capture_state', [...COLLECTED_CAPTURE_STATES])
         .limit(2000);
@@ -759,7 +1085,7 @@ export function useOperationsReport() {
           (q) => q.eq('capture_state', 'ready_for_review'),
           'The ready-for-review count could not be read',
         ),
-        countRows((q) => q.eq('hold_active', true), 'The on-hold count could not be read'),
+        countRows((q) => q.eq('hold_flag', true), 'The on-hold count could not be read'),
         countRows(
           (q) => q.gte('updated_at', since),
           'The recently-updated count could not be read',
@@ -774,7 +1100,7 @@ export function useOperationsReport() {
             collection_instant: string;
             capture_state: CaptureState;
             disposition: Disposition;
-            hold_active: boolean;
+            hold_flag: boolean;
             updated_at: string;
           }[]).map((row) => ({
             id: row.id,
@@ -782,7 +1108,7 @@ export function useOperationsReport() {
             collectionInstant: row.collection_instant,
             captureState: row.capture_state,
             disposition: row.disposition,
-            holdActive: row.hold_active,
+            holdActive: row.hold_flag,
             updatedAt: row.updated_at,
           }));
 

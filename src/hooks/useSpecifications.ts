@@ -15,12 +15,17 @@ import type { Stage } from '@/forms/types';
 import { assessableFields, getSchema } from '@/forms/registry';
 import { isUnitConfirmed } from '@/lib/assessment';
 import { checkSeparationOfDuties, type SeparationFailure } from '@/lib/roles';
-import { FUNCTIONS, TABLES, type SpecificationVersionRow } from '@/hooks/useSamples';
+import {
+  FUNCTIONS,
+  SPECIFICATION_VERSION_COLUMNS,
+  TABLES,
+  toSpecificationVersionRow,
+  type SpecificationVersionDbRow,
+  type SpecificationVersionRow,
+} from '@/hooks/useSamples';
 
 const db = supabase as unknown as SupabaseClient;
 
-const SPEC_COLUMNS =
-  'id,specification_id,version,parameter_key,stage,material,feed_type,sampling_point,test_method,unit,lower_bound,upper_bound,status,effective_from,effective_to,proposed_by,proposed_by_name,approved_by,approved_by_name,approved_at,source_note,workbook_entry_no,workbook_status,sample_label,test_label';
 
 /**
  * The four status strings the live `Limits` tab actually contains. None of them
@@ -46,14 +51,19 @@ export interface SpecificationSet {
 export async function fetchSpecifications(): Promise<SpecificationSet> {
   const { data, error } = await db
     .from(TABLES.specificationVersions)
-    .select(SPEC_COLUMNS)
+    .select(SPECIFICATION_VERSION_COLUMNS)
     .order('stage', { ascending: true })
     .order('workbook_entry_no', { ascending: true, nullsFirst: false })
     .order('parameter_key', { ascending: true })
     .order('version', { ascending: false });
   if (error) throw new Error(error.message);
 
-  const rows = (data ?? []) as SpecificationVersionRow[];
+  // Mapped, not cast. Seven of this screen's field names are not column names
+  // — see `toSpecificationVersionRow` — and the cast that used to stand here
+  // is what let the divergence survive a clean typecheck: `as` asserts the
+  // shape rather than producing it, so TypeScript had nothing to disagree
+  // with and every field the database does not store arrived `undefined`.
+  const rows = ((data ?? []) as SpecificationVersionDbRow[]).map(toSpecificationVersionRow);
   const reference = rows.filter((r) => r.status === 'reference_only');
   const rules = rows.filter((r) => r.status !== 'reference_only');
 

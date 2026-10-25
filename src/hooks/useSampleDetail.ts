@@ -15,8 +15,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
-import type { FieldDef } from '@/forms/types';
-import { getSchema, isFieldApplicable } from '@/forms/registry';
+import type { FieldDef, Stage } from '@/forms/types';
+import { getField, getSchema, isFieldApplicable } from '@/forms/registry';
 import {
   assess,
   holdTriggers,
@@ -30,10 +30,14 @@ import {
   FUNCTIONS,
   TABLES,
   SAMPLE_COLUMNS,
+  SPECIFICATION_VERSION_COLUMNS,
+  toSampleRow,
+  toSpecificationVersionRow,
   type AuditEventRow,
   type MeasurementRow,
-  type SampleLinkRow,
+  type SampleDbRow,
   type SampleRow,
+  type SpecificationVersionDbRow,
   type SpecificationVersionRow,
 } from '@/hooks/useSamples';
 
@@ -52,12 +56,21 @@ export const REQUIRE_SHEET_CONFIRMATION_FOR_RELEASE = false;
 export interface HoldRow {
   readonly id: string;
   readonly sample_uuid: string;
+  /**
+   * DERIVED, not stored: a hold stands until somebody with clearing authority
+   * records a `cleared_at`. See `toHoldRow` — that is the one place this is
+   * computed, deliberately, because a second derivation could disagree and the
+   * permissive answer releases held material.
+   */
   readonly active: boolean;
   readonly trigger_kind: string | null;
   readonly field_key: string | null;
+  /** The reason the hold was RAISED (`holds.raise_reason`). */
   readonly reason: string | null;
+  /** A profile id, not a name: `holds` records no name. See `toHoldRow`. */
   readonly raised_by_name: string | null;
   readonly raised_at: string;
+  /** A profile id, not a name: `holds` records no name. See `toHoldRow`. */
   readonly cleared_by_name: string | null;
   readonly cleared_at: string | null;
   readonly clear_reason: string | null;
@@ -96,6 +109,157 @@ export interface SampleDetail {
   readonly release: ReleaseEvaluation;
   readonly approvedRuleCount: number;
   readonly referenceRuleCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// What Postgres returns, and how it maps onto the shapes this slice exports
+// ---------------------------------------------------------------------------
+/*
+ * The exported interfaces are the contract the pages compile against. The
+ * interfaces below are what the tables actually hold. They used to be assumed
+ * identical, and a `.select()` string that had drifted from the schema is how
+ * a screen came to error in front of an operator: the string is checked by
+ * nothing the build runs. So the two shapes are now written out separately and
+ * joined by one explicit mapping function per table, which is also the only
+ * place a derivation or a missing column can hide.
+ *
+ * Every select list below stays an INLINE LITERAL.
+ * `scripts/check-frontend-schema.py` can only read inline literals, so
+ * hoisting one into a `const SELECT = '...'` would remove the call site from
+ * the check while leaving the risk exactly where it was.
+ */
+
+interface MeasurementDbRow {
+  readonly id: string;
+  readonly sample_uuid: string;
+  readonly field_key: string;
+  readonly numeric_value: number | null;
+  readonly text_value: string | null;
+  readonly entered_text: string | null;
+  readonly unit: string | null;
+  readonly recorded_by: string | null;
+  readonly recorded_at: string | null;
+}
+
+function toMeasurementRow(stage: Stage, row: MeasurementDbRow): MeasurementRow {
+  return {
+    id: row.id,
+    sample_uuid: row.sample_uuid,
+    field_key: row.field_key,
+    // Not a column and not missing data: the parameter key is a property of
+    // the FIELD, held once in `src/forms/registry.ts`. Storing it per reading
+    // would be a second copy that can disagree with the registry.
+    parameter_key: getField(stage, row.field_key)?.parameterKey ?? null,
+    numeric_value: row.numeric_value,
+    text_value: row.text_value,
+    entered_text: row.entered_text,
+    unit: row.unit,
+    // An id, not a name: `sample_measurements` records `recorded_by` only.
+    // The id is passed through rather than nulled because `MeasurementTable`
+    // drops the actor entirely when this is null, and a quality record that
+    // silently loses who took the reading is worse than one showing an
+    // identifier. A `profiles.display_name` join is the real fix.
+    recorded_by_name: row.recorded_by,
+    recorded_at: row.recorded_at,
+  };
+}
+
+interface HoldDbRow {
+  readonly id: string;
+  readonly sample_uuid: string;
+  readonly trigger_kind: string | null;
+  readonly field_key: string | null;
+  readonly raise_reason: string | null;
+  readonly raised_by: string;
+  readonly raised_at: string;
+  readonly cleared_by: string | null;
+  readonly cleared_at: string | null;
+  readonly clear_reason: string | null;
+}
+
+function toHoldRow(row: HoldDbRow): HoldRow {
+  return {
+    id: row.id,
+    sample_uuid: row.sample_uuid,
+    // THE definition of an active hold, and the only one in this slice.
+    // `holds` stores no flag: the hold stands until a `cleared_at` is written
+    // by someone with clearing authority. Getting this wrong permissively
+    // would drop the banner on held material, so it is computed once, here,
+    // and every reader goes through `HoldRow.active`.
+    active: row.cleared_at === null,
+    trigger_kind: row.trigger_kind,
+    field_key: row.field_key,
+    // `raise_reason`, never `clear_reason`: this field is why the hold exists.
+    reason: row.raise_reason,
+    // Ids, not names: `holds` carries no name columns. Nulling these would
+    // make `HoldBanner` print "Not recorded" for an actor the database
+    // requires and has recorded, which is a false statement on an alert
+    // banner. Shown as an identifier until a `profiles` join exists.
+    raised_by_name: row.raised_by,
+    raised_at: row.raised_at,
+    cleared_by_name: row.cleared_by,
+    cleared_at: row.cleared_at,
+    clear_reason: row.clear_reason,
+  };
+}
+
+interface AuditEventDbRow {
+  readonly event_uuid: string;
+  readonly sample_uuid: string | null;
+  readonly actor_id: string | null;
+  readonly actor_email: string | null;
+  readonly action: string;
+  readonly reason: string | null;
+  readonly before_payload: unknown;
+  readonly after_payload: unknown;
+  readonly occurred_at: string;
+  readonly deployment_version: string | null;
+}
+
+function toAuditEventRow(row: AuditEventDbRow): AuditEventRow {
+  return {
+    // `audit_events` is keyed by `seq` with `event_uuid` as its stable public
+    // identifier; the uuid is what a reader can quote back.
+    id: row.event_uuid,
+    sample_uuid: row.sample_uuid,
+    actor_id: row.actor_id,
+    // No name column. The email identifies the actor truthfully, and
+    // `AuditTimeline` would otherwise print "Actor not recorded" against an
+    // event whose actor the audit row does record.
+    actor_name: row.actor_email,
+    action: row.action,
+    reason: row.reason,
+    prior_values: row.before_payload,
+    new_values: row.after_payload,
+    occurred_at: row.occurred_at,
+    app_version: row.deployment_version,
+  };
+}
+
+/**
+ * A `sample_links` row as stored.
+ *
+ * DIRECTION IS CARRIED BY `link_type`, read relative to `from_sample` — not by
+ * the column order. `register_sample` writes (`upstream`, from = the sample
+ * being registered, to = the sample it came from), so the `to_sample` of an
+ * `upstream` row is that sample's UPSTREAM. Reading `from_sample` as "the
+ * upstream one" would reverse every traceability chain on the screen while
+ * still rendering cleanly, which is worse than failing to load.
+ *
+ * `to_sample` is null on exactly one kind of row — a `traceability_exception`,
+ * which records that no counterpart could be identified, and why. A recorded
+ * exception and an absent row are different facts and are stored differently
+ * (PRD section 6.4), so this type is kept local rather than mapped onto
+ * `SampleLinkRow`, whose non-null `downstream_sample_uuid` cannot hold one.
+ */
+interface SampleLinkDbRow {
+  readonly id: string;
+  readonly link_type: 'upstream' | 'downstream' | 'traceability_exception';
+  readonly from_sample: string;
+  readonly to_sample: string | null;
+  readonly relationship: string;
+  readonly match_basis: string | null;
+  readonly exception_reason: string | null;
 }
 
 function toRule(row: SpecificationVersionRow): SpecificationRule {
@@ -197,11 +361,20 @@ function viewFor(
   };
 }
 
+/*
+ * `samples` rows go through `toSampleRow` from `useSamples.ts` rather than
+ * being cast here. That translation is not a rename: it routes ONE
+ * `source_reference` column onto lot / batch / run by stage, prefers a
+ * supplier label over its code, and refuses to resolve an unknown sync state
+ * to `confirmed`. A second copy of those decisions in this file would be a
+ * second answer that can disagree about which identifier a reader is looking
+ * at, on a record whose point is traceability.
+ */
 async function fetchSampleRows(ids: readonly string[]): Promise<SampleRow[]> {
   if (ids.length === 0) return [];
   const { data, error } = await db.from(TABLES.samples).select(SAMPLE_COLUMNS).in('id', [...ids]);
   if (error) throw new Error(error.message);
-  return (data ?? []) as SampleRow[];
+  return ((data ?? []) as SampleDbRow[]).map(toSampleRow);
 }
 
 export async function fetchSampleDetail(sampleUuid: string): Promise<SampleDetail> {
@@ -211,39 +384,40 @@ export async function fetchSampleDetail(sampleUuid: string): Promise<SampleDetai
     .eq('id', sampleUuid)
     .maybeSingle();
   if (sampleRes.error) throw new Error(sampleRes.error.message);
-  const sample = sampleRes.data as SampleRow | null;
+  const sampleDbRow = sampleRes.data as SampleDbRow | null;
+  const sample = sampleDbRow === null ? null : toSampleRow(sampleDbRow);
   if (!sample) throw new Error('That sample could not be found, or you are not permitted to see it.');
 
   const [measurementRes, specRes, holdRes, eventRes, linkRes] = await Promise.all([
     db
       .from(TABLES.measurements)
       .select(
-        'id,sample_uuid,field_key,parameter_key,numeric_value,text_value,entered_text,unit,recorded_by_name,recorded_at',
+        'id,sample_uuid,field_key,numeric_value,text_value,entered_text,unit,recorded_by,recorded_at',
       )
       .eq('sample_uuid', sampleUuid),
     db
       .from(TABLES.specificationVersions)
-      .select(
-        'id,specification_id,version,parameter_key,stage,material,feed_type,sampling_point,test_method,unit,lower_bound,upper_bound,status,effective_from,effective_to,proposed_by,proposed_by_name,approved_by,approved_by_name,approved_at,source_note,workbook_entry_no,workbook_status,sample_label,test_label',
-      )
+      .select(SPECIFICATION_VERSION_COLUMNS)
       .eq('stage', sample.stage),
     db
       .from(TABLES.holds)
       .select(
-        'id,sample_uuid,active,trigger_kind,field_key,reason,raised_by_name,raised_at,cleared_by_name,cleared_at,clear_reason',
+        'id,sample_uuid,trigger_kind,field_key,raise_reason,raised_by,raised_at,cleared_by,cleared_at,clear_reason',
       )
       .eq('sample_uuid', sampleUuid)
       .order('raised_at', { ascending: false }),
     db
       .from(TABLES.auditEvents)
-      .select('id,sample_uuid,actor_id,actor_name,action,reason,prior_values,new_values,occurred_at,app_version')
+      .select(
+        'event_uuid,sample_uuid,actor_id,actor_email,action,reason,before_payload,after_payload,occurred_at,deployment_version',
+      )
       .eq('sample_uuid', sampleUuid)
       .order('occurred_at', { ascending: false })
       .limit(200),
     db
       .from(TABLES.links)
-      .select('id,upstream_sample_uuid,downstream_sample_uuid,link_type,note')
-      .or(`upstream_sample_uuid.eq.${sampleUuid},downstream_sample_uuid.eq.${sampleUuid}`),
+      .select('id,link_type,from_sample,to_sample,relationship,match_basis,exception_reason')
+      .or(`from_sample.eq.${sampleUuid},to_sample.eq.${sampleUuid}`),
   ]);
 
   if (measurementRes.error) throw new Error(measurementRes.error.message);
@@ -252,11 +426,15 @@ export async function fetchSampleDetail(sampleUuid: string): Promise<SampleDetai
   if (eventRes.error) throw new Error(eventRes.error.message);
   if (linkRes.error) throw new Error(linkRes.error.message);
 
-  const measurementRows = (measurementRes.data ?? []) as MeasurementRow[];
-  const specRows = (specRes.data ?? []) as SpecificationVersionRow[];
-  const holds = (holdRes.data ?? []) as HoldRow[];
-  const events = (eventRes.data ?? []) as AuditEventRow[];
-  const links = (linkRes.data ?? []) as SampleLinkRow[];
+  const measurementRows = ((measurementRes.data ?? []) as MeasurementDbRow[]).map((row) =>
+    toMeasurementRow(sample.stage, row),
+  );
+  const specRows = ((specRes.data ?? []) as SpecificationVersionDbRow[]).map(
+    toSpecificationVersionRow,
+  );
+  const holds = ((holdRes.data ?? []) as HoldDbRow[]).map(toHoldRow);
+  const events = ((eventRes.data ?? []) as AuditEventDbRow[]).map(toAuditEventRow);
+  const links = (linkRes.data ?? []) as SampleLinkDbRow[];
 
   const rules = specRows.map(toRule);
   const approvedRuleCount = specRows.filter(
@@ -288,9 +466,14 @@ export async function fetchSampleDetail(sampleUuid: string): Promise<SampleDetai
       .map((v) => ({ fieldKey: v.field.key, label: v.field.label, assessment: v.assessment })),
   });
 
+  // Ordered newest-first above, so this is the most recent uncleared hold.
   const activeHold = holds.find((h) => h.active) ?? null;
 
   const release = evaluateRelease({
+    // Two sources on purpose, combined with OR. The sample's own flag and an
+    // uncleared `holds` row should agree; if they ever do not, the release gate
+    // must take the restrictive answer, because the permissive one releases
+    // material that something in the record says is held.
     holdActive: sample.hold_active || activeHold !== null,
     holdDetail: activeHold?.reason ?? undefined,
     assessments: measurements
@@ -305,24 +488,45 @@ export async function fetchSampleDetail(sampleUuid: string): Promise<SampleDetai
     sheetConfirmed: sample.sync_state === 'confirmed',
   });
 
-  const upstreamIds = links
-    .filter((l) => l.downstream_sample_uuid === sampleUuid)
-    .map((l) => l.upstream_sample_uuid);
-  const downstreamIds = links
-    .filter((l) => l.upstream_sample_uuid === sampleUuid)
-    .map((l) => l.downstream_sample_uuid);
+  // `link_type` names the role of `to_sample` relative to `from_sample`, so a
+  // single row places this sample on one side or the other depending on which
+  // column it appears in. Nothing writes `downstream` today; it is read under
+  // the same convention rather than dropped, because a real link silently
+  // ignored looks identical to a missing one on the screen.
+  const upstreamIds: string[] = [];
+  const downstreamIds: string[] = [];
+  for (const l of links) {
+    if (l.to_sample === null) continue; // a recorded exception, not a link
+    if (l.link_type === 'upstream') {
+      if (l.from_sample === sampleUuid) upstreamIds.push(l.to_sample);
+      else if (l.to_sample === sampleUuid) downstreamIds.push(l.from_sample);
+    } else if (l.link_type === 'downstream') {
+      if (l.from_sample === sampleUuid) downstreamIds.push(l.to_sample);
+      else if (l.to_sample === sampleUuid) upstreamIds.push(l.from_sample);
+    }
+  }
 
   const [upstream, downstream] = await Promise.all([
     fetchSampleRows(upstreamIds),
     fetchSampleRows(downstreamIds),
   ]);
 
-  // PRD §6.4: a missing upstream link is a recorded exception, never an
-  // inferred match. Stage 1 legitimately has no upstream.
+  // PRD §6.4: a missing upstream link is a RECORDED exception, never an
+  // inferred match. Where the registrar recorded why no counterpart could be
+  // identified, that stored reason is shown in preference to the generic
+  // sentence: it names what could not be resolved, which is the fact an
+  // auditor needs. Stage 1 legitimately has no upstream.
+  const exceptionReasons = links
+    .filter((l) => l.link_type === 'traceability_exception' && l.from_sample === sampleUuid)
+    .map((l) => l.exception_reason)
+    .filter((reason): reason is string => reason !== null && reason.trim() !== '');
+
   const missingLinkNote =
-    upstream.length === 0 && sample.stage !== 'raw_materials'
-      ? 'No upstream sample is linked to this record. That is a traceability exception to resolve, not a match the system can infer.'
-      : null;
+    exceptionReasons.length > 0
+      ? exceptionReasons.join(' ')
+      : upstream.length === 0 && sample.stage !== 'raw_materials'
+        ? 'No upstream sample is linked to this record. That is a traceability exception to resolve, not a match the system can infer.'
+        : null;
 
   return {
     sample,
@@ -364,7 +568,8 @@ export function useSampleByHumanId(sampleId: string | undefined) {
         .eq('sample_id', sampleId as string)
         .maybeSingle();
       if (error) throw new Error(error.message);
-      return (data ?? null) as SampleRow | null;
+      const row = data as SampleDbRow | null;
+      return row === null ? null : toSampleRow(row);
     },
     enabled: typeof sampleId === 'string' && sampleId.length > 0,
   });

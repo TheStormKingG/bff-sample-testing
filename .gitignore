@@ -36,3 +36,7 @@ supabase/.env
 BFF_Claude_Code_Master_Prompt.md
 BFF_Digital_Sample_Testing_PRD.md
 BFF_Digital_Sample_Testing_Concept_Note.md
+
+# Python bytecode from the verification scripts.
+__pycache__/
+*.pyc
