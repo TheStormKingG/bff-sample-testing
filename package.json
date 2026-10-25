@@ -21,6 +21,7 @@
     "fn:serve": "supabase functions serve --no-verify-jwt",
     "fn:deploy": "supabase functions deploy",
     "verify:bundle": "node scripts/check-bundle-secrets.mjs",
+    "verify:imports": "node scripts/check-shared-module-imports.mjs",
     "verify:sql": "scripts/verify-migrations.sh",
     "verify:rls": "scripts/verify-rls.sh",
     "verify:db": "scripts/verify-migrations.sh && scripts/verify-rls.sh"

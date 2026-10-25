@@ -177,6 +177,23 @@ jobs:
       - name: Lint Supabase Edge Functions
         run: deno lint --rules-exclude=no-import-prefix supabase/functions/
 
+      # Module specifiers in the files BOTH toolchains import.
+      #
+      # Neither step above catches this class, and that is measured, not
+      # assumed: with the real defect present, `deno check` over all 46
+      # function modules exited 0, and `deno info` over every entrypoint also
+      # exited 0. The path into those files is `import type`, which is erased
+      # before any module graph exists, so a type checker never performs the
+      # resolution that fails. The Edge Function DEPLOY was the first step in
+      # the pipeline that did, which made it the first step that could fail.
+      #
+      # The scanner validates itself first, then checks the tree, and fails
+      # closed if it finds no shared modules at all.
+      - name: Shared-module specifiers resolve under Deno
+        run: |
+          node scripts/check-shared-module-imports.mjs --self-test
+          node scripts/check-shared-module-imports.mjs
+
       - name: Unit, contract and authority tests
         run: npm test
 
