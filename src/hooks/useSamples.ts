@@ -61,7 +61,7 @@ export const TABLES = {
   holds: 'holds',
   profiles: 'profiles',
   userRoles: 'user_roles',
-  delegations: 'delegations',
+  delegations: 'user_delegations',
   syncOutbox: 'sheet_sync_outbox',
   auditDeadLetters: 'audit_event_dead_letters',
 } as const;

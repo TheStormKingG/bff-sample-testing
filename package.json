@@ -24,7 +24,9 @@
     "verify:imports": "node scripts/check-shared-module-imports.mjs",
     "verify:sql": "scripts/verify-migrations.sh",
     "verify:rls": "scripts/verify-rls.sh",
-    "verify:db": "scripts/verify-migrations.sh && scripts/verify-rls.sh"
+    "verify:schema": "python3 scripts/check-frontend-schema.py",
+    "verify:uat03": "scripts/verify-uat03-concurrency.sh",
+    "verify:db": "scripts/verify-migrations.sh && scripts/verify-rls.sh && scripts/verify-uat03-concurrency.sh && python3 scripts/check-frontend-schema.py"
   },
   "dependencies": {
     "@hookform/resolvers": "3.9.1",
