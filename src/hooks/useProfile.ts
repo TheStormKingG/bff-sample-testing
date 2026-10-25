@@ -35,7 +35,7 @@ const USER_ROLES_TABLE = 'user_roles';
 const profileRowSchema = z.object({
   id: z.string(),
   email: z.string().nullish(),
-  full_name: z.string().nullish(),
+  display_name: z.string().nullish(),
   status: z.string().nullish(),
 });
 
@@ -74,7 +74,7 @@ function parseRoles(rows: readonly { role: string }[]): Role[] {
 async function fetchProfile(userId: string, authEmail: string | null): Promise<Profile> {
   const { data, error } = await supabase
     .from(PROFILES_TABLE)
-    .select('id, email, full_name, status')
+    .select('id, email, display_name, status')
     .eq('id', userId)
     .maybeSingle();
 
@@ -112,7 +112,7 @@ async function fetchProfile(userId: string, authEmail: string | null): Promise<P
   return {
     id: row.id,
     email: row.email ?? authEmail,
-    fullName: row.full_name ?? null,
+    fullName: row.display_name ?? null,
     status: parseStatus(row.status),
     roles,
     provisional: false,
