@@ -82,16 +82,18 @@ does not call it tested.
 
 ### NOT IMPLEMENTED
 
-- **Nothing has been executed against a real database.** This is now the largest gap,
-  and it is an environment limitation rather than missing code: Docker is unavailable
-  here, so `supabase db reset` has never been run. Every claim about the SQL in this
-  repository — that the migrations apply in order, that the RLS policies behave as
-  written, that the RPCs return what their callers expect — is verified by **reading and
-  by static contract checks only**. Two migration-aborting defects were found that way
-  and fixed (a foreign key inserted before its referent in `0002`, and a function
-  redefined with a widened return type in `0015`); a third of the same class would also
-  only be found by reading. Running `supabase db reset` is the first thing to do in an
-  environment that has Docker, and it is a precondition for trusting any of the above.
+- **The cloud database has no schema yet.** A Supabase project exists
+  (`bff-sample-testing`, us-east-1) and the frontend is deployed against it, but no
+  migration has been applied to it. Applying them needs either the project's database
+  password or a Supabase access token, both of which are the operator's to supply.
+  Until then the app loads and the sign-in gate works, and nothing can be read or
+  written.
+- **The SQL is executed, but on local PostgreSQL, not on Supabase.**
+  `npm run verify:db` applies all 15 migrations in order to a throwaway database, seeds
+  it, and runs 16 RLS denial checks plus the UAT-03 concurrency test. That proves the
+  SQL is valid, applies in order, and that the policies deny — but it uses a minimal
+  `auth` shim (`scripts/local-sql-shim.sql`), not GoTrue, and stock PostgreSQL default
+  privileges differ from Supabase's. A clean local run is necessary, not sufficient.
 - **No end-to-end run has happened.** No sample has been registered, no row has reached
   a Google Sheet, and no RLS policy has denied a real request. The e2e suite covers the
   unauthenticated gate and the Pages routing path; everything past sign-in needs a live
