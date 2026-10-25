@@ -28,8 +28,26 @@ test('the app is served from the Pages base path', async ({ page }) => {
   ).toBe(200);
 
   await expect(page.locator('#root')).toHaveCount(1);
-  const mounted = await page.evaluate(() => document.querySelector('#root')?.childElementCount ?? 0);
-  expect(mounted, 'the root element is empty: the bundle did not load or threw while mounting').toBeGreaterThan(0);
+
+  // Wait for the mount instead of sampling it.
+  //
+  // `#root` is in the static index.html, so it exists before any JavaScript
+  // runs; reading childElementCount immediately after goto() therefore races
+  // React's first render and reports 0 on a perfectly healthy app. This test
+  // failed in CI for exactly that reason while the two tests below passed,
+  // because they navigate again first and so happen to allow time to mount.
+  // waitForFunction keeps the original diagnostic — a bundle that genuinely
+  // fails to load or throws while mounting never satisfies it and the message
+  // still says so — without asserting on a half-finished frame.
+  await page
+    .waitForFunction(() => (document.querySelector('#root')?.childElementCount ?? 0) > 0, null, {
+      timeout: 10_000,
+    })
+    .catch(() => {
+      throw new Error(
+        'the root element stayed empty: the bundle did not load or threw while mounting',
+      );
+    });
 });
 
 test('a deep link to a protected route survives a full reload instead of 404ing', async ({ page }) => {

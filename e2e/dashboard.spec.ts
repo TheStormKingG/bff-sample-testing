@@ -121,13 +121,24 @@ test('secondary navigation is present but is not an eighth stage card', async ({
     `no secondary navigation destination is reachable at all. Controls on screen: ${inventory}`,
   ).toBeGreaterThan(0);
 
-  // Nothing outside those seven links reads as a stage form either.
+  // No stage card may be TITLED like a records screen.
+  //
+  // This deliberately matches the card's HEADING, not its flattened
+  // accessible name. The name includes the card's own count sentence —
+  // "...0 samples collected today for Raw Materials" — so a whole-word scan
+  // for the secondary label "Samples" matched all seven cards and failed a
+  // correct dashboard. The mislabelling this is meant to catch is a stage
+  // card whose heading reads "Samples" or "Holds", and a heading comparison
+  // catches that without the incidental text.
   for (const label of SECONDARY_NAV_LABELS) {
-    const asStageCard = cards.filter((card) => matchesLabel(card.name, label));
-    expect(
-      asStageCard,
-      `the secondary item "${label}" is rendered as one of the seven stage cards`,
-    ).toHaveLength(0);
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const misTitled = page
+      .locator('a[href*="#/stage/"]')
+      .filter({ has: page.getByRole('heading', { name: new RegExp(`^\\s*${escaped}\\s*$`, 'i') }) });
+    await expect(
+      misTitled,
+      `a stage card is titled "${label}", so a records screen is presented as a testing form`,
+    ).toHaveCount(0);
   }
 });
 
