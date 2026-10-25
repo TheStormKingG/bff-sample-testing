@@ -1,0 +1,189 @@
+# Publish BFF Sample Testing to GitHub Pages.
+#
+# Deploys ONLY from the default branch, and only after ci.yml has passed in
+# full — eslint, the application and unit-test typecheck, the Playwright spec
+# typecheck, `deno check` and `deno lint` over supabase/functions/**, the unit,
+# contract and authority tests, the build, the bundle-scanner self-test, the
+# bundle credential scan, and the Playwright suite on the real Pages base path
+# with its own bundle scan. The gate is a `workflow_call` into ci.yml rather
+# than a copy of its steps, so the two can never disagree: `needs: verify`
+# below waits on EVERY job in that workflow and fails if any of them fails.
+# Keep this list in step with ci.yml — it is a description of a gate, not the
+# gate itself, and a stale description is how a check goes missing unnoticed.
+#
+# -------------------------------------------------------------------------
+# WHAT IS PUBLIC HERE, AND WHY THAT IS CORRECT
+#
+# GitHub Pages is a public static host. Every byte of dist/ is readable by
+# anybody, signed in or not, and the login screen does not change that. Two
+# values are compiled into that public JavaScript on purpose:
+#
+#   VITE_SUPABASE_URL       the project endpoint
+#   VITE_SUPABASE_ANON_KEY  the publishable / anon key
+#
+# The anon key carries NO authority of its own. Every read and write is
+# authorised by Row Level Security evaluated against the signed-in user's JWT,
+# plus authenticated Edge Functions for mutations. Publishing it is the
+# documented design, not an oversight.
+#
+# NOTHING ELSE MAY BE ADDED TO THIS BUILD'S ENVIRONMENT. In particular the
+# Supabase service_role key, a Google service-account JSON or private key, a
+# Google OAuth client secret, a Google refresh token and the Sheets spreadsheet
+# id (SHEETS_SPREADSHEET_ID) are Supabase Edge Function secrets and must never
+# appear in a VITE_* variable, in src/**, in index.html or in this file.
+# `npm run verify:bundle` runs against the exact directory that is uploaded and
+# fails the deployment if any of them is found.
+#
+# SUPABASE AUTH CONFIGURATION — required once, by hand, or Google sign-in will
+# fail on the deployed site: add the Pages URL
+#   https://<owner>.github.io/<repo>/
+# to the Supabase project's Auth "Site URL" and to its redirect allowlist
+# (include the trailing slash, and add http://localhost:5173/ for local dev).
+# The app uses HashRouter precisely because Pages cannot serve an OAuth callback
+# from a subpath any other way.
+# -------------------------------------------------------------------------
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time, and never cancel one in flight: a half-replaced
+# static site is worse than a late one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # The full test suite and the bundle scan, before anything is built for
+  # publication. If this fails, nothing below runs.
+  verify:
+    name: Full CI gate
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build the Pages artifact
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Deploy only from the default branch, whatever it is called. If the
+    # expression cannot be resolved the comparison is false and the job is
+    # skipped, so the failure direction is "does not deploy".
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    # Scoped to this job rather than granted workflow-wide. `pages: write` is
+    # here for actions/configure-pages, which is documented as needing it;
+    # since this job never enables Pages (no `enablement: true`) it may only
+    # need `pages: read`, and tightening it to that is a candidate improvement
+    # — but it is one whose failure mode is a broken deployment and which
+    # cannot be exercised anywhere but a real Actions run, so it is recorded
+    # here rather than changed untested. The `id-token: write` that Pages
+    # deployment needs is granted ONLY to the deploy job below.
+    permissions:
+      contents: read
+      pages: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4.1.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure GitHub Pages
+        id: pages
+        uses: actions/configure-pages@v5.0.0
+
+      # Vite's `base` must match the path Pages serves from. Prefer what Pages
+      # itself reports (which is '/' for a custom domain and '/<repo>' for a
+      # project site), and fall back to the repository name. Never a hardcoded
+      # slug: that breaks silently when the repository is renamed or forked.
+      - name: Derive the Pages base path
+        run: |
+          base="${{ steps.pages.outputs.base_path }}"
+          if [ -z "$base" ]; then
+            repo="${GITHUB_REPOSITORY#*/}"
+            case "$repo" in
+              *.github.io) base="/" ;;
+              *)           base="/$repo" ;;
+            esac
+          fi
+          case "$base" in
+            */) ;;
+            *) base="$base/" ;;
+          esac
+          echo "VITE_BASE_PATH=$base" >> "$GITHUB_ENV"
+          echo "Building with base path $base"
+
+      # Fail here rather than shipping a bundle with `undefined` where the
+      # project URL should be. Only lengths are printed: a value is never
+      # echoed into a public build log, not even a public one.
+      - name: Check the frontend configuration is present
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY != '' && vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          missing=0
+          if [ -z "${VITE_SUPABASE_URL}" ]; then
+            echo "::error::VITE_SUPABASE_URL is not set. Add it as a repository VARIABLE (Settings > Secrets and variables > Actions > Variables). It is public by design."
+            missing=1
+          fi
+          if [ -z "${VITE_SUPABASE_ANON_KEY}" ]; then
+            echo "::error::VITE_SUPABASE_ANON_KEY is not set. Add it as a repository variable or secret. It is the publishable key and carries no authority of its own."
+            missing=1
+          fi
+          echo "VITE_SUPABASE_URL length: ${#VITE_SUPABASE_URL}"
+          echo "VITE_SUPABASE_ANON_KEY length: ${#VITE_SUPABASE_ANON_KEY}"
+          exit "$missing"
+
+      - name: Build
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY != '' && vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
+          # The commit the deployed site was built from, shown in the footer and
+          # recorded on audit events so a quality record can be traced to the
+          # exact deployment that produced it (PRD NFR-005, NFR-006).
+          VITE_APP_VERSION: ${{ github.sha }}
+        run: npm run build
+
+      - name: Validate the bundle scanner (self-test)
+        run: node scripts/check-bundle-secrets.mjs --self-test
+
+      # Run against the exact directory that is about to be uploaded. What a
+      # site ships is a property of the artifact that shipped, so a clean scan
+      # in the CI job (built with placeholders, on a different base path) is not
+      # evidence about this one.
+      - name: Scan the artifact for leaked credentials
+        run: npm run verify:bundle
+
+      - name: Upload the Pages artifact
+        uses: actions/upload-pages-artifact@v3.0.1
+        with:
+          path: dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4.0.5

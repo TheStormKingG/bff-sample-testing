@@ -1,0 +1,254 @@
+# Continuous integration for BFF Sample Testing.
+#
+# Every check that can block a deployment lives here, and deploy-pages.yml calls
+# this file rather than repeating the steps (`workflow_call` below). That is
+# deliberate: a copied-out test list drifts from the real one, and the copy that
+# drifts is always the one guarding production.
+#
+# Action versions are pinned to exact release tags. Pinning to a full commit SHA
+# is stricter still (a tag can be re-pointed); if you tighten this, replace each
+# `@vX.Y.Z` with `@<sha>  # vX.Y.Z` and keep the comment, so the next reader can
+# tell which release a SHA refers to.
+name: CI
+
+on:
+  push:
+  pull_request:
+  # Called by deploy-pages.yml so a deployment gates on exactly these checks.
+  # A push to the default branch therefore runs CI twice: once for this
+  # workflow's own `push` trigger and once inside the deployment. That is the
+  # price of CI never being silently absent on a branch, and it is worth paying.
+  workflow_call:
+
+# Read-only. Nothing in CI writes to the repository, publishes anything, or
+# needs an identity token.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # ------------------------------------------------------------------------
+  # Build-time frontend configuration for CI ONLY.
+  #
+  # These are PLACEHOLDERS, not credentials, and deliberately not a real
+  # project: CI has no Supabase project and needs none. They exist because the
+  # bundle scanner asserts that the anon key and the project URL ARE present in
+  # dist/ — a scan that matched nothing because it was pointed at the wrong
+  # directory would otherwise report as a pass.
+  #
+  # The placeholder anon key is an unsigned JWT whose payload carries
+  # "role":"anon". It grants nothing anywhere. Never put a service_role key, a
+  # Google service-account key, an OAuth client secret, a refresh token or the
+  # Sheets spreadsheet id in this file or in any VITE_* variable: everything
+  # VITE_* is compiled into public JavaScript. Those belong in Supabase Edge
+  # Function secrets, and `verify:bundle` fails the build if any of them reach
+  # dist/.
+  # ------------------------------------------------------------------------
+  VITE_SUPABASE_URL: https://exampleref.supabase.co
+  VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV4YW1wbGVyZWYiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoyMDAwMDAwMDAwfQ.CI_PLACEHOLDER_SIGNATURE_not_valid_anywhere
+  VITE_APP_VERSION: ci-${{ github.sha }}
+
+jobs:
+  verify:
+    name: Lint and typecheck (app, specs, Edge Functions), unit tests, build, bundle scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4.1.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck application and unit tests
+        run: npm run typecheck
+
+      # The Playwright specs are outside tsconfig.app.json's `include`, so
+      # `npm run typecheck` does not see them. Without this step a type error in
+      # e2e/ would only surface as a confusing runtime failure.
+      - name: Typecheck Playwright specs
+        run: >-
+          npx tsc --noEmit --strict --target es2022 --lib es2022,dom,dom.iterable
+          --module esnext --moduleResolution bundler --skipLibCheck
+          --noUnusedLocals --noUnusedParameters --noUncheckedIndexedAccess
+          --types node --forceConsistentCasingInFileNames
+          e2e/fixtures/app.ts e2e/fixtures/console.ts e2e/*.spec.ts
+
+      # The Edge Functions are the same omission the step above fixes for e2e/,
+      # one directory over and four times the size: supabase/functions/** is
+      # outside tsconfig.app.json's `include`, so `npm run typecheck` never
+      # reads it, and eslint.config.js ignores it because eslint has no Deno
+      # globals. Until this step existed, `Cannot find name 'x'` on a committed
+      # success path in an Edge Function passed lint, typecheck, every unit
+      # test, the build and the bundle scan, and surfaced only as a 500 while
+      # someone was saving a quality record.
+      #
+      # Deno, not tsc: these are Deno modules (`Deno.serve`, `Deno.env`, `npm:`
+      # specifiers). tsc resolves none of that, so pointing a tsconfig at them
+      # would report a wall of phantom errors and check nothing real.
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2.0.5
+        with:
+          # Pinned like every action version in this file, and for the same
+          # reason: a gate whose checker changes under it reports on a
+          # different tree than the one that was reviewed. Deno ships its own
+          # TypeScript, so `v2.x` would let a new compiler add or drop errors
+          # with no commit here. Bump deliberately.
+          deno-version: v2.8.0
+
+      - name: Typecheck Supabase Edge Functions
+        run: |
+          set -euo pipefail
+          # Enumerate before checking, and fail on an empty set: `deno check`
+          # given nothing to check exits 0, so a renamed or moved directory
+          # would quietly turn this gate into a pass. A gate that cannot tell
+          # "nothing is wrong" from "nothing was examined" is not a gate.
+          count="$(find supabase/functions -type f -name '*.ts' | wc -l | tr -d ' ')"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::no Deno modules found under supabase/functions/ — this gate checked nothing"
+            exit 1
+          fi
+          echo "Type-checking $count Deno modules under supabase/functions/"
+          # Every module, not only the entrypoints: a _shared module no
+          # entrypoint imports yet still ships and still has to compile.
+          #
+          # No --no-config: these modules import shared domain code from
+          # src/** with extensionless and `@/`-aliased specifiers, which only
+          # resolve under the project's own tsconfig. Disabling config
+          # discovery turns every one of those imports into TS2307 and the
+          # gate reports on module resolution instead of on the code.
+          #
+          # No --all either: that type-checks inside
+          # npm:@supabase/supabase-js — a report on someone else's library,
+          # and a gate that turns red when they publish.
+          #
+          # Plain text, not because the log is prettier, but because the
+          # attribution below greps for "at file:///…" and Deno writes a colour
+          # escape between the "at" and the path. With colour on, that grep
+          # matches nothing and the summary confidently reports zero of each —
+          # which is what it did until a deliberately broken fixture was run
+          # through it.
+          export NO_COLOR=1
+          log="$(mktemp)"
+          rc=0
+          find supabase/functions -type f -name '*.ts' -print0 \
+            | xargs -0 deno check 2>&1 | tee "$log" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            # Attribute before grading. `deno check` reports on every module in
+            # the import graph, so a failure here can belong to either of two
+            # owners: the Edge Functions, or the shared src/** domain code they
+            # import. Both must fail this gate, but they are different findings
+            # for different people, and a bare red exit code says neither.
+            own="$(grep -cE 'at file:.*/supabase/functions/' "$log" || true)"
+            shared="$(grep -cE 'at file:.*/src/' "$log" || true)"
+            echo "::error::Edge Function typecheck failed: $own diagnostic(s) in supabase/functions/**, $shared in shared src/** modules reached by import. Both block the deployment; they do not block the same person."
+            exit "$rc"
+          fi
+          echo "All $count Edge Function modules type-check."
+
+      # Deno's own lint rules over the same tree, minus exactly one.
+      # `no-import-prefix` rejects the inline `npm:@supabase/supabase-js@2.47.10`
+      # specifiers that Supabase Edge Functions are written with, and its
+      # suggested fix — a bare specifier plus a deno.json — would change how
+      # the deployed runtime resolves that dependency. It is excluded BY NAME
+      # so the exclusion is visible in the diff and in the log; every other
+      # rule applies, and the rest of the default set passes as it stands.
+      #
+      # `deno fmt --check` is deliberately absent: deno fmt wants double quotes
+      # and an 80-column width, so it reports all 33 modules as unformatted.
+      # Adding it would mean reformatting the entire Edge Function tree to
+      # satisfy a style nothing in this repository has chosen — a diff, not a
+      # gate. If the project ever adopts deno fmt, add a deno.json first so
+      # the check and the code agree on one style.
+      - name: Lint Supabase Edge Functions
+        run: deno lint --rules-exclude=no-import-prefix supabase/functions/
+
+      - name: Unit, contract and authority tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # Validate the gate BEFORE believing its verdict: a checker cannot see
+      # what it gates, so a scanner whose rules are broken reports a clean
+      # bundle in exactly the same words as a scanner that works. This runs the
+      # detectors against known-positive and near-miss known-negative fixtures
+      # and fails if any declared rule has no positive fixture at all.
+      - name: Validate the bundle scanner (self-test)
+        run: node scripts/check-bundle-secrets.mjs --self-test
+
+      - name: Scan the built bundle for leaked credentials
+        run: npm run verify:bundle
+
+  e2e:
+    name: Playwright on the GitHub Pages base path
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4.1.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Exercise the subpath the app really ships on. Served from '/', the
+      # routing specs would pass while the deployed site 404s — which is the
+      # whole class of bug those specs exist to catch. Derived from the
+      # repository name rather than hardcoded to one slug.
+      - name: Derive the Pages base path
+        run: |
+          repo="${GITHUB_REPOSITORY#*/}"
+          case "$repo" in
+            *.github.io) base="/" ;;   # a user/organisation site is served from the root
+            *)           base="/$repo/" ;;
+          esac
+          echo "VITE_BASE_PATH=$base" >> "$GITHUB_ENV"
+          echo "End-to-end tests will run against base path $base"
+
+      # Only Chromium: every project in playwright.config.ts (desktop, Galaxy
+      # Tab S4, Galaxy S9+) is a Chromium device descriptor.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      # The base-path build is a different artefact from the one `verify`
+      # scanned, and what a site ships is a property of the artefact that
+      # shipped. Scan this one too.
+      - name: Scan the base-path bundle for leaked credentials
+        run: npm run verify:bundle
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: playwright-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: warn

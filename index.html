@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#1f63ad" />
+    <meta
+      name="description"
+      content="BFF Sample Testing — sample registration, testing and quality records for the Bounty Farm Limited Feed Factory."
+    />
+    <!-- Online-only MVP: no service worker is registered, deliberately. A cache
+         layer here could serve a stale quality decision as current, which PRD
+         NFR-006 and FR-015 forbid. Offline capture is FR-021, out of scope. -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <title>BFF Sample Testing</title>
+  </head>
+  <body class="bg-white">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

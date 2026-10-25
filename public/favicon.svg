@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="BFF Sample Testing">
+  <title>BFF Sample Testing</title>
+  <rect width="64" height="64" rx="12" fill="#1f63ad"/>
+  <!-- A sample flask: the one object every one of the seven logs has in common. -->
+  <path d="M26 12h12v13.2l10.6 19.4A5 5 0 0 1 44.2 52H19.8a5 5 0 0 1-4.4-7.4L26 25.2V12Z"
+        fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round"/>
+  <path d="M23 12h18" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round"/>
+  <!-- Fill line, drawn short of the neck so the mark reads at 16px. -->
+  <path d="M20.4 40h23.2l4.6 8.4A3 3 0 0 1 45.6 52H18.4a3 3 0 0 1-2.6-4.4L20.4 40Z"
+        fill="#bfdbfe"/>
+</svg>

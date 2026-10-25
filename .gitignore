@@ -1,0 +1,38 @@
+node_modules/
+dist/
+dist-ssr/
+coverage/
+*.local
+.env
+.env.*
+!.env.example
+
+# Credentials — never commit. Belongs in Supabase Edge Function secrets.
+*service-account*.json
+*-key.json
+google-credentials*.json
+*.pem
+
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+supabase/.branches
+supabase/.temp
+supabase/.env
+
+# Project input documents, not deliverables.
+# The master build prompt, the PRD and the Concept Note are Bounty Farm's own
+# documents and were the INPUT to this repository, not its output. They stay in
+# the working directory so the build can be re-derived from them, and out of
+# version control so a public repository does not republish Bounty Farm's
+# internal papers. Their requirements are traced in docs/traceability-matrix.md.
+BFF_Claude_Code_Master_Prompt.md
+BFF_Digital_Sample_Testing_PRD.md
+BFF_Digital_Sample_Testing_Concept_Note.md

@@ -1,0 +1,122 @@
+#  BFF Sample Testing  Supabase local development configuration.
+#
+#  `supabase start` brings up Postgres, Auth (GoTrue), PostgREST, Studio and the
+#  Edge Runtime from this file. Nothing here is a secret: every credential is
+#  either a well-known local development value or an `env(...)` reference that
+#  the CLI resolves from the shell at start-up.
+#
+#  THE GOOGLE SHEETS SPREADSHEET ID IS DELIBERATELY ABSENT.
+#  It is an Edge Function secret named SHEETS_SPREADSHEET_ID with no default.
+#  The sync worker refuses to run when it is unset. The uploaded draft workbook
+#  must never be a write target, so its ID appears in no committed file other
+#  than the verification record in docs/workbook-verification.md, which is
+#  evidence and not configuration.
+
+project_id = "bff-sample-testing"
+
+[api]
+enabled = true
+port = 54321
+# Only `public` is exposed to PostgREST. `auth` stays private, and there is no
+# application schema outside `public`, so a table added later cannot become
+# reachable by being placed in an unlisted schema and then exposed by accident.
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+# A hard page ceiling. The sample list is paginated; this stops an unbounded
+# `select=*` from pulling the whole ledger in one request.
+max_rows = 500
+
+[db]
+port = 54322
+shadow_port = 54320
+# Must match the hosted project's engine version. Supabase projects created in
+# 2026 are PostgreSQL 17; change this if `supabase db push` reports a mismatch.
+major_version = 17
+
+[db.seed]
+enabled = true
+# PRODUCTION-SAFE SEED FILES ONLY, applied in this order by `supabase db reset`.
+#
+# `seed/test_fixtures.sql` is deliberately NOT listed. It approves a
+# conditioned-temperature rule so the UAT-06 boundary cases can run, and an
+# approved rule is exactly what the production dataset must not contain
+# (0 of 34 workbook limits are approved). It is applied explicitly, by hand, in
+# a test database only  see the header of that file.
+sql_paths = [
+  "./seed/0001_controlled_vocabulary.sql",
+  "./seed/0002_specification_reference_import.sql",
+]
+
+[db.migrations]
+enabled = true
+
+[db.pooler]
+enabled = false
+
+[realtime]
+# No feature in the PRD needs live push. Leaving it off removes a broadcast
+# surface that would otherwise have to be access-reviewed.
+enabled = false
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://127.0.0.1:54321"
+
+[inbucket]
+# Local mail catcher. Auth is Google-only in production, but GoTrue still needs
+# somewhere to put recovery mail during local development.
+enabled = true
+port = 54324
+
+[storage]
+# The application stores no files. Nothing uploads, so the bucket API stays off.
+enabled = false
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:5173"
+# HashRouter is mandatory: GitHub Pages cannot serve a deep link or an OAuth
+# callback from a subpath with BrowserRouter. Every redirect target therefore
+# ends at the site root and the router resolves the fragment client-side.
+additional_redirect_urls = [
+  "http://127.0.0.1:5173",
+  "http://localhost:5173",
+]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+# No self-service sign-up by email. Identity comes from Google only, and a new
+# Google identity lands on `pending` with no data access until an administrator
+# approves it (rule 4: login proves identity, not permission).
+enable_signup = true
+enable_manual_linking = false
+
+[auth.email]
+enable_signup = false
+enable_confirmations = false
+double_confirm_changes = true
+
+[auth.sms]
+enable_signup = false
+enable_confirmations = false
+
+[auth.external.google]
+enabled = true
+# Resolved from the shell at `supabase start`. Never committed.
+#   export SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID=...
+#   export SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET=...
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+# Supabase's own callback is used, not a custom one, so the redirect URI
+# registered in Google Cloud is the Supabase-managed address.
+redirect_uri = ""
+skip_nonce_check = false
+
+[edge_runtime]
+enabled = true
+policy = "oneshot"
+inspector_port = 8083
+
+[analytics]
+enabled = false

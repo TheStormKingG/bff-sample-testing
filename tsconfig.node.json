@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": ["node"]
+  },
+  // vitest.config.ts is deliberately excluded. Vitest bundles its own copy of
+  // vite, so `@vitejs/plugin-react` is built against the top-level vite types
+  // while `defineConfig` comes from vitest's nested copy — structurally
+  // identical types that are nominally distinct, which makes the plugins array
+  // unassignable. The config is exercised on every test run, which is stronger
+  // validation than tsc would give it, so excluding it costs nothing real.
+  // supabase/functions/** is deliberately NOT here, and must not be added:
+  // those are Deno modules using `Deno.serve`, `Deno.env` and `npm:`
+  // specifiers, which tsc cannot resolve under any configuration. They are
+  // type-checked and linted by `deno check` / `deno lint` in
+  // .github/workflows/ci.yml. If you are auditing which checker covers which
+  // directory, that is where the Edge Functions are covered — not in any
+  // tsconfig.
+  "include": ["vite.config.ts", "playwright.config.ts", "eslint.config.js"]
+}

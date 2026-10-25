@@ -1,0 +1,28 @@
+{
+  "name": "BFF Sample Testing",
+  "short_name": "BFF Samples",
+  "description": "Sample registration, testing and quality records for the Bounty Farm Limited Feed Factory.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#1f63ad",
+  "categories": ["productivity", "business"],
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

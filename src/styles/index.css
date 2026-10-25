@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Base layer.
+ *
+ * The interface is bright white with restrained Bounty Farm blue accents
+ * (PRD section 11). Text sizes start one step above a typical web default:
+ * this is read on plant tablets, at arm's length, by operators for whom dense
+ * small type is a real barrier (PRD NFR-004).
+ */
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-white text-base text-slate-900 antialiased;
+    /* Keep a readable line length on a desktop monitor without forcing the
+       layout narrow on a tablet held in portrait. */
+    text-wrap: pretty;
+  }
+
+  /*
+   * One visible focus ring for every interactive element, everywhere.
+   *
+   * `:focus-visible` rather than `:focus` so a finger tap on a tablet does not
+   * leave a ring behind, while keyboard and switch-device users always see
+   * where they are. Keyboard navigation is a stated requirement
+   * (PRD NFR-004), and a focus style that only some components remember to
+   * add is the usual way it quietly stops working.
+   */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    @apply outline-none ring-2 ring-bff-600 ring-offset-2 ring-offset-white;
+  }
+
+  /* Remove the Firefox inner focus outline that double-draws with the ring. */
+  :where(button, input, select, textarea)::-moz-focus-inner {
+    border: 0;
+  }
+
+  /*
+   * Numbers are read off these screens and compared against limits, so a
+   * measured value must never be ambiguous between 0 and O, or 1 and l.
+   */
+  input[type='number'],
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Dates and measurements are entered one-handed on a tablet; the stepper
+     arrows are a 12px target beside a 44px field, so they are hidden and the
+     value is typed. */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+}
+
+@layer components {
+  /* A skip link that is invisible until focused. */
+  .skip-link {
+    @apply absolute left-4 top-0 z-50 -translate-y-full rounded-b-md bg-bff-700 px-4 py-3
+           text-white transition-transform focus-visible:translate-y-0;
+  }
+}
+
+/*
+ * Reduced motion.
+ *
+ * Nothing in this app conveys meaning through movement, so when the operating
+ * system asks for less motion every transition and animation is reduced to an
+ * effectively instant change. `0.01ms` rather than `0s` because a zero
+ * duration suppresses the `transitionend`/`animationend` events that some
+ * components rely on to clean up after themselves.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * Print.
+ *
+ * Two different things get printed, and only one of them is styled here.
+ *
+ *   - `LabelDialog` prints by opening a SEPARATE window and writing its own
+ *     `PRINT_STYLES` into it. That document never loads this stylesheet, so
+ *     nothing below affects it. Do not "fix" the label layout here.
+ *   - The main document is printed when an operator uses the browser's own
+ *     print command — most usefully on the registration confirmation, where
+ *     `RegistrationConfirmation` reveals a `print:block` label block holding
+ *     the sample ID (FR-018) and hides the rest. That path is what the rules
+ *     below exist for.
+ */
+@media print {
+  /* Browser defaults differ and several crop a large tracked ID near the
+     edge. 12mm clears the unprintable margin of a common office printer. */
+  @page {
+    margin: 12mm;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    @apply bg-white text-black;
+  }
+
+  /*
+   * Every dialog in the app is an `inset-0` overlay on a translucent slate
+   * backdrop. On screen that is right; on paper a viewport-sized fixed box
+   * becomes one full page of grey with the content trapped inside it and the
+   * remainder dropped. An operator reaching for Ctrl+P while a dialog is open
+   * should get the dialog's text in the normal flow instead. `fixed` and
+   * `sticky` are used for nothing else in this app (the six overlays and
+   * `StickyFormFooter`), so this is narrow in practice.
+   */
+  .fixed,
+  .sticky {
+    position: static !important;
+    overflow: visible !important;
+  }
+
+  /* Most browsers drop background fills when printing, so a box that carried
+     meaning in its fill must still read from its border. Shadows only muddy
+     a laser print. */
+  * {
+    box-shadow: none !important;
+  }
+}
