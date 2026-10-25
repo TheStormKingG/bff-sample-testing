@@ -17,8 +17,8 @@ import {
   STAGE_SCHEMAS,
   isFieldApplicable,
   PROTECTED_HEADER_ROWS,
-} from './registry';
-import type { FieldDef, Stage } from './types';
+} from './registry.ts';
+import type { FieldDef, Stage } from './types.ts';
 
 /**
  * `RAW` is the primary formula-injection control: Sheets stores the string

@@ -11,8 +11,8 @@
  * every disposition requires a named, authorised actor.
  */
 
-import { can, type AuthorityContext, type Permission } from './roles';
-import type { Assessment } from './assessment';
+import { can, type AuthorityContext, type Permission } from './roles.ts';
+import type { Assessment } from './assessment.ts';
 
 export const CAPTURE_STATES = [
   'draft',

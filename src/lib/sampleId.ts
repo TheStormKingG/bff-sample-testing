@@ -14,8 +14,8 @@
  * concurrency.
  */
 
-import { ALL_PREFIXES, type SamplePrefix } from '@/forms/registry';
-import { idDatePart } from './time';
+import { ALL_PREFIXES, type SamplePrefix } from '../forms/registry.ts';
+import { idDatePart } from './time.ts';
 
 /** Minimum digits in the sequence component; widens automatically past 99. */
 export const MIN_SEQUENCE_DIGITS = 2;

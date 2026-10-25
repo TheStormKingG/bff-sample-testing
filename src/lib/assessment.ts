@@ -20,7 +20,7 @@
  * primary rule key").
  */
 
-import type { Stage } from '@/forms/types';
+import type { Stage } from '../forms/types.ts';
 
 export const ASSESSMENT_RESULTS = [
   'within_limit',

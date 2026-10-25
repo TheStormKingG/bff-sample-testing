@@ -20,7 +20,7 @@ import {
   type Stage,
   type StageSchema,
   YES_NO_OPTIONS,
-} from './types';
+} from './types.ts';
 
 const MATERIAL_OPTIONS = [
   { value: 'corn', label: 'Corn' },
