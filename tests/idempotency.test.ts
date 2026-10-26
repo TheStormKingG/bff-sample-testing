@@ -424,6 +424,10 @@ describe('a row is the same row whatever the API dropped from the end of it', ()
       // Read back with trailing blanks dropped, as the API returns it.
       located: { rowNumber: 5, values: cells.slice(0, 5) },
       confirmedRowNumber: 5,
+      // The app's own projection history for this sample: this row, which is
+      // exactly what the sheet holds.
+      priorProjections: [cells],
+      lastConfirmedRow: cells,
     });
     expect(decision).toEqual({
       action: 'noop',
@@ -442,6 +446,7 @@ describe('a row is the same row whatever the API dropped from the end of it', ()
         intendedRow: cells,
         located: null,
         confirmedRowNumber: null,
+        priorProjections: [cells],
       }),
     ).toEqual({ action: 'append', reason: 'no_existing_row', width: WIDTH });
 
@@ -454,6 +459,8 @@ describe('a row is the same row whatever the API dropped from the end of it', ()
         intendedRow: cells,
         located: null,
         confirmedRowNumber: 5,
+        priorProjections: [cells],
+        lastConfirmedRow: cells,
       }),
     ).toMatchObject({ action: 'blocked', reason: 'confirmed_row_missing' });
   });
@@ -466,6 +473,8 @@ describe('a row is the same row whatever the API dropped from the end of it', ()
       intendedRow: cells,
       located: { rowNumber: 5, values: row('AP-2026-10-24-99') },
       confirmedRowNumber: 5,
+      priorProjections: [cells],
+      lastConfirmedRow: cells,
     });
     expect(decision).toMatchObject({ action: 'blocked', reason: 'id_mismatch_at_row' });
   });

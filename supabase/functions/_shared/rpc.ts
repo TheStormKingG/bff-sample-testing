@@ -71,6 +71,7 @@ export const RPC = {
   retryDeadLettered: 'rpc_retry_dead_lettered',
 
   readSampleSyncState: 'rpc_read_sample_sync_state',
+  readSampleProjectedRows: 'rpc_read_sample_projected_rows',
   readLedgerForStage: 'rpc_read_ledger_for_stage',
   writeReconciliationReport: 'rpc_write_reconciliation_report',
 
@@ -277,6 +278,27 @@ export interface SampleSyncStateRow {
   readonly confirmed_row_number: number | null;
   readonly confirmed_at: string | null;
   readonly confirmed_payload_hash: string | null;
+}
+
+/** `rpc_read_sample_projected_rows(p_sample_uuid)`. */
+export interface ReadSampleProjectedRowsArgs {
+  readonly p_sample_uuid: string;
+}
+
+/**
+ * One row this system has projected for a sample, from an outbox event that
+ * was CLAIMED at least once. Newest revision first.
+ *
+ * The writer compares the row currently in the sheet against this set: a row
+ * matching none of them holds content this system did not write, which is a
+ * hand edit and is refused rather than overwritten
+ * (`ProjectionInput.priorProjections`).
+ */
+export interface SampleProjectionRow {
+  readonly payload_revision: number;
+  /** The event whose write was verified by a read-back. At most one is true. */
+  readonly was_confirmed: boolean;
+  readonly projected_row: readonly string[];
 }
 
 /** `rpc_read_ledger_for_stage(p_stage, p_limit, p_offset)`. */

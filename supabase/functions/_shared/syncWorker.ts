@@ -69,6 +69,23 @@ export interface SyncStore {
   latestConfirmedRevision(sampleUuid: string): Promise<number | null>;
   /** Row number of the last VERIFIED write for this sample, or null. */
   confirmedRowNumber(sampleUuid: string): Promise<number | null>;
+  /**
+   * The row the last VERIFIED write actually put there, or null. Distinct
+   * from `confirmedRowNumber`: that is WHERE it landed, this is WHAT it said.
+   */
+  confirmedProjectedRow(sampleUuid: string): Promise<readonly string[] | null>;
+  /**
+   * Every row this app has projected for this sample in an outbox event that
+   * was claimed at least once. The decision layer compares the row currently
+   * in the sheet against this set to tell a row the app owns from one a human
+   * has typed into; see `ProjectionInput.priorProjections`.
+   *
+   * "Claimed at least once" rather than "attempted": claiming precedes the
+   * write, so it also covers a worker that died after writing and before
+   * recording the outcome — the case in which the attempt counter was never
+   * incremented and the row is nevertheless in the sheet.
+   */
+  projectedRowsFor(sampleUuid: string): Promise<readonly (readonly string[])[]>;
 
   /** Persist the outbox transition. Must reject a stale fence. */
   recordOutcome(args: {
@@ -118,6 +135,14 @@ export interface WorkerDeps {
    * Opt-in optimisation: append without locating first, for a first-ever
    * projection. Refused whenever the event carries `reconcileFirst`, which is
    * the only case where skipping the locate could duplicate a row.
+   *
+   * IT ALSO BYPASSES THE HAND-EDIT GUARD, because that guard lives in
+   * `decideProjection` and this path does not call it. Enabling it therefore
+   * reopens the `row_not_authored_by_app` case: a row a human entered under the
+   * same identifier would get a second row appended beside it rather than being
+   * reported. The entrypoint passes `false` (`sheets-sync-worker/index.ts`) and
+   * should keep doing so; the append is one API call saved per registration,
+   * which is not worth that.
    */
   readonly allowAppendWithoutLocate?: boolean;
 }
@@ -245,6 +270,15 @@ export async function processEvent(
     } else {
       const found = await deps.adapter.locateRecord(event.stage, event.sampleId);
       located = true;
+      // `event.row` is included rather than relied upon to come back from the
+      // store: this event is claimed right now, so the database WOULD return
+      // it, but that would make the guard depend on when the claim committed
+      // relative to this read. Including it explicitly keeps the
+      // retry-after-a-timeout path safe regardless of that timing.
+      const priorProjections = [
+        event.row,
+        ...(await deps.store.projectedRowsFor(event.sampleUuid)),
+      ];
       decision = decideProjection({
         stage: event.stage,
         sampleId: event.sampleId,
@@ -252,6 +286,8 @@ export async function processEvent(
         located: found.record,
         duplicateRows: found.duplicateRows,
         confirmedRowNumber: confirmedRow,
+        priorProjections,
+        lastConfirmedRow: await deps.store.confirmedProjectedRow(event.sampleUuid),
       });
     }
 

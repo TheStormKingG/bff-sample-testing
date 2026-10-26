@@ -25,6 +25,7 @@ import {
   type IdempotencyRow,
   type LeaseRow,
   type OutboxRow,
+  type SampleProjectionRow,
   type SampleSyncStateRow,
   type WorkbookStateRow,
 } from '../rpc.ts';
@@ -231,6 +232,36 @@ export class SupabaseSyncStore implements SyncStore {
     return (await this.sampleSyncState(sampleUuid))?.confirmed_row_number ?? null;
   }
 
+  /**
+   * Projection history, cached per sample for the same reason as the sync
+   * state: `projectedRowsFor` and `confirmedRow` are two questions about one
+   * result, and processing one event must not cost two queries.
+   */
+  private projectionCache: { uuid: string; rows: readonly SampleProjectionRow[] } | null = null;
+
+  private async projections(sampleUuid: string): Promise<readonly SampleProjectionRow[]> {
+    if (this.projectionCache !== null && this.projectionCache.uuid === sampleUuid) {
+      return this.projectionCache.rows;
+    }
+    const data = await callRpc<unknown>(this.admin, RPC.readSampleProjectedRows, {
+      p_sample_uuid: sampleUuid,
+    });
+    const rows = (Array.isArray(data) ? data : []) as readonly SampleProjectionRow[];
+    this.projectionCache = { uuid: sampleUuid, rows };
+    return rows;
+  }
+
+  async projectedRowsFor(sampleUuid: string): Promise<readonly (readonly string[])[]> {
+    return (await this.projections(sampleUuid))
+      .map((r) => r.projected_row)
+      .filter((row): row is readonly string[] => Array.isArray(row));
+  }
+
+  async confirmedProjectedRow(sampleUuid: string): Promise<readonly string[] | null> {
+    const found = (await this.projections(sampleUuid)).find((r) => r.was_confirmed === true);
+    return found !== undefined && Array.isArray(found.projected_row) ? found.projected_row : null;
+  }
+
   async recordOutcome(args: {
     readonly claim: FenceClaim;
     readonly event: OutboxEvent;
@@ -276,6 +307,11 @@ export class SupabaseSyncStore implements SyncStore {
     // of the same event later in the batch must see the confirmed row, or it
     // would re-decide the projection from pre-write state.
     if (this.syncStateCache?.uuid === args.sampleUuid) this.syncStateCache = null;
+    // Same for the projection history: this call is what makes one of those
+    // events `was_confirmed`, and the hand-edit guard's message diffs against
+    // that row. A stale cache here would make a second event in the same batch
+    // report the wrong cells as hand-edited.
+    if (this.projectionCache?.uuid === args.sampleUuid) this.projectionCache = null;
   }
 }
 

@@ -21,7 +21,7 @@
 
 import { FIRST_DATA_ROW, STAGE_SCHEMAS } from '../../../src/forms/registry.ts';
 import type { Stage } from '../../../src/forms/types.ts';
-import { rowDifferences, rowsEqual, type CellDifference } from './hash.ts';
+import { normaliseRow, rowDifferences, rowsEqual, type CellDifference } from './hash.ts';
 
 /** What `locateRecord` found for one sample ID in column A. */
 export interface LocatedRecord {
@@ -48,6 +48,52 @@ export interface ProjectionInput {
    * detect that the row has moved; never used as a write target.
    */
   readonly confirmedRowNumber?: number | null;
+  /**
+   * EVERY row this application has projected for this sample at this stage,
+   * for an outbox event that was CLAIMED at least once — plus the row this
+   * event intends to write. In other words, the complete set of contents the
+   * app could have put in that row. Supplied from
+   * `sheet_sync_outbox.projected_row`; see `SyncStore.projectedRowsFor`.
+   *
+   * This is the ONLY input that distinguishes a row the app owns from a row a
+   * human has typed into, which is why it is REQUIRED rather than optional: an
+   * optional baseline fails toward the permissive branch, and a caller that
+   * forgot to supply it would silently restore the overwrite this guard
+   * exists to prevent.
+   *
+   * Why the whole set and not just "the last row we confirmed":
+   *
+   *  - A write can land and then time out. The event is then unconfirmed while
+   *    its row IS in the sheet, and the next event for the same sample would
+   *    see content that no confirmed baseline explains. `rpc_claim_outbox_batch`
+   *    orders by `next_retry_at`, and a freshly enqueued revision 2 sorts ahead
+   *    of a revision 1 that is waiting out a backoff, so this ordering is
+   *    reachable rather than theoretical.
+   *  - "Claimed at least once" (`last_attempt_at is not null`) is the precise
+   *    form of "the app could have written this". Claiming happens before the
+   *    write, so it also covers a worker that died between the write and its
+   *    bookkeeping. `attempt_count > 0` would NOT cover that: the counter is
+   *    incremented when the outcome is recorded, which is the step that never
+   *    ran.
+   *
+   * A hand edit that happens to reproduce one of the app's own projections
+   * exactly is admitted, and loses nothing: the cells already hold values the
+   * app wrote or is about to write.
+   */
+  readonly priorProjections: readonly (readonly string[])[];
+  /**
+   * The row the app last CONFIRMED for this sample — written and read back —
+   * or null if it has never confirmed one. `sheet_sync_outbox.projected_row`
+   * of the confirmed event, the same row `confirmedRowNumber` refers to.
+   *
+   * MESSAGE ONLY. It names the cells a human changed, by diffing what we left
+   * in the sheet against what is there now; diffing against `intendedRow`
+   * instead would list the update's own intended changes alongside the human's
+   * and so point an administrator at the wrong cells. The guard's VERDICT never
+   * consults it, so a caller that omits it degrades the wording and cannot
+   * open the gate.
+   */
+  readonly lastConfirmedRow?: readonly string[] | null;
 }
 
 export type ProjectionBlockReason =
@@ -60,7 +106,22 @@ export type ProjectionBlockReason =
   /** The intended row has the wrong width for the stage. */
   | 'row_width_mismatch'
   /** Column A of the located row is not the sample ID we searched for. */
-  | 'id_mismatch_at_row';
+  | 'id_mismatch_at_row'
+  /**
+   * The app wrote and verified this row, and its contents have changed since.
+   * Somebody edited the sheet by hand. Reconciliation calls the same condition
+   * `cell_mismatch` -> `administrator_must_review_edit` (see `reconcile.ts`);
+   * this is the enforcing half of that finding.
+   */
+  | 'row_edited_in_sheet'
+  /**
+   * A row already carries this sample ID and the app has never confirmed a
+   * write for the sample. The row was entered by hand, or two collections
+   * minted the same identifier (`allocate_sample_id` restarts at 01 per date,
+   * so a back-dated collection can collide). Either way the content is not
+   * ours to replace.
+   */
+  | 'row_not_authored_by_app';
 
 export type ProjectionDecision =
   | {
@@ -85,7 +146,51 @@ export type ProjectionDecision =
       readonly action: 'blocked';
       readonly reason: ProjectionBlockReason;
       readonly message: string;
+      /**
+       * The cells that differ, when the block was decided by comparing
+       * content. Stored in `sheet_sync_outbox.last_decision`, so an
+       * administrator can see exactly which cells were preserved.
+       */
+      readonly differences?: readonly CellDifference[];
     };
+
+/**
+ * Describe a differing cell the way an administrator reads the workbook:
+ * by column letter and row-4 header, with the value that is actually there.
+ */
+function describeCell(stage: Stage, difference: CellDifference): string {
+  const field = STAGE_SCHEMAS[stage].fields[difference.index];
+  const where =
+    field === undefined
+      ? `column index ${difference.index}`
+      : `column ${field.columnLetter} "${field.sheetHeader}"`;
+  const found =
+    difference.actual === '' ? 'is now empty' : `reads ${JSON.stringify(trim(difference.actual))}`;
+  return `${where} ${found}`;
+}
+
+/** Keep a quoted cell value short enough for an error column and a log line. */
+function trim(value: string): string {
+  return value.length <= 60 ? value : `${value.slice(0, 57)}...`;
+}
+
+/** `column K "Comments" reads "..." and 2 other cells` */
+function describeCells(stage: Stage, differences: readonly CellDifference[]): string {
+  const named = differences.slice(0, 2).map((d) => describeCell(stage, d));
+  const rest = differences.length - named.length;
+  const list = named.join('; ');
+  return rest <= 0 ? list : `${list}; and ${rest} other cell${rest === 1 ? '' : 's'}`;
+}
+
+/** The non-empty cells of a row, for a row this system did not write. */
+function occupiedCells(stage: Stage, cells: readonly string[], width: number): string {
+  const present: CellDifference[] = [];
+  const row = normaliseRow(cells, width);
+  for (let i = 0; i < width; i++) {
+    if (row[i] !== '') present.push({ index: i, expected: '', actual: row[i]! });
+  }
+  return present.length === 0 ? 'no values at all' : describeCells(stage, present);
+}
 
 /**
  * Decide the projection.
@@ -93,7 +198,9 @@ export type ProjectionDecision =
  * Order of the guards is load-bearing. Duplicates and protected rows are
  * refused before anything can be written; the "already current" no-op is
  * checked before the update branch, because that no-op is precisely what makes
- * a retry after an unknown outcome safe.
+ * a retry after an unknown outcome safe. The hand-edit guard sits immediately
+ * after that no-op, so by the time it runs the only remaining action is an
+ * overwrite of content that is NOT what we are trying to write.
  */
 export function decideProjection(input: ProjectionInput): ProjectionDecision {
   const schema = STAGE_SCHEMAS[input.stage];
@@ -158,6 +265,70 @@ export function decideProjection(input: ProjectionInput): ProjectionDecision {
       rowNumber: input.located.rowNumber,
       reason: 'already_current',
       width,
+    };
+  }
+
+  // THE HAND-EDIT GUARD.
+  //
+  // Everything below this point would REWRITE EVERY COLUMN of the located row.
+  // So before doing that, establish that the row's current contents are
+  // something this application put there. The comparison is against the set of
+  // rows the app has projected for this sample, not against the row we are
+  // about to write: a legitimate update differs from the sheet by exactly the
+  // cells it is changing, so comparing against the intended row cannot
+  // distinguish "the app is updating this" from "a human typed this".
+  //
+  // NORMALISATION is `rowsEqual`, the same function `verifyPersistedRow` has
+  // always run on the read-back immediately after every write. If it were too
+  // strict for real Sheets round-trips — trailing cells dropped on read, a
+  // number re-rendered — no write would ever have verified and every outcome
+  // would be `unknown`. Reusing it here therefore adds no new tolerance
+  // question: this guard is exactly as strict as the check that already gates
+  // every confirmation, and no stricter.
+  //
+  // Master Prompt §7: "surface drift caused by direct human sheet edits instead
+  // of silently overwriting important records."
+  const inSheet = input.located.values;
+  if (!input.priorProjections.some((candidate) => rowsEqual(candidate, inSheet, width))) {
+    const lastWritten = input.lastConfirmedRow ?? null;
+
+    if (lastWritten === null) {
+      // Nothing confirmed, so there is no "before" to diff against: the whole
+      // row is content this system did not write. Name the cells that carry
+      // something, so an administrator can recognise the row in the workbook.
+      const occupied = occupiedCells(input.stage, inSheet, width);
+      return {
+        action: 'blocked',
+        reason: 'row_not_authored_by_app',
+        message: `Row ${input.located.rowNumber} of "${schema.sheetTab}" already carries ${input.sampleId}, but this system has never written a row for that sample. The row holds ${occupied}. Somebody entered it in the sheet directly, or two collections were given the same identifier. It has been left exactly as it is, and the record in this system is unaffected. TO RESOLVE: decide which collection the sheet row belongs to. If it is a different sample, give it its own identifier in the sheet. If it is this one, clear the row. Then retry this item — RETRYING WILL REPLACE THAT ROW with this system's version of the record.`,
+        differences: rowDifferences(input.intendedRow, inSheet, width),
+      };
+    }
+
+    /**
+     * THE MESSAGE MUST DESCRIBE A REMEDY THAT EXISTS.
+     *
+     * The first version of this said an administrator "must review the edit
+     * before the update can be released", and the sibling branch said
+     * "before synchronisation resumes". Neither is implemented: there is no
+     * release action and no resume action. The only tool an administrator
+     * actually has is retrying the dead-lettered item — which overwrites the
+     * row, destroying exactly the hand-typed values this guard just saved.
+     *
+     * So a message that sends somebody looking for a Release button leaves
+     * them with one real option and no warning about what it does. The
+     * wording below names the decision, the two ways to make the record and
+     * the sheet agree, and states plainly what retrying will do. A proper
+     * review-and-accept action is worth building; until it exists the message
+     * may not imply one.
+     */
+    const edits = rowDifferences(lastWritten, inSheet, width);
+    const where = edits.length === 0 ? 'its contents changed' : describeCells(input.stage, edits);
+    return {
+      action: 'blocked',
+      reason: 'row_edited_in_sheet',
+      message: `Somebody edited row ${input.located.rowNumber} of "${schema.sheetTab}" directly in Google Sheets after this system last wrote it: ${where}. Those hand-typed values have been left untouched on purpose and nothing was overwritten. TO RESOLVE for ${input.sampleId}: decide which value is right. If the hand-typed one is, enter it in this system so the record carries it too. If this system's value is, undo the edit in the sheet. Either way, retry this item afterwards — RETRYING WILL REPLACE THAT ROW with this system's version, so resolve it first or the hand-typed values are lost.`,
+      differences: edits,
     };
   }
 

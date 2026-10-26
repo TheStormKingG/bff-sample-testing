@@ -75,6 +75,11 @@ import {
   type SyncStore,
 } from '../supabase/functions/_shared/syncWorker.ts';
 import { rowHash } from '../supabase/functions/_shared/hash.ts';
+import {
+  syncStatusFor,
+  SYNC_ATTENTION_LABEL,
+  SYNC_CONFIRMED_LABEL,
+} from '../supabase/functions/_shared/syncStatus.ts';
 import { SHEETS_VALUE_INPUT_OPTION } from '../supabase/functions/_shared/sheets.ts';
 
 // ---------------------------------------------------------------------------
@@ -143,6 +148,16 @@ class FakeSyncStore implements SyncStore {
   };
   readonly confirmedRevision = new Map<string, number>();
   readonly confirmedRow = new Map<string, number>();
+  /**
+   * `sheet_sync_outbox.projected_row` for every event this store has seen
+   * CLAIMED, newest first, modelling `rpc_read_sample_projected_rows`. The
+   * worker records an outcome for every event it processes, which is the point
+   * at which this store learns the event existed; a test that needs a
+   * projection the worker never processed declares it with `seedProjection`.
+   */
+  readonly projections = new Map<string, string[][]>();
+  /** The row of the last VERIFIED write, which the blocked message diffs against. */
+  readonly confirmedProjection = new Map<string, readonly string[]>();
   readonly outcomes: { event: OutboxEvent; transition: OutboxTransition; decision: ProjectionDecision | null }[] = [];
   readonly fenceRejections: string[] = [];
   driftProblems: readonly SchemaProblem[] = [];
@@ -205,6 +220,21 @@ class FakeSyncStore implements SyncStore {
     return Promise.resolve(this.confirmedRow.get(sampleUuid) ?? null);
   }
 
+  confirmedProjectedRow(sampleUuid: string): Promise<readonly string[] | null> {
+    return Promise.resolve(this.confirmedProjection.get(sampleUuid) ?? null);
+  }
+
+  projectedRowsFor(sampleUuid: string): Promise<readonly (readonly string[])[]> {
+    return Promise.resolve(this.projections.get(sampleUuid) ?? []);
+  }
+
+  /** A row the app projected for an event this store never processed. */
+  seedProjection(sampleUuid: string, row: readonly string[]): void {
+    const list = this.projections.get(sampleUuid) ?? [];
+    list.unshift([...row]);
+    this.projections.set(sampleUuid, list);
+  }
+
   async recordOutcome(args: {
     claim: FenceClaim;
     event: OutboxEvent;
@@ -214,6 +244,16 @@ class FakeSyncStore implements SyncStore {
     await Promise.resolve();
     this.guard(args.claim, 'recordOutcome');
     this.outcomes.push({ event: args.event, transition: args.transition, decision: args.decision });
+    // The event has been claimed and attempted, so its projected row is now
+    // one of the contents this app could have put in the sheet. This is the
+    // `last_attempt_at is not null` filter of rpc_read_sample_projected_rows.
+    this.seedProjection(args.event.sampleUuid, args.event.row);
+    // And this is the call that flips the event's state to `confirmed` in SQL
+    // (rpc_record_outbox_outcome), which is what makes its projected row the
+    // one `was_confirmed` row the writer diffs a hand edit against.
+    if (args.transition.state === 'confirmed') {
+      this.confirmedProjection.set(args.event.sampleUuid, [...args.event.row]);
+    }
   }
 
   async confirmRowMapping(args: {
@@ -229,6 +269,7 @@ class FakeSyncStore implements SyncStore {
     this.guard(args.claim, 'confirmRowMapping');
     this.confirmedRow.set(args.sampleUuid, args.rowNumber);
     this.confirmedRevision.set(args.sampleUuid, args.revision);
+
   }
 }
 
@@ -556,6 +597,11 @@ describe('sorted-sheet drift relocates by sample ID', () => {
       intendedRow: row('AP-2026-10-24-09', 'new'),
       located: { rowNumber: 11, values: row('AP-2026-10-24-09', 'old') },
       confirmedRowNumber: null,
+      // The 'old' row is one this app projected, so its presence in the sheet
+      // is the app's own earlier write and not a hand edit. Without it in the
+      // history this would be `row_not_authored_by_app`, which is the point of
+      // the guard and is asserted separately.
+      priorProjections: [row('AP-2026-10-24-09', 'new'), row('AP-2026-10-24-09', 'old')],
     });
     expect(decision).toMatchObject({ action: 'update', rowNumber: 11, reason: 'row_located' });
   });
@@ -612,6 +658,8 @@ describe('sorted-sheet drift relocates by sample ID', () => {
       intendedRow: intended,
       located: { rowNumber: 9, values: truncated },
       confirmedRowNumber: 9,
+      priorProjections: [intended],
+      lastConfirmedRow: intended,
     });
     expect(decision.action).toBe('noop');
   });
@@ -622,6 +670,7 @@ describe('sorted-sheet drift relocates by sample ID', () => {
       sampleId: 'AP-2026-10-24-13',
       intendedRow: row('AP-2026-10-24-13'),
       located: { rowNumber: PROTECTED_HEADER_ROWS, values: row('AP-2026-10-24-13') },
+      priorProjections: [row('AP-2026-10-24-13')],
     });
     expect(decision).toMatchObject({ action: 'blocked', reason: 'row_in_protected_region' });
   });
@@ -632,6 +681,7 @@ describe('sorted-sheet drift relocates by sample ID', () => {
       sampleId: 'AP-2026-10-24-14',
       intendedRow: new Array<string>(WIDTH + 1).fill('x'),
       located: null,
+      priorProjections: [],
     });
     expect(decision).toMatchObject({ action: 'blocked', reason: 'row_width_mismatch' });
   });
@@ -1057,5 +1107,366 @@ describe('header verification is due before the first write and periodically', (
     expect(located.duplicateRows).toEqual([]);
     // The locate path must not fall back to reading the whole data region.
     expect(h.adapter.callLog).not.toContain('readForReconciliation');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A HAND-EDITED OPERATIONAL ROW IS NOT OVERWRITTEN.
+//
+// The defect these tests exist for, reproduced before it was fixed: a sample
+// was registered and confirmed; a person corrected a cell of that row directly
+// in Google Sheets; the Quality Officer then entered results; the worker
+// located the row by its sample ID, chose `action=update / reason=row_located`
+// and REWROTE EVERY COLUMN of the stage. Ten of nineteen cells were wiped,
+// including a tester's name and the comment "Accepted. Aflatoxin within vendor
+// reference.". The outcome reported was `confirmed`, the operator's screen read
+// "Confirmed in Google Sheets", and nothing reached the needs-attention list.
+//
+// `reconcile.ts` already promised the opposite — "The sheet was edited
+// directly; the system will not overwrite it without review" — but
+// reconciliation only reports, and `reconcile-sheets/index.ts` says its report
+// blocks nothing.
+//
+// WHY THERE WAS NO TEST: `grep -rn setCell tests/` returned nothing.
+// `FakeWorkbook.setCell`, whose own comment is "A hand edit to one cell", was
+// called by no test in this repository. These are the tests that call it.
+//
+// WHAT THIS EVIDENCE IS AND IS NOT. Everything here runs against
+// `FakeGoogleSheetsAdapter`. On the UPDATE axis the double is faithful: it
+// writes exactly `columnCount` cells to the addressed row, which is what
+// `values.update` does. On the APPEND axis it is NOT: it finds the first row
+// with a blank column A and REPLACES it, whereas production passes
+// `insertDataOption=INSERT_ROWS`. The registration step of each scenario below
+// is an append, so it is scaffolding rather than evidence; every assertion that
+// carries weight here is about an update to an existing row, and about the
+// pure `decideProjection` decision, which is adapter-independent.
+// ---------------------------------------------------------------------------
+
+/** The tester-name and comment columns of `4 Pellets`: J and K. */
+const TESTER_COL = WIDTH - 2;
+const COMMENT_COL = WIDTH - 1;
+const HAND_TYPED_NOTE = 'OPERATOR NOTE: retested, see lab book p.44';
+
+/** Register a sample, confirm it, and return where it landed. */
+async function registerAndConfirm(h: Harness, sampleId: string): Promise<number> {
+  const result = await processEvent(h.deps, event({ sampleId, revision: 1 }));
+  // INPUT ASSERTION, before anything is concluded from a later step: the
+  // scenario requires a confirmed row to exist. If registration did not
+  // confirm, every assertion below is about a different situation.
+  expect(result.outcome.kind).toBe('confirmed');
+  expect(result.transition.state).toBe('confirmed');
+  return result.outcome.kind === 'confirmed' ? result.outcome.rowNumber : -1;
+}
+
+describe('a row somebody edited by hand in the sheet', () => {
+  it('survives the next update, which is blocked rather than confirmed', async () => {
+    const h = harness();
+    const sampleId = 'AP-2026-10-24-50';
+    const rowNumber = await registerAndConfirm(h, sampleId);
+
+    // STEP 2. A Quality Officer types a correction straight into the sheet.
+    h.workbook.setCell(STAGE, rowNumber, TESTER_COL, 'K. Persaud');
+    h.workbook.setCell(STAGE, rowNumber, COMMENT_COL, HAND_TYPED_NOTE);
+    // INSTRUMENT CHECK: the edit is really in the sheet. Without this the test
+    // below passes identically if `setCell` wrote nothing at all.
+    expect(h.workbook.rawRow(STAGE, rowNumber)?.[COMMENT_COL]).toBe(HAND_TYPED_NOTE);
+    expect(h.workbook.rawRow(STAGE, rowNumber)?.[TESTER_COL]).toBe('K. Persaud');
+
+    // STEP 3/4. The QO enters results. A second event for the same sample.
+    const results = await processEvent(
+      h.deps,
+      event({
+        sampleId,
+        kind: 'results_recorded',
+        revision: 2,
+        row: row(sampleId, 'results'),
+      }),
+    );
+
+    // THE CELLS SURVIVE. This is the assertion the defect failed.
+    const after = h.workbook.rawRow(STAGE, rowNumber);
+    expect(after?.[COMMENT_COL]).toBe(HAND_TYPED_NOTE);
+    expect(after?.[TESTER_COL]).toBe('K. Persaud');
+
+    // And the refusal is the SPECIFIC one claimed, not merely "something was
+    // refused": four other guards can also return `blocked` for this input
+    // shape, and each would make this test pass while proving nothing.
+    expect(results.decision).toMatchObject({ action: 'blocked', reason: 'row_edited_in_sheet' });
+    expect(results.wrote).toBe(false);
+    expect(results.outcome.kind).toBe('blocked');
+  });
+
+  it('becomes a needs-attention item instead of a silent success', async () => {
+    const h = harness();
+    const sampleId = 'AP-2026-10-24-51';
+    const rowNumber = await registerAndConfirm(h, sampleId);
+    h.workbook.setCell(STAGE, rowNumber, COMMENT_COL, HAND_TYPED_NOTE);
+
+    const results = await processEvent(
+      h.deps,
+      event({ sampleId, kind: 'results_recorded', revision: 2, row: row(sampleId, 'results') }),
+    );
+
+    // Dead-lettered, so it stops rather than retrying forever against a
+    // condition only a human can clear.
+    expect(results.transition.state).toBe('needs_attention');
+    expect(results.transition.deadLettered).toBe(true);
+    expect(results.transition.nextAttemptAt).toBeNull();
+    // And it does not claim a confirmation it does not have.
+    expect(results.transition.confirmedAt).toBeNull();
+
+    // What a person reads. `needs_attention` is the only outbox state that
+    // produces this label, and it is not the confirmation label.
+    const status = syncStatusFor({ outboxState: results.transition.state });
+    expect(status.state).toBe('needs_attention');
+    expect(status.label).toBe(SYNC_ATTENTION_LABEL);
+    expect(status.label).not.toBe(SYNC_CONFIRMED_LABEL);
+    expect(status.confirmedAt).toBeNull();
+  });
+
+  it('says in plain words what happened, and names the cell', async () => {
+    const h = harness();
+    const sampleId = 'AP-2026-10-24-52';
+    const rowNumber = await registerAndConfirm(h, sampleId);
+    h.workbook.setCell(STAGE, rowNumber, COMMENT_COL, HAND_TYPED_NOTE);
+
+    const results = await processEvent(
+      h.deps,
+      event({ sampleId, kind: 'results_recorded', revision: 2, row: row(sampleId, 'results') }),
+    );
+
+    const message = results.decision?.action === 'blocked' ? results.decision.message : '';
+    expect(message).toContain('edited');
+    expect(message).toContain('Google Sheets');
+    expect(message).toContain(`row ${rowNumber}`);
+    expect(message).toContain(TAB);
+    expect(message).toContain(sampleId);
+    // The cell, by the column letter and the row-4 header an administrator
+    // sees in the workbook, with the text that was typed.
+    const commentField = STAGE_SCHEMAS[STAGE].fields[COMMENT_COL]!;
+    expect(message).toContain(`column ${commentField.columnLetter}`);
+    expect(message).toContain(commentField.sheetHeader);
+    expect(message).toContain(HAND_TYPED_NOTE);
+    // And that nothing was overwritten, which is the part an operator acts on.
+    expect(message).toMatch(/left untouched|nothing was overwritten/);
+
+    // The differing cells travel with the decision, which is stored in
+    // `sheet_sync_outbox.last_decision`.
+    const differences = results.decision?.action === 'blocked' ? results.decision.differences : undefined;
+    expect(differences).toEqual([{ index: COMMENT_COL, expected: '', actual: HAND_TYPED_NOTE }]);
+  });
+
+  it('refuses a row carrying the identifier that this system never wrote', async () => {
+    // The pre-existing-row collision. `allocate_sample_id` restarts at 01 per
+    // date, so a back-dated collection can mint an identifier a hand-entered
+    // row already carries. Same harm as a hand edit, by a different route.
+    const h = harness();
+    const sampleId = 'AP-2026-10-24-53';
+    const foreign = row(sampleId, 'entered by hand');
+    foreign[COMMENT_COL] = 'Accepted. Aflatoxin within vendor reference.';
+    h.workbook.writeRow(STAGE, FIRST_DATA_ROW, foreign);
+    expect(h.workbook.countRecords(STAGE)).toBe(1);
+
+    const registered = await processEvent(h.deps, event({ sampleId, revision: 1 }));
+
+    expect(registered.decision).toMatchObject({
+      action: 'blocked',
+      reason: 'row_not_authored_by_app',
+    });
+    expect(registered.wrote).toBe(false);
+    expect(registered.transition.deadLettered).toBe(true);
+    // Untouched, and NOT duplicated either: refusing must not append a second
+    // operational row beside the one it refused to overwrite.
+    expect(h.workbook.rawRow(STAGE, FIRST_DATA_ROW)?.[COMMENT_COL]).toBe(
+      'Accepted. Aflatoxin within vendor reference.',
+    );
+    expect(h.workbook.countRecords(STAGE)).toBe(1);
+
+    const message = registered.decision?.action === 'blocked' ? registered.decision.message : '';
+    expect(message).toContain('never written a row');
+    expect(message).toContain(sampleId);
+  });
+
+  it('blocks on content alone, with no knowledge of who edited what', () => {
+    // The decision as a pure function, so the rule is readable without the
+    // worker: a located row whose content matches none of the app's own
+    // projections is refused, and one that matches is not.
+    const sampleId = 'AP-2026-10-24-54';
+    const ours = row(sampleId, 'ours');
+    const edited = [...ours];
+    edited[COMMENT_COL] = HAND_TYPED_NOTE;
+
+    expect(
+      decideProjection({
+        stage: STAGE,
+        sampleId,
+        intendedRow: row(sampleId, 'next'),
+        located: { rowNumber: 9, values: edited },
+        confirmedRowNumber: 9,
+        priorProjections: [row(sampleId, 'next'), ours],
+        lastConfirmedRow: ours,
+      }),
+    ).toMatchObject({ action: 'blocked', reason: 'row_edited_in_sheet' });
+
+    // POSITIVE CONTROL for the same call: identical in every respect except
+    // that the sheet holds what we left there. If this did not update, the
+    // check above would be evidence of a function that refuses everything.
+    expect(
+      decideProjection({
+        stage: STAGE,
+        sampleId,
+        intendedRow: row(sampleId, 'next'),
+        located: { rowNumber: 9, values: ours },
+        confirmedRowNumber: 9,
+        priorProjections: [row(sampleId, 'next'), ours],
+        lastConfirmedRow: ours,
+      }),
+    ).toMatchObject({ action: 'update', rowNumber: 9, reason: 'row_located' });
+  });
+});
+
+describe('the hand-edit guard does not block the work it has to allow', () => {
+  it('register then results, with no human edit, still updates the row', async () => {
+    // THE SINGLE MOST IMPORTANT FALSE POSITIVE. If this blocks, the product is
+    // broken: it is the normal life of every sample.
+    const h = harness();
+    const sampleId = 'AP-2026-10-24-55';
+    const rowNumber = await registerAndConfirm(h, sampleId);
+
+    const results = await processEvent(
+      h.deps,
+      event({ sampleId, kind: 'results_recorded', revision: 2, row: row(sampleId, 'results') }),
+    );
+
+    expect(results.decision).toMatchObject({ action: 'update', rowNumber, reason: 'row_located' });
+    expect(results.wrote).toBe(true);
+    expect(results.outcome.kind).toBe('confirmed');
+    expect(results.transition.state).toBe('confirmed');
+    // The results are actually in the sheet, in the row that already existed.
+    expect(h.workbook.rawRow(STAGE, rowNumber)?.[4]).toBe('results');
+    expect(h.workbook.countRecords(STAGE)).toBe(1);
+  });
+
+  it('overwrites an unedited row exactly as it did before', async () => {
+    // A correction over a confirmed row. The cell the app owns is replaced,
+    // which is the behaviour the guard must leave alone.
+    const h = harness();
+    const sampleId = 'AP-2026-10-24-56';
+    const rowNumber = await registerAndConfirm(h, sampleId);
+    expect(h.workbook.rawRow(STAGE, rowNumber)?.[4]).toBe('a');
+
+    const corrected = await processEvent(
+      h.deps,
+      event({ sampleId, kind: 'correction_applied', revision: 2, row: row(sampleId, 'corrected') }),
+    );
+
+    expect(corrected.decision).toMatchObject({ action: 'update', reason: 'row_located' });
+    expect(corrected.outcome.kind).toBe('confirmed');
+    expect(h.workbook.rawRow(STAGE, rowNumber)?.[4]).toBe('corrected');
+  });
+
+  it('still no-ops a retry whose write landed before the timeout', async () => {
+    const h = harness();
+    const sampleId = 'AP-2026-10-24-57';
+    // The write reaches Google and the response never does.
+    h.adapter.failNext('upsertOperationalRow', { kind: 'timeout', landsFirst: true });
+    const first = await processEvent(h.deps, event({ sampleId, revision: 1 }));
+
+    // DISCRIMINATORS, because a mis-keyed fault injection is silently a request
+    // for NO fault, and a plain successful write also leaves one row present.
+    // Only the outcome distinguishes them: a successful write reports
+    // `confirmed`, this path must report `unknown`.
+    expect(first.outcome.kind).toBe('unknown');
+    expect(first.transition.reconcileFirst).toBe(true);
+    expect(h.workbook.countRecords(STAGE)).toBe(1);
+
+    const retry = await processEvent(
+      h.deps,
+      event({
+        sampleId,
+        revision: 1,
+        attempts: 1,
+        reconcileFirst: true,
+        state: 'retry_scheduled',
+      }),
+    );
+
+    expect(retry.decision).toMatchObject({ action: 'noop', reason: 'already_current' });
+    expect(retry.outcome.kind).toBe('noop');
+    expect(h.workbook.countRecords(STAGE)).toBe(1);
+  });
+
+  it('allows the next revision when an earlier write landed but never confirmed', async () => {
+    // The ordering that makes "compare against the last CONFIRMED row" wrong
+    // on its own. Revision 1 lands and times out, so nothing is confirmed
+    // while its row IS in the sheet. `rpc_claim_outbox_batch` orders by
+    // next_retry_at, and a freshly enqueued revision 2 sorts ahead of a
+    // revision 1 waiting out a backoff — so revision 2 arrives first and finds
+    // content no confirmed baseline explains. It is still the app's own row.
+    const h = harness();
+    const sampleId = 'AP-2026-10-24-58';
+    h.adapter.failNext('upsertOperationalRow', { kind: 'timeout', landsFirst: true });
+    const first = await processEvent(h.deps, event({ sampleId, revision: 1 }));
+    expect(first.outcome.kind).toBe('unknown');
+    expect(await h.store.confirmedRowNumber(`uuid-${sampleId}`)).toBeNull();
+    expect(h.workbook.countRecords(STAGE)).toBe(1);
+
+    const results = await processEvent(
+      h.deps,
+      event({ sampleId, kind: 'results_recorded', revision: 2, row: row(sampleId, 'results') }),
+    );
+
+    expect(results.decision).toMatchObject({ action: 'update', reason: 'row_located' });
+    expect(results.outcome.kind).toBe('confirmed');
+    expect(h.workbook.rawRow(STAGE, FIRST_DATA_ROW)?.[4]).toBe('results');
+  });
+
+  it('still updates a row the sheet was sorted into a different position', async () => {
+    const h = harness();
+    const a = 'AP-2026-10-24-59';
+    const b = 'AP-2026-10-24-60';
+    await registerAndConfirm(h, b);
+    const rowA = await registerAndConfirm(h, a);
+    expect(rowA).toBe(FIRST_DATA_ROW + 1);
+
+    // A user clicks Sort A->Z. The values do not change; only the positions.
+    h.workbook.sortDataRowsByColumn(STAGE, 0, 'asc');
+    expect(h.workbook.rawRow(STAGE, FIRST_DATA_ROW)?.[0]).toBe(a);
+
+    const results = await processEvent(
+      h.deps,
+      event({ sampleId: a, kind: 'results_recorded', revision: 2, row: row(a, 'results') }),
+    );
+
+    expect(results.decision).toMatchObject({
+      action: 'update',
+      rowNumber: FIRST_DATA_ROW,
+      reason: 'relocated_after_drift',
+    });
+    expect(results.outcome.kind).toBe('confirmed');
+    expect(h.workbook.countRecords(STAGE)).toBe(2);
+  });
+
+  it('treats trailing blanks the sheet dropped on read as agreement', () => {
+    // The guard reuses `rowsEqual`, so it inherits the width normalisation
+    // that `verifyPersistedRow` has always depended on. A guard that compared
+    // raw arrays would block every single update, because the API returns
+    // fewer cells than were written.
+    const sampleId = 'AP-2026-10-24-61';
+    const ours = row(sampleId, 'ours');
+    const asRead = ours.slice(0, 5);
+    expect(asRead.length).toBeLessThan(ours.length); // the condition is real
+
+    expect(
+      decideProjection({
+        stage: STAGE,
+        sampleId,
+        intendedRow: row(sampleId, 'next'),
+        located: { rowNumber: 9, values: asRead },
+        confirmedRowNumber: 9,
+        priorProjections: [row(sampleId, 'next'), ours],
+        lastConfirmedRow: ours,
+      }),
+    ).toMatchObject({ action: 'update', reason: 'row_located' });
   });
 });
