@@ -141,6 +141,39 @@ export type AdminAction = (typeof ADMIN_ACTIONS)[number];
  * `delegationGrantRefusal` below, so it cannot be used to mint quality
  * authority.
  */
+/**
+ * The operation name each admin action's RPC hands `claim_mutation`.
+ *
+ * THIS IS A CONTRACT WITH THE SQL, NOT A LABEL. `runMutation` claims the
+ * idempotency key before calling the RPC; the RPC claims the same key again
+ * from inside Postgres; `claim_mutation` raises
+ * `BFF_IDEMPOTENCY_CONFLICT: operation_mismatch` if the two names differ. Every
+ * admin action used to send `admin_action.<action>` while its RPC claimed a
+ * bare literal, so EVERY administrator action was refused before it did any
+ * work — proved by execution, with the control that the identical call with
+ * matching names is accepted.
+ *
+ * Note that the two sides do not even share a vocabulary: `approve_access` is
+ * served by `rpc_approve_account`, and both `deny_access` and `set_status` are
+ * served by `rpc_set_user_status`. That is why the audit record keeps the
+ * specific `admin_action.<action>` name — an audit trail that cannot tell a
+ * denial from a status change is worse than one that can — and only the
+ * registry uses the name below.
+ *
+ * `tests/idempotencyOperationContract.test.ts` checks every entry here against
+ * the literal actually present in the migrations. Add an action without adding
+ * it here and that test fails rather than the plant finding out.
+ */
+export const ADMIN_ACTION_CLAIM_OPERATION: Readonly<Record<AdminAction, string>> = {
+  approve_access: 'approve_account',
+  deny_access: 'set_user_status',
+  set_status: 'set_user_status',
+  set_roles: 'set_user_roles',
+  create_delegation: 'grant_delegation',
+  revoke_delegation: 'revoke_delegation',
+  upsert_controlled_value: 'upsert_controlled_value',
+};
+
 export const ADMIN_ACTION_PERMISSION: Readonly<Record<AdminAction, Permission>> = {
   approve_access: 'user.approve_access',
   deny_access: 'user.approve_access',

@@ -425,6 +425,8 @@ function assertKnownParameter(stage: Stage, parameterKey: string): void {
 
 export const PROPOSE_SPECIFICATION_SPEC: MutationSpec<Record<string, unknown>> = {
   operation: 'specification_action.propose',
+  // `rpc_propose_specification` claims 'propose_specification' (0015:622).
+  claimOperation: 'propose_specification',
   permission: 'spec.propose',
   subjectType: 'specification_version',
   subjectId: () => null,
@@ -559,6 +561,8 @@ export const PROPOSE_SPECIFICATION_SPEC: MutationSpec<Record<string, unknown>> =
 
 export const SUBMIT_SPECIFICATION_SPEC: MutationSpec<Record<string, unknown>> = {
   operation: 'specification_action.submit_review',
+  // `rpc_submit_specification_for_review` claims this (0015:776).
+  claimOperation: 'submit_specification_for_review',
   permission: 'spec.propose',
   subjectType: 'specification_version',
   subjectId: (body) =>

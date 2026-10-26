@@ -38,11 +38,34 @@ import { recordAudit } from '../adapters/authorize.ts';
 
 export type HoldAction = 'raise_hold' | 'clear_hold';
 
+/**
+ * The operation each hold action's RPC hands `claim_mutation`.
+ *
+ * See `MutationSpec.claimOperation`. Checked against the migrations by
+ * `tests/idempotencyOperationContract.test.ts`.
+ */
+const HOLD_ACTION_CLAIM_OPERATION: Readonly<Record<HoldAction, string>> = {
+  raise_hold: 'raise_hold',
+  clear_hold: 'clear_hold',
+};
+
 export function holdSpec(action: HoldAction): MutationSpec<Record<string, unknown>> {
   const raising = action === 'raise_hold';
 
   return {
     operation: `sample_action.${action}`,
+    // `rpc_raise_hold` / `rpc_clear_hold` hand `claim_mutation` the bare
+    // name (0015:377, :483). Without this the pre-claim and the RPC's
+    // re-claim disagreed and every hold action was refused.
+    //
+    // Spelled as a map rather than `action` directly, even though the two
+    // happen to coincide today: the handler's action vocabulary and the
+    // RPC's operation vocabulary are separate namespaces that merely
+    // overlap here (in `admin.ts` they do not overlap at all), and an
+    // identifier that silently tracks one of them is how the two drifted
+    // apart in the first place. It is also what lets the contract test
+    // resolve the value.
+    claimOperation: HOLD_ACTION_CLAIM_OPERATION[action],
     /**
      * The permission IS the control here, so it is the pipeline's own gate
      * rather than a second check inside `run`: `runMutation` authorises before
