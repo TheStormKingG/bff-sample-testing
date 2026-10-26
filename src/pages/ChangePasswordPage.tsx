@@ -29,7 +29,7 @@ export interface ChangePasswordPageProps {
    * invalidation working; calling the hook's refetch directly cannot drift.
    * Both are done — see `handleSubmit`.
    */
-  readonly onChanged: () => void;
+  readonly onChanged: () => void | Promise<void>;
   /**
    * True when this account is not yet approved.
    *
@@ -189,12 +189,16 @@ export function ChangePasswordPage({
    * So the refetch now happens when the person presses Continue, by which time
    * they have seen the confirmation and a remount costs nothing.
    */
-  function reload() {
+  async function reload(): Promise<void> {
     // Two deliberate calls. `invalidateQueries` reaches any other consumer of
     // the profile; `onChanged` is the mounted hook's own refetch and does not
     // depend on this file guessing that hook's query key correctly.
+    //
+    // AWAITED, because the caller navigates afterwards. Firing and forgetting
+    // left `/` to be decided by the stale profile, which still said a change
+    // was outstanding, so the router bounced straight back to this form.
     void queryClient.invalidateQueries({ queryKey: ['profile'] });
-    onChanged();
+    await onChanged();
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -283,8 +287,10 @@ export function ChangePasswordPage({
                 variant="primary"
                 size="lg"
                 onClick={() => {
-                  reload();
-                  navigate('/', { replace: true });
+                  void (async () => {
+                    await reload();
+                    navigate('/', { replace: true });
+                  })();
                 }}
               >
                 Continue

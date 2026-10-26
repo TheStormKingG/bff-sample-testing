@@ -218,7 +218,17 @@ export interface UseProfileResult {
   readonly authority: AuthorityContext | null;
   readonly isActive: boolean;
   readonly error: Error | null;
-  readonly refetch: () => void;
+  /**
+   * Re-read the profile. RESOLVES WHEN THE READ HAS LANDED.
+   *
+   * It returns a promise because at least one caller must not act until the
+   * new answer is in: the change-password screen navigates away only once the
+   * obligation it was gating on is known to be discharged. Firing and
+   * forgetting sent it to `/` while the stale profile still said a change was
+   * outstanding, and the router bounced it straight back to the form — a
+   * password that had in fact been saved, presented as if it had not.
+   */
+  readonly refetch: () => Promise<void>;
   /** UI affordance check only. Never a security decision. */
   readonly can: (permission: Permission) => boolean;
 }
@@ -269,8 +279,8 @@ export function useProfile(
   );
 
   const queryRefetch = query.refetch;
-  const refetch = useCallback(() => {
-    void queryRefetch();
+  const refetch = useCallback(async () => {
+    await queryRefetch();
   }, [queryRefetch]);
 
   const state: ProfileState =
