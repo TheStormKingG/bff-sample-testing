@@ -40,3 +40,6 @@ BFF_Digital_Sample_Testing_Concept_Note.md
 # Python bytecode from the verification scripts.
 __pycache__/
 *.pyc
+
+# A temporary password handed over by hand. Never commit a credential.
+TEMP-PASSWORD-*.txt
