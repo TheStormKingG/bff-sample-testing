@@ -172,6 +172,45 @@ export const PASSWORD_SETTING_ADMIN_ACTIONS: readonly AdminAction[] = [
  * would merge the two and quietly remove a control; `create_account`
  * deliberately does not approve the account it creates.
  */
+/**
+ * The operation name each admin action's RPC hands `claim_mutation`.
+ *
+ * THIS IS A CONTRACT WITH THE SQL, NOT A LABEL. `runMutation` claims the
+ * idempotency key before calling the RPC; the RPC claims the same key again
+ * from inside Postgres; `claim_mutation` raises
+ * `BFF_IDEMPOTENCY_CONFLICT: operation_mismatch` if the two names differ. Every
+ * admin action used to send `admin_action.<action>` while its RPC claimed a
+ * bare literal, so EVERY administrator action was refused before it did any
+ * work — proved by execution, with the control that the identical call with
+ * matching names is accepted.
+ *
+ * Note that the two sides do not even share a vocabulary: `approve_access` is
+ * served by `rpc_approve_account`, and both `deny_access` and `set_status` are
+ * served by `rpc_set_user_status`. That is why the audit record keeps the
+ * specific `admin_action.<action>` name — an audit trail that cannot tell a
+ * denial from a status change is worse than one that can — and only the
+ * registry uses the name below.
+ *
+ * `tests/idempotencyOperationContract.test.ts` checks every entry here against
+ * the literal actually present in the migrations. Add an action without adding
+ * it here and that test fails rather than the plant finding out.
+ */
+export const ADMIN_ACTION_CLAIM_OPERATION: Readonly<Record<AdminAction, string>> = {
+  approve_access: 'approve_account',
+  deny_access: 'set_user_status',
+  set_status: 'set_user_status',
+  set_roles: 'set_user_roles',
+  create_delegation: 'grant_delegation',
+  revoke_delegation: 'revoke_delegation',
+  upsert_controlled_value: 'upsert_controlled_value',
+  // These two are served by `rpc_record_admin_password_set`, which resolves the
+  // operation FROM the claim and validates it against its own two-member
+  // constant, so the prefixed name IS what it expects. Changing either string
+  // without changing `c_operations` in migration 0019 breaks both actions.
+  create_account: 'admin_action.create_account',
+  set_password: 'admin_action.set_password',
+};
+
 export const ADMIN_ACTION_PERMISSION: Readonly<Record<AdminAction, Permission>> = {
   approve_access: 'user.approve_access',
   deny_access: 'user.approve_access',

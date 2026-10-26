@@ -47,6 +47,7 @@ import {
 } from '../rpc.ts';
 import { recordAudit, requireSeparation } from '../adapters/authorize.ts';
 import {
+  ADMIN_ACTION_CLAIM_OPERATION,
   ADMIN_ACTION_PERMISSION,
   delegationGrantRefusal,
   PASSWORD_SETTING_ADMIN_ACTIONS,
@@ -319,6 +320,9 @@ function reportArmingFailure(
 export function adminSpec(action: AdminAction): MutationSpec<Record<string, unknown>> {
   return {
     operation: `admin_action.${action}`,
+    // The RPC re-claims the key under its own literal; see
+    // ADMIN_ACTION_CLAIM_OPERATION for why these differ at all.
+    claimOperation: ADMIN_ACTION_CLAIM_OPERATION[action],
     secretBodyKeys: ADMIN_SECRET_BODY_KEYS,
     /**
      * The permission for THIS action, from the total table. `runMutation`
