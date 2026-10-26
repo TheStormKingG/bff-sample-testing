@@ -104,9 +104,58 @@ export async function signInWithGoogle(): Promise<{ error: Error | null }> {
   return { error: error ?? null };
 }
 
+/**
+ * Sign out, and ACTUALLY sign out even when the server refuses.
+ *
+ * `supabase.auth.signOut()` posts to `/logout` with the current access token.
+ * If the server rejects that token the call returns an error and leaves the
+ * stored session in place — so the app still believes somebody is signed in
+ * and the button appears to do nothing.
+ *
+ * That is not a rare case here; it is the NORMAL case at the one moment a
+ * person most wants out. An administrator resetting a password revokes the
+ * holder's existing session server-side, so their next action gets a 401. They
+ * are then looking at the change-password screen, holding a credential the
+ * server will not accept, pressing a Sign out button that cannot work.
+ * Observed exactly that way on the live deployment: a locally valid session
+ * with 44 minutes left, 401 and 403 from the server, and the button inert.
+ *
+ * A shared plant tablet makes this worse than an annoyance. If the previous
+ * person cannot sign out, the next one picks up a device still holding an
+ * identity, and every record they create is attributed to somebody else —
+ * which is the one thing this application exists to prevent.
+ *
+ * So a failed server logout falls back to a LOCAL one, which clears the stored
+ * session without asking permission from a server that has already rejected
+ * us. The remote session is revoked anyway in the case that causes this; and
+ * where it is not, leaving a token alive on a server is a far smaller problem
+ * than leaving one alive on a tablet in the plant.
+ *
+ * The returned error is the SECOND failure, not the first: a first attempt
+ * that fails and a fallback that succeeds is a successful sign-out, and
+ * reporting it would send somebody to fix a problem that no longer exists.
+ */
 export async function signOut(): Promise<{ error: Error | null }> {
   const { error } = await supabase.auth.signOut();
-  return { error: error ?? null };
+  if (error === null) return { error: null };
+
+  const { error: localFailure } = await supabase.auth.signOut({ scope: 'local' });
+  if (localFailure === null) return { error: null };
+
+  /**
+   * Last resort: drop the stored session by hand.
+   *
+   * Reached only if the library itself could not clear its own storage. The
+   * key is the one configured above; it is written out rather than imported
+   * from the client options because this path runs when the client is already
+   * not behaving, and a value that cannot be read is no use here.
+   */
+  try {
+    window.localStorage.removeItem('bff-sample-testing-auth');
+    return { error: null };
+  } catch {
+    return { error: localFailure };
+  }
 }
 
 // ---------------------------------------------------------------------------
