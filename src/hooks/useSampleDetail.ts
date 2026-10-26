@@ -26,6 +26,7 @@ import {
   type SpecificationRule,
 } from '@/lib/assessment';
 import { evaluateRelease, type ReleaseEvaluation } from '@/lib/workflow';
+import { newIdempotencyKey } from '@/hooks/useRegisterSample';
 import {
   FUNCTIONS,
   TABLES,
@@ -597,6 +598,26 @@ export interface SampleActionInput {
   /** True when the caller has been told the decision records an override. */
   readonly acknowledgedOverride?: boolean;
   readonly fieldKey?: string;
+  /**
+   * The key the server replays a retry under.
+   *
+   * NOT OPTIONAL ON THE WIRE, only in this type. `runMutation` resolves
+   * `ctx.idempotencyKey ?? body['idempotencyKey'] ?? body['idempotency_key']`
+   * and refuses the request with `bad_request` if none of the three is a valid
+   * key — and it does so BEFORE `authenticate()`, before the permission check
+   * and before the handler runs. This hook sent none at all, so every sample
+   * decision it posted was refused at that first line: not "a replay could
+   * duplicate a record", but "the review, the hold, the correction request and
+   * the disposition never worked". `useAdminAction` carries a comment
+   * recording the identical discovery for the administrative actions.
+   *
+   * A key is therefore generated per call when the caller supplies none, which
+   * is what every existing call site relies on. A caller that must be able to
+   * retry THE SAME act — one the operator has already been told succeeded, say
+   * — passes its own key, so the second request replays the first outcome
+   * instead of performing a second act (PRD §10.3).
+   */
+  readonly idempotencyKey?: string;
 }
 
 export interface SampleActionResult {
@@ -614,7 +635,20 @@ export function useSampleAction() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (input: SampleActionInput): Promise<SampleActionResult> => {
-      const { data, error } = await db.functions.invoke(FUNCTIONS.sampleAction, { body: input });
+      // Generated here rather than in the component, so no call site can omit
+      // it. `newIdempotencyKey` throws where the browser has no secure random
+      // source; inside the mutation function that becomes a reported failure
+      // naming the cause, instead of a throw out of a click handler.
+      const { idempotencyKey, ...rest } = input;
+      const key = idempotencyKey ?? newIdempotencyKey();
+      const { data, error } = await db.functions.invoke(FUNCTIONS.sampleAction, {
+        // The header is the primary carrier; the body field is the documented
+        // fallback for a proxy that strips custom headers. `NON_PAYLOAD_KEYS`
+        // in `adapters/mutation.ts` excludes `idempotencyKey` from the payload
+        // hash, so sending both cannot manufacture an idempotency conflict.
+        body: { ...rest, idempotencyKey: key },
+        headers: { 'Idempotency-Key': key },
+      });
       if (error) throw new Error(error.message);
       const result = data as SampleActionResult | null;
       if (!result) throw new Error('The server returned no result. The action was not recorded.');

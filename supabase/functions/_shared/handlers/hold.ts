@@ -54,17 +54,16 @@ export function holdSpec(action: HoldAction): MutationSpec<Record<string, unknow
 
   return {
     operation: `sample_action.${action}`,
-    // `rpc_raise_hold` / `rpc_clear_hold` hand `claim_mutation` the bare
-    // name (0015:377, :483). Without this the pre-claim and the RPC's
-    // re-claim disagreed and every hold action was refused.
+    // `rpc_raise_hold` / `rpc_clear_hold` hand `claim_mutation` the bare name
+    // (0015:377, :483). Without this the pre-claim and the RPC's re-claim
+    // disagreed and every hold action was refused. See `claimOperation`.
     //
     // Spelled as a map rather than `action` directly, even though the two
-    // happen to coincide today: the handler's action vocabulary and the
-    // RPC's operation vocabulary are separate namespaces that merely
-    // overlap here (in `admin.ts` they do not overlap at all), and an
-    // identifier that silently tracks one of them is how the two drifted
-    // apart in the first place. It is also what lets the contract test
-    // resolve the value.
+    // happen to coincide today: the handler's action vocabulary and the RPC's
+    // operation vocabulary are separate namespaces that merely overlap here
+    // (in `admin.ts` they do not overlap at all), and an identifier that
+    // silently tracks one of them is how the two drifted apart in the first
+    // place. It is also what lets the contract test resolve the value.
     claimOperation: HOLD_ACTION_CLAIM_OPERATION[action],
     /**
      * The permission IS the control here, so it is the pipeline's own gate

@@ -10,7 +10,7 @@
  *
  *   1. parse the body and the idempotency key           (reject early, cheaply)
  *   2. AUTHENTICATE from the bearer token only
- *   3. hash the canonical payload
+ *   3. hash the canonical payload, WITHHOLDING credential-bearing keys
  *   4. consult the request registry, atomically claim the key
  *   5. AUTHORISE, logging any denial
  *   6. run the endpoint's own work (validate, then one transactional RPC)
@@ -35,7 +35,7 @@ import {
   isValidIdempotencyKey,
   IN_PROGRESS_TIMEOUT_MS,
 } from '../idempotency.ts';
-import { payloadHash } from '../hash.ts';
+import { requestPayloadHash } from '../hash.ts';
 import type { Permission } from '../../../../src/lib/roles.ts';
 import {
   authenticate,
@@ -53,9 +53,6 @@ import {
   RESPONSE_INCOMPLETE_REASON_PREFIX,
 } from '../commitOutcome.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.47.10';
-
-/** Keys excluded from the payload hash, because they are not payload. */
-const NON_PAYLOAD_KEYS = new Set(['idempotencyKey', 'idempotency_key']);
 
 export interface MutationArgs {
   readonly actor: Actor;
@@ -125,19 +122,24 @@ export interface MutationSpec<TResult> {
   readonly subjectType: string;
   /** Subject id for the audit event, read from the body before authorisation. */
   readonly subjectId?: (body: Record<string, unknown>) => string | null;
+  /**
+   * Body keys carrying a credential, which must never reach the payload hash.
+   *
+   * DECLARATION, NOT ENFORCEMENT. `requestPayloadHash` withholds any key whose
+   * NAME is credential-shaped whether or not it appears here, so forgetting
+   * this field cannot cause the leak it exists to prevent — see the long note
+   * in `_shared/hash.ts`. What declaring it buys is that the intent is
+   * readable at the spec, that `tests/payloadSecrets.test.ts` can compare the
+   * declared set against every body key the tree actually reads, and that a
+   * key withheld by shape alone is reported as undeclared in the server log
+   * instead of silently.
+   *
+   * It also means a credential-bearing key whose name is NOT
+   * credential-shaped is still protected, provided whoever adds it declares it
+   * here — which is the whole of the residual risk, stated in `hash.ts`.
+   */
+  readonly secretBodyKeys?: readonly string[];
   readonly run: (args: MutationArgs) => Promise<TResult>;
-}
-
-function canonicalPayload(
-  operation: string,
-  body: Record<string, unknown>,
-): Record<string, unknown> {
-  const payload: Record<string, unknown> = { _operation: operation };
-  for (const [key, value] of Object.entries(body)) {
-    if (NON_PAYLOAD_KEYS.has(key)) continue;
-    payload[key] = value;
-  }
-  return payload;
 }
 
 export function readString(
@@ -324,8 +326,34 @@ export async function runMutation<TResult>(
   const registry = new IdempotencyStore(admin);
   const now = new Date();
 
-  // 3. Canonical payload hash.
-  const hash = payloadHash(canonicalPayload(spec.operation, body));
+  // 3. Canonical payload hash, with credential-bearing keys withheld.
+  //
+  // The digest is stored in `public.idempotency_requests.payload_hash`, on
+  // which `authenticated` holds SELECT, and it is an unsalted single round of
+  // sha256. A 10–14 character password behind that, alongside its own
+  // plaintext context, is recoverable — so the one thing this step may never
+  // do is hash a credential. The filter lives inside `requestPayloadHash` in
+  // `_shared/hash.ts`, not here, so there is no call site that can omit it.
+  const digest = requestPayloadHash(spec.operation, body, spec.secretBodyKeys);
+  const hash = digest.hash;
+
+  if (digest.undeclaredSecretKeys.length > 0) {
+    // Withheld on the strength of its NAME while no spec declared it. The
+    // digest is safe; the declaration is out of date. Logged rather than
+    // thrown, because refusing a live request over a naming coincidence would
+    // be a worse failure than the one being reported. KEY NAMES ONLY.
+    console.error(
+      JSON.stringify({
+        event: 'undeclared_credential_body_key',
+        operation: spec.operation,
+        correlationId: ctx.correlationId,
+        keys: digest.undeclaredSecretKeys,
+        detail:
+          'withheld from the payload hash by name; add it to the spec’s secretBodyKeys',
+      }),
+    );
+  }
+
   // The registry is keyed by the name the RPC will re-claim under; the audit
   // record below still uses the specific `spec.operation`. See `claimOperation`.
   const claimOperation = spec.claimOperation ?? spec.operation;

@@ -55,6 +55,7 @@ import { signOut } from '@/lib/supabase';
 
 import LoginPage from '@/pages/LoginPage';
 import PendingAccessPage from '@/pages/PendingAccessPage';
+import ChangePasswordPage from '@/pages/ChangePasswordPage';
 import DashboardPage from '@/pages/DashboardPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 
@@ -127,12 +128,34 @@ function AccessCheckFailed({
   );
 }
 
-function AuthenticatedRoutes() {
+function AuthenticatedRoutes({
+  email,
+  onProfileChanged,
+}: {
+  readonly email: string | null;
+  readonly onProfileChanged: () => void;
+}) {
   return (
     <Routes>
       {/* Already signed in and approved: these two have nothing left to say. */}
       <Route path="/login" element={<Navigate to="/" replace />} />
       <Route path="/pending" element={<Navigate to="/" replace />} />
+
+      {/*
+        Reachable voluntarily, by somebody who owes no forced change and simply
+        wants a different password. Mounted OUTSIDE `AppLayout`, like the two
+        redirects above, because the screen is full-page and holds no query.
+
+        Not mounting it here would be the worse option rather than the stricter
+        one: the route exists in the app, so an active user who followed a
+        bookmark to it would fall through to `NotFoundPage` and be told a real
+        address does not exist. Nothing is relaxed by mounting it — the page's
+        only action changes the caller's own password.
+      */}
+      <Route
+        path="/change-password"
+        element={<ChangePasswordPage email={email} onChanged={onProfileChanged} />}
+      />
 
       <Route path="/" element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
@@ -266,12 +289,133 @@ function AppRoutes() {
               email={profile.profile.email}
               status={profile.profile.status}
               onRecheck={profile.refetch}
+              /*
+                WHY THIS BRANCH WINS OVER THE PASSWORD BRANCH BELOW, AND WHY
+                THAT MADE THIS SCREEN THE PLACE THE REMEDY HAS TO LIVE.
+
+                Both facts are true of a pending-and-armed account, and the
+                order decides which one is the headline. The test is which fact
+                is STILL true once the holder has done everything in their
+                power: replacing the password does not approve the account,
+                whereas being approved does not discharge the password. Only
+                the approval survives the holder's own best effort, so the
+                approval is the honest headline — and it is also the ordering
+                `public.require_permission` uses (status before credential), so
+                the screen agrees with the reason the server would give.
+
+                That ordering was right and, on its own, produced a dead end:
+                this screen said nothing about passwords, so the one action the
+                holder could take was reachable only by typing
+                `#/change-password` by hand. Hence the two props below. The
+                branch order is the decision; the remedy block is what makes
+                the decision defensible rather than a trap.
+
+                It matters more since migration 0020 gated `is_active_user()`:
+                an armed account now fails 36 of 37 row-level-security
+                policies, so any screen carrying a query renders empty for it.
+                `PendingAccessPage` holds no query at all, which makes it the
+                one screen that provably renders correctly here.
+              */
+              mustChangePassword={profile.profile.mustChangePassword}
+              createdByAdministrator={profile.profile.passwordSetByAdminAt !== null}
+            />
+          }
+        />
+        {/*
+          Also reachable while not yet approved, and that is deliberate.
+          Migration 0019 states it in `rpc_record_password_changed`: "a
+          'pending' administrator-created account must be able to clear its
+          temporary credential before it is approved", which is why that RPC
+          has no status check. The server permits it, so the UI must offer a
+          way to do it — and since the pending screen now LINKS here, this
+          route is no longer only reachable by a hand-typed address.
+
+          `approvalPending` is what stops the two screens contradicting each
+          other. The default copy says "before you start" and, on success,
+          "from here on the records you sign are yours" — neither is true for
+          an account that will be sent straight back to `/pending`.
+        */}
+        <Route
+          path="/change-password"
+          element={
+            <ChangePasswordPage
+              email={profile.profile.email}
+              onChanged={profile.refetch}
+              approvalPending
             />
           }
         />
         {/* A not-yet-approved account has exactly one destination. No app
             route is mounted at all, so there is nothing for it to request. */}
         <Route path="*" element={<Navigate to="/pending" replace />} />
+      </Routes>
+    );
+  }
+
+  /**
+   * THE FORCED PASSWORD CHANGE.
+   *
+   * ==========================================================================
+   * WHY IT IS HERE AND NOT IN A COMPONENT
+   * ==========================================================================
+   * This sits in the same place as the pending and suspended gates above, and
+   * for the same reason: it is the only place a deep link cannot get round.
+   * The branch does not hide a navigation item or disable a button — it
+   * declines to MOUNT any other route, so `#/samples`, `#/admin` and a
+   * bookmark from last week all resolve to the one screen that can clear the
+   * state. A guard placed inside `AppLayout` or inside each page would be a
+   * redirect somebody can race, and a guard placed in a navigation component
+   * would not be a guard at all.
+   *
+   * ORDER MATTERS, AND IT MIRRORS THE SERVER. `public.require_permission`
+   * (migration 0011, extended by 0019) checks the account's STATUS before it
+   * checks the credential, so a suspended account gets the account answer and
+   * not the password answer. The branches here are in that same order, so the
+   * screen a person is shown agrees with the reason the server would give.
+   *
+   * ==========================================================================
+   * THIS IS NOT THE ENFORCEMENT
+   * ==========================================================================
+   * The enforcement is `public.must_change_password()`, and it reaches every
+   * route through TWO INDEPENDENT CHAINS — which is worth stating precisely,
+   * because this comment used to name only the first and that is exactly what
+   * made the hole invisible:
+   *
+   *   RAISING (0011, extended by 0019) `require_permission` consults
+   *     `must_change_password` before the permission itself. This governs the
+   *     RPC and Edge Function chain, and NOTHING ELSE. Row-level-security
+   *     policies do not call it.
+   *   BOOLEAN (0001, gated by 0020) the RLS policies authorise through
+   *     `is_active_user()` and `has_permission()`, non-raising helpers that
+   *     never consulted the credential. Until 0020 an armed account was
+   *     blocked from the Edge Functions and FREE through PostgREST — an
+   *     auditor reproduced a DELETE of its own draft. 0020 put the gate in
+   *     `is_active_user()` (the chokepoint, reached by 36 of 37 policies) and
+   *     restated it in `has_permission()`, and added
+   *     `public.assert_password_gate_on_every_policy()` so a future policy
+   *     authorising through an ungated predicate fails the build.
+   *
+   * So the claim "no permission by any route" is true, and it is true because
+   * of 0020 rather than because of this branch. Deleting this branch would not
+   * grant anybody anything; it would produce an app whose every screen is
+   * refused with no route to the remedy. The flag is read from the two
+   * timestamps on the profile row, which `profiles_select_self` lets the
+   * holder read even while the gate is closed — that policy is 0020's one
+   * declared exemption, and it exists so the remedy stays discoverable.
+   *
+   * Signing out stays possible, and the change-password screen itself works,
+   * because neither needs a permission.
+   */
+  if (profile.profile.mustChangePassword) {
+    return (
+      <Routes>
+        <Route
+          path="/change-password"
+          element={
+            <ChangePasswordPage email={profile.profile.email} onChanged={profile.refetch} />
+          }
+        />
+        <Route path="*" element={<Navigate to="/change-password" replace />} />
       </Routes>
     );
   }
@@ -284,7 +428,10 @@ function AppRoutes() {
 
   return (
     <AccessContext.Provider value={access}>
-      <AuthenticatedRoutes />
+      <AuthenticatedRoutes
+        email={profile.profile.email}
+        onProfileChanged={profile.refetch}
+      />
     </AccessContext.Provider>
   );
 }
