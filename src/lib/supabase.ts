@@ -34,6 +34,16 @@ export function oauthRedirectUrl(): string {
   return new URL(basePath, window.location.origin).toString();
 }
 
+/**
+ * Where the session is stored.
+ *
+ * An explicit key keeps this app's session separate from any other Supabase
+ * app served from the same github.io origin — GitHub Pages shares one origin
+ * across every repository of an account. Named here rather than inlined
+ * because `signOut` has to clear it by hand when the library cannot.
+ */
+const AUTH_STORAGE_KEY = 'bff-sample-testing-auth';
+
 export const supabase = createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_ANON_KEY, {
   auth: {
     /**
@@ -77,7 +87,7 @@ export const supabase = createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_AN
      * one origin across every repository of an account, so the default key
      * would be shared too.
      */
-    storageKey: 'bff-sample-testing-auth',
+    storageKey: AUTH_STORAGE_KEY,
   },
 });
 
@@ -135,12 +145,45 @@ export async function signInWithGoogle(): Promise<{ error: Error | null }> {
  * that fails and a fallback that succeeds is a successful sign-out, and
  * reporting it would send somebody to fix a problem that no longer exists.
  */
+/**
+ * Return the app to a clean, signed-out start.
+ *
+ * NOT merely cosmetic, and not merely belt-and-braces. Two separate reasons:
+ *
+ * 1. A fallback sign-out clears the STORED session but emits no
+ *    `SIGNED_OUT` event, because the library never got a successful logout to
+ *    report. So React still holds the old session and the screen does not
+ *    change — observed on the live deployment: storage empty, user still
+ *    looking at the change-password screen. Clearing the credential without
+ *    changing what is on screen is the worst of both, because the person
+ *    believes they are still signed in and the next request will fail.
+ *
+ * 2. These are SHARED PLANT TABLETS. Signing out should leave nothing of the
+ *    previous person behind, and a reload is the only way to be sure the
+ *    in-memory query cache — other people's samples, results and names — goes
+ *    with the session. Navigating within the app would keep all of it.
+ */
+function returnToSignedOutStart(): void {
+  try {
+    window.location.reload();
+  } catch {
+    // A non-browser host (tests, SSR). The session is already cleared, which
+    // is the part that matters; there is no view here to reset.
+  }
+}
+
 export async function signOut(): Promise<{ error: Error | null }> {
   const { error } = await supabase.auth.signOut();
-  if (error === null) return { error: null };
+  if (error === null) {
+    returnToSignedOutStart();
+    return { error: null };
+  }
 
   const { error: localFailure } = await supabase.auth.signOut({ scope: 'local' });
-  if (localFailure === null) return { error: null };
+  if (localFailure === null) {
+    returnToSignedOutStart();
+    return { error: null };
+  }
 
   /**
    * Last resort: drop the stored session by hand.
@@ -151,7 +194,8 @@ export async function signOut(): Promise<{ error: Error | null }> {
    * not behaving, and a value that cannot be read is no use here.
    */
   try {
-    window.localStorage.removeItem('bff-sample-testing-auth');
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    returnToSignedOutStart();
     return { error: null };
   } catch {
     return { error: localFailure };
