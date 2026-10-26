@@ -166,6 +166,29 @@ export function ChangePasswordPage({
   const problemFor = (id: string): string | null =>
     problems.find((problem) => problem.id === id)?.message ?? null;
 
+  /**
+   * Re-read the profile so the app learns the obligation is discharged.
+   *
+   * MUST NOT BE CALLED FROM THE SUBMIT HANDLER. Doing so was a defect that
+   * reached production and made a successful change look like a failed one.
+   *
+   * The mechanism, because it is not obvious and the next person will be
+   * tempted to put it back: `App` renders this page from TWO different route
+   * trees. While `mustChangePassword` is true it returns a small gated
+   * `<Routes>` of its own; once that flips false it falls through to the
+   * authenticated router, which ALSO mounts `/change-password` — a different
+   * element in a different tree. So refetching here flipped the flag, React
+   * unmounted this component and mounted a fresh one, and `changed` went back
+   * to false. The person saw the empty form again, one instant after their
+   * password had in fact been saved.
+   *
+   * Observed consequence, not a theory: the owner changed their password twice
+   * because the first attempt gave no acknowledgement. The audit trail shows
+   * both `identity.password_changed` events.
+   *
+   * So the refetch now happens when the person presses Continue, by which time
+   * they have seen the confirmation and a remount costs nothing.
+   */
   function reload() {
     // Two deliberate calls. `invalidateQueries` reaches any other consumer of
     // the profile; `onChanged` is the mounted hook's own refetch and does not
@@ -197,7 +220,9 @@ export function ChangePasswordPage({
     setNewPassword('');
     setConfirmation('');
     setChanged(true);
-    reload();
+    // NO reload() here. See the note on `reload` — refetching at this moment
+    // unmounts this component and discards the confirmation the person needs
+    // to see. Continue does it instead.
   }
 
   if (changed) {
@@ -235,9 +260,15 @@ export function ChangePasswordPage({
                 here.
               </p>
             ) : null}
+            {/*
+              Says what is true now. The earlier wording — "your access is
+              being re-checked" — described a refetch that fired on submit,
+              which is exactly the call that destroyed this panel before
+              anybody could read it. Nothing is in flight here; the next step
+              is the person's.
+            */}
             <p className="mt-3 text-sm text-slate-600">
-              Your access is being re-checked. If this screen stays here, use the button
-              below.
+              Your new password is saved. Press Continue to go on.
             </p>
             <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
               {/*

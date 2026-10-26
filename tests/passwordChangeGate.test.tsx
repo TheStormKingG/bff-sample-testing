@@ -370,7 +370,31 @@ describe('the change-password form', () => {
     expect(harness.changeOwnPassword).not.toHaveBeenCalled();
   });
 
-  it('sends the new password once and then re-reads the profile', async () => {
+  /**
+   * THIS TEST PREVIOUSLY ASSERTED THE DEFECT.
+   *
+   * It required the profile to be re-read AS SOON AS the submit succeeded, on
+   * the reasonable-sounding grounds that the app should not keep the state
+   * that put this screen on the tablet. That refetch is exactly what broke the
+   * screen in production.
+   *
+   * `App` renders this page from two different route trees: a small gated
+   * `<Routes>` while `mustChangePassword` is true, and the authenticated
+   * router — which also mounts `/change-password` — once it is false.
+   * Refetching on submit flipped the flag mid-handler, so React unmounted this
+   * component and mounted a different one, `changed` reset to false, and the
+   * person was shown the EMPTY FORM again a moment after their password had
+   * been saved. Reproduced on the live deployment: the server recorded
+   * `identity.password_changed`, and the screen still asked for a password.
+   *
+   * The owner then changed their password twice, because the first attempt
+   * acknowledged nothing. Both events are in the audit trail.
+   *
+   * So the assertion is inverted: the refetch must NOT happen on submit, and
+   * MUST happen when the person presses Continue. Asserting both halves is
+   * what stops the next author "fixing" the staleness by moving it back.
+   */
+  it('shows the confirmation on success and defers the re-read to Continue', async () => {
     const form = await openForm();
     const chosen = 'correct-horse-battery';
 
@@ -380,8 +404,15 @@ describe('the change-password form', () => {
 
     await waitFor(() => expect(harness.changeOwnPassword).toHaveBeenCalledWith(chosen));
     expect(harness.changeOwnPassword).toHaveBeenCalledTimes(1);
-    // The whole point of invalidating: the app must re-read the now-unblocked
-    // state rather than keep the one that put this screen on the tablet.
+
+    // The outcome the person must actually see.
+    await screen.findByRole('heading', { name: /your password is set/i, level: 1 });
+    expect(screen.queryByLabelText(/^new password/i)).not.toBeInTheDocument();
+
+    // Not yet: a re-read here unmounts the confirmation above.
+    expect(harness.refetch).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('button', { name: /continue/i }));
     await waitFor(() => expect(harness.refetch).toHaveBeenCalled());
   });
 
@@ -420,8 +451,11 @@ describe('the change-password form', () => {
     await waitFor(() => expect(harness.changeOwnPassword).toHaveBeenCalledTimes(1));
     expect(screen.getByRole('button', { name: /saving your password/i })).toBeDisabled();
 
+    // Settle on the outcome the person sees, not on a refetch: the re-read is
+    // deferred to Continue (see the test above), so waiting for it here would
+    // hang on correct behaviour.
     release({ error: null });
-    await waitFor(() => expect(harness.refetch).toHaveBeenCalled());
+    await screen.findByRole('heading', { name: /your password is set/i, level: 1 });
   });
 });
 
