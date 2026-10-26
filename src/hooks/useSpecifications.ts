@@ -15,6 +15,7 @@ import type { Stage } from '@/forms/types';
 import { assessableFields, getSchema } from '@/forms/registry';
 import { isUnitConfirmed } from '@/lib/assessment';
 import { checkSeparationOfDuties, type SeparationFailure } from '@/lib/roles';
+import { newIdempotencyKey } from '@/hooks/useRegisterSample';
 import {
   FUNCTIONS,
   SPECIFICATION_VERSION_COLUMNS,
@@ -248,6 +249,25 @@ export interface SpecificationActionInput {
   readonly specificationVersionId?: string;
   readonly proposal?: SpecificationProposal;
   readonly reason?: string;
+  /**
+   * The key the server replays a retry under.
+   *
+   * NOT OPTIONAL ON THE WIRE, only in this type. `runMutation` resolves
+   * `ctx.idempotencyKey ?? body['idempotencyKey'] ?? body['idempotency_key']`
+   * and refuses the request with `bad_request` if none of the three is a valid
+   * key — BEFORE `authenticate()`, before the permission check and before the
+   * handler. This hook sent none, so every proposal, submission, approval and
+   * rejection it posted was refused at that first line. The consequence is not
+   * "a replay could approve a limit twice": it is that no specification limit
+   * could be proposed or approved through this screen at all.
+   *
+   * Generated per call when the caller supplies none. A caller that must retry
+   * THE SAME act passes its own key, so the second request replays the first
+   * outcome instead of recording a second decision (PRD §10.3) — which matters
+   * more here than anywhere: an approval is a quality decision with a named
+   * approver, and two of them are two records.
+   */
+  readonly idempotencyKey?: string;
 }
 
 export interface SpecificationActionResult {
@@ -260,8 +280,19 @@ export function useSpecificationAction() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (input: SpecificationActionInput): Promise<SpecificationActionResult> => {
+      // Generated here rather than in the component, so no call site can omit
+      // it. `newIdempotencyKey` throws where the browser has no secure random
+      // source; inside the mutation function that becomes a reported failure
+      // naming the cause rather than a throw out of a click handler.
+      const { idempotencyKey, ...rest } = input;
+      const key = idempotencyKey ?? newIdempotencyKey();
       const { data, error } = await db.functions.invoke(FUNCTIONS.specificationAction, {
-        body: input,
+        // Header first, body as the documented fallback for a proxy that
+        // strips custom headers. `NON_PAYLOAD_KEYS` excludes `idempotencyKey`
+        // from the payload hash, so sending both cannot manufacture a
+        // conflict.
+        body: { ...rest, idempotencyKey: key },
+        headers: { 'Idempotency-Key': key },
       });
       if (error) throw new Error(error.message);
       const result = data as SpecificationActionResult | null;

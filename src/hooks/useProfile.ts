@@ -32,14 +32,78 @@ import {
 const PROFILES_TABLE = 'profiles';
 const USER_ROLES_TABLE = 'user_roles';
 
+/**
+ * The columns read from `profiles`.
+ *
+ * Written inline at the `.select()` call site as a literal, because
+ * `scripts/check-frontend-schema.py` resolves a bare constant as well as a
+ * literal but supabase-js's type-level parser only reads a literal — see the
+ * note on `SAMPLE_COLUMNS` in `useSamples.ts` for what happens when a select
+ * list is widened to `string`.
+ *
+ * `password_set_by_admin_at` and `password_changed_at` arrive from migration
+ * 0019. Both are readable by `authenticated`: the `profiles_select_self`
+ * policy is `id = auth.uid()` with no status condition, so an account that
+ * owes a forced password change can still read its own two timestamps — which
+ * is what makes the redirect below possible at all. Neither column is a
+ * credential; they are instants.
+ */
 const profileRowSchema = z.object({
   id: z.string(),
   email: z.string().nullish(),
   display_name: z.string().nullish(),
   status: z.string().nullish(),
+  password_set_by_admin_at: z.string().nullish(),
+  password_changed_at: z.string().nullish(),
 });
 
 const roleRowSchema = z.object({ role: z.string() });
+
+/**
+ * Is a forced password change outstanding for this account?
+ *
+ * THIS IS A COPY OF A SERVER RULE, AND IT IS NOT THE ENFORCEMENT. The
+ * authority is `public.must_change_password(uuid)` in migration 0019, read by
+ * `public.require_permission` on the RPC and Edge Function route and — since
+ * migration 0020 — by `public.is_active_user()` and `public.has_permission()`
+ * on the row-level-security route. Both are needed: before 0020 the policies
+ * never consulted the credential, so the permission was withheld from the
+ * Edge Functions and granted by PostgREST. That function is granted to
+ * `service_role` only, so the
+ * browser cannot call it and has to compute the same predicate from the two
+ * timestamps it can read. The one thing this copy must never do is answer
+ * `false` where the server answers `true`: that combination is an app that
+ * offers its screens and is refused on every request, with no route to the
+ * fix. So every uncertainty here resolves to `true`.
+ *
+ * The rule, verbatim from the contract: outstanding when
+ * `password_set_by_admin_at` is not null AND (`password_changed_at` is null OR
+ * `password_changed_at <= password_set_by_admin_at`).
+ *
+ * `<=`, not `<`, matching the SQL. A tie — the two instants equal to the
+ * microsecond — means still outstanding. The asymmetry is the reason: with
+ * `<=` a tie costs one extra screen, with `<` a tie silently clears a reset
+ * that never happened.
+ *
+ * The timestamps are compared as INSTANTS, not as strings. PostgREST renders
+ * `timestamptz` with a variable fractional part and a UTC offset
+ * (`2026-10-26T12:00:00.123456+00:00`), so lexical order is not time order
+ * once two values differ in precision or offset.
+ */
+export function isPasswordChangeOutstanding(
+  passwordSetByAdminAt: string | null,
+  passwordChangedAt: string | null,
+): boolean {
+  if (passwordSetByAdminAt === null) return false;
+  if (passwordChangedAt === null) return true;
+
+  const setAt = Date.parse(passwordSetByAdminAt);
+  const changedAt = Date.parse(passwordChangedAt);
+  // An unparseable instant is not evidence that the change has happened.
+  if (Number.isNaN(setAt) || Number.isNaN(changedAt)) return true;
+
+  return changedAt <= setAt;
+}
 
 export interface Profile {
   readonly id: string;
@@ -53,6 +117,19 @@ export interface Profile {
    * refuses to show — both are handled identically, as `pending`.
    */
   readonly provisional: boolean;
+  /** When an administrator last set this account a password. Null means never. */
+  readonly passwordSetByAdminAt: string | null;
+  /** When the holder last set their own password. Null means never. */
+  readonly passwordChangedAt: string | null;
+  /**
+   * True while the account is still using a password an administrator typed.
+   *
+   * Derived from the two timestamps above by `isPasswordChangeOutstanding`.
+   * It decides where the router sends this person; it does not decide what
+   * they may do — `public.require_permission` already withheld every
+   * permission before the UI was asked.
+   */
+  readonly mustChangePassword: boolean;
 }
 
 function parseStatus(raw: string | null | undefined): UserStatus {
@@ -74,7 +151,9 @@ function parseRoles(rows: readonly { role: string }[]): Role[] {
 async function fetchProfile(userId: string, authEmail: string | null): Promise<Profile> {
   const { data, error } = await supabase
     .from(PROFILES_TABLE)
-    .select('id, email, display_name, status')
+    .select(
+      'id, email, display_name, status, password_set_by_admin_at, password_changed_at',
+    )
     .eq('id', userId)
     .maybeSingle();
 
@@ -93,6 +172,12 @@ async function fetchProfile(userId: string, authEmail: string | null): Promise<P
       status: 'pending',
       roles: [],
       provisional: true,
+      // No readable row means no administrator-set password is recorded. The
+      // account is `pending` either way, so it is sent to the pending screen
+      // and not to the password screen.
+      passwordSetByAdminAt: null,
+      passwordChangedAt: null,
+      mustChangePassword: false,
     };
   }
 
@@ -109,6 +194,9 @@ async function fetchProfile(userId: string, authEmail: string | null): Promise<P
 
   const roles = parseRoles(z.array(roleRowSchema).parse(roleData ?? []));
 
+  const passwordSetByAdminAt = row.password_set_by_admin_at ?? null;
+  const passwordChangedAt = row.password_changed_at ?? null;
+
   return {
     id: row.id,
     email: row.email ?? authEmail,
@@ -116,6 +204,9 @@ async function fetchProfile(userId: string, authEmail: string | null): Promise<P
     status: parseStatus(row.status),
     roles,
     provisional: false,
+    passwordSetByAdminAt,
+    passwordChangedAt,
+    mustChangePassword: isPasswordChangeOutstanding(passwordSetByAdminAt, passwordChangedAt),
   };
 }
 

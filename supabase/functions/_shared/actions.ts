@@ -125,8 +125,30 @@ export const ADMIN_ACTIONS = [
   'create_delegation',
   'revoke_delegation',
   'upsert_controlled_value',
+  'create_account',
+  'set_password',
 ] as const;
 export type AdminAction = (typeof ADMIN_ACTIONS)[number];
+
+/**
+ * The two actions that give an account a password it did not choose.
+ *
+ * Named as a SET rather than written twice, because the set has to agree with
+ * the `c_operations` array inside `rpc_record_admin_password_set` (migration
+ * 0019): that function reads the operation the Edge adapter recorded against
+ * the idempotency key and refuses any endpoint not in its list. Two spellings
+ * of one set, on two sides of a boundary, is the shape that made every admin
+ * RPC in 0015 unreachable from its own endpoint — so this list exists to be
+ * compared against the SQL by `tests/adminPasswordBoundary.test.ts` rather
+ * than to save a few characters here.
+ *
+ * `adminSpec` prefixes each with `admin_action.` to form the operation name;
+ * that prefix is applied in ONE place and is asserted by the same test.
+ */
+export const PASSWORD_SETTING_ADMIN_ACTIONS: readonly AdminAction[] = [
+  'create_account',
+  'set_password',
+];
 
 /**
  * Access decisions answer to `user.approve_access`; everything else to
@@ -140,6 +162,15 @@ export type AdminAction = (typeof ADMIN_ACTIONS)[number];
  * Note what `user.manage` does NOT buy: `create_delegation` is bounded by
  * `delegationGrantRefusal` below, so it cannot be used to mint quality
  * authority.
+ *
+ * `create_account` is `user.manage` and NOT `user.approve_access`, which is
+ * worth stating because the opposite looks right at first glance. Creating the
+ * account does not let it see anything: `tg_handle_new_auth_user` lands the
+ * profile `pending`, and FR-001's gate is "anything but active sees nothing".
+ * Letting it in is still a separate decision under `user.approve_access`, made
+ * by a person, audited on its own. Mapping creation to the approval permission
+ * would merge the two and quietly remove a control; `create_account`
+ * deliberately does not approve the account it creates.
  */
 export const ADMIN_ACTION_PERMISSION: Readonly<Record<AdminAction, Permission>> = {
   approve_access: 'user.approve_access',
@@ -149,6 +180,8 @@ export const ADMIN_ACTION_PERMISSION: Readonly<Record<AdminAction, Permission>> 
   create_delegation: 'user.manage',
   revoke_delegation: 'user.manage',
   upsert_controlled_value: 'user.manage',
+  create_account: 'user.manage',
+  set_password: 'user.manage',
 };
 
 // ---------------------------------------------------------------------------

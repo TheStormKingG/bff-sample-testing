@@ -96,6 +96,8 @@ export const RPC = {
   upsertControlledValue: 'rpc_upsert_controlled_value',
   grantDelegation: 'rpc_grant_delegation',
   revokeDelegation: 'rpc_revoke_delegation',
+  recordAdminPasswordSet: 'rpc_record_admin_password_set',
+  recordPasswordChanged: 'rpc_record_password_changed',
   readIdempotencyRecord: 'rpc_read_idempotency_record',
   beginIdempotentRequest: 'rpc_begin_idempotent_request',
   completeIdempotentRequest: 'rpc_complete_idempotent_request',
@@ -531,6 +533,61 @@ export interface AdminActionResult {
   readonly status: string;
   readonly roles: readonly string[];
   readonly recorded_at: string;
+}
+
+/**
+ * `rpc_record_admin_password_set` (0019) — record that an administrator set
+ * another account a password it did not choose, which ARMS the forced change.
+ *
+ * NO PASSWORD ARGUMENT, and that is the design rather than an omission. The
+ * credential is written to `auth.users` through the Supabase admin API by the
+ * Edge Function; this records only THAT it happened and WHEN. A `p_password`
+ * here would put a cleartext credential into the Postgres statement log, into
+ * `pg_stat_statements` and within reach of every later `before`/`after` audit
+ * payload, in exchange for nothing the quality record needs.
+ *
+ * THE IDEMPOTENCY KEY IS LOAD-BEARING ACROSS A BOUNDARY. `runMutation` claims
+ * the key first, recording the operation as `admin_action.<action>`
+ * (`adminSpec` in `_shared/handlers/admin.ts`). The function then reads that
+ * stored operation back and refuses any key whose operation is not one of the
+ * two password-setting endpoints. So BOTH sides must spell the action the same
+ * way, and `tests/adminPasswordBoundary.test.ts` is what compares them —
+ * `rpc_set_user_roles` is unreachable through its own endpoint today for
+ * exactly this reason, and nothing noticed because nothing compared the two.
+ */
+export interface RecordAdminPasswordSetArgs extends RpcActorArgs {
+  readonly p_target_user: string;
+  /** Mandatory. The function refuses a blank one with BFF_REASON_REQUIRED. */
+  readonly p_reason: string;
+}
+
+export interface RecordAdminPasswordSetResult {
+  readonly target_user: string;
+  /** The TARGET's account status — `pending` for a freshly created account. */
+  readonly status: string;
+  readonly recorded_at: string;
+}
+
+/**
+ * `rpc_record_password_changed` (0019) — record that the holder set their own
+ * password, which clears an outstanding administrator-set credential.
+ *
+ * DOES NOT EXTEND `RpcActorArgs`, deliberately. The SQL function takes exactly
+ * `(p_actor, p_app_version)`: it never calls `claim_mutation`, so it has no
+ * `p_idempotency_key` and no `p_payload_hash` parameter. Inheriting the
+ * envelope would declare two arguments the function has no parameter for, and
+ * PostgREST sends named arguments — so every call would come back as PGRST202,
+ * the same symptom as the function not existing at all. `RetryDeadLetteredArgs`
+ * below is standalone for the same reason.
+ *
+ * There is NO target parameter. The account whose password changed is the
+ * actor, so no argument exists that could aim this at somebody else.
+ *
+ * Returns the recorded instant as a bare `timestamptz`, not a row.
+ */
+export interface RecordPasswordChangedArgs {
+  readonly p_actor: string;
+  readonly p_app_version: string;
 }
 
 export interface DelegationResult {

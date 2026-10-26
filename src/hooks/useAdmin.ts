@@ -17,6 +17,7 @@ import { expectedHeaders, type HeaderMismatch } from '@/forms/sheetMapping';
 import type { Permission, Role, UserStatus } from '@/lib/roles';
 import { plantDayEnd, plantDayStart } from '@/lib/time';
 import { FUNCTIONS, TABLES, type AuditEventRow } from '@/hooks/useSamples';
+import { newIdempotencyKey } from '@/hooks/useRegisterSample';
 
 const db = supabase as unknown as SupabaseClient;
 
@@ -46,6 +47,67 @@ export interface AdminUser {
   readonly status: UserStatus;
   readonly created_at: string;
   readonly roles: readonly Role[];
+  /**
+   * When an administrator last typed a password for this account, and when the
+   * holder last chose one themselves. Both are `timestamptz` on
+   * `public.profiles` (migration 0019) and both are NULL for every account
+   * that has only ever signed in with Google — NULL means "this never
+   * happened", not "this happened at an unknown time".
+   *
+   * Neither is a credential. They are instants, and `authenticated` already
+   * holds SELECT on `public.profiles`, so reading them here adds no privilege.
+   */
+  readonly password_set_by_admin_at: string | null;
+  readonly password_changed_at: string | null;
+  /**
+   * Derived, not read: the contract's OUTSTANDING rule evaluated over the two
+   * instants above. See `hasOutstandingPasswordChange`.
+   *
+   * THIS IS A LABEL, NOT A CONTROL. The gate is `public.must_change_password`,
+   * reached by two separate chains: `public.require_permission` raises
+   * `BFF_PASSWORD_CHANGE_REQUIRED` on the RPC and Edge Function route, and
+   * since migration 0020 `public.is_active_user()` and
+   * `public.has_permission()` return false on the row-level-security route.
+   * Naming only the first — as this comment did — is what let an armed account
+   * read and delete through PostgREST while every comment said it could not.
+   * `must_change_password` itself is granted to `service_role` only, so the
+   * browser cannot call it and this field is the honest best the client can
+   * compute from columns it can read.
+   */
+  readonly password_change_outstanding: boolean;
+}
+
+/**
+ * Is a forced password change outstanding for this account?
+ *
+ * The contract's rule: outstanding when `password_set_by_admin_at` is not null
+ * AND (`password_changed_at` is null OR `password_changed_at <=
+ * password_set_by_admin_at`). Written here as its contrapositive — the change
+ * is cleared only by a self-chosen password STRICTLY LATER than the
+ * administrator's — because that form is also the safe answer when either
+ * instant cannot be parsed.
+ *
+ * PostgREST returns `timestamptz` as an ISO string whose offset and fractional
+ * precision are not fixed, so the two values are compared as parsed instants
+ * and never as strings: `2026-10-26T13:00:00+00:00` and
+ * `2026-10-26T09:00:00-04:00` are the same moment and do not sort as equal.
+ *
+ * An unparseable value resolves to "outstanding". That direction is
+ * deliberate and matches the asymmetry stated in migration 0019: reporting a
+ * change that is in fact already done costs one needless screen, while
+ * reporting a completed change that never happened tells an auditor an
+ * administrator no longer knows a live password when they still might.
+ */
+export function hasOutstandingPasswordChange(account: {
+  readonly password_set_by_admin_at: string | null;
+  readonly password_changed_at: string | null;
+}): boolean {
+  if (account.password_set_by_admin_at === null) return false;
+  if (account.password_changed_at === null) return true;
+  const setByAdmin = Date.parse(account.password_set_by_admin_at);
+  const chosenByHolder = Date.parse(account.password_changed_at);
+  if (Number.isNaN(setByAdmin) || Number.isNaN(chosenByHolder)) return true;
+  return chosenByHolder <= setByAdmin;
 }
 
 export interface AdminDelegation {
@@ -83,6 +145,8 @@ interface ProfileRow {
   readonly display_name: string | null;
   readonly status: UserStatus;
   readonly created_at: string;
+  readonly password_set_by_admin_at: string | null;
+  readonly password_changed_at: string | null;
 }
 
 /**
@@ -119,7 +183,9 @@ export async function fetchAdminUsers(): Promise<readonly AdminUser[]> {
   const [profileRes, roleRes] = await Promise.all([
     db
       .from(TABLES.profiles)
-      .select('id,email,display_name,status,created_at')
+      .select(
+        'id,email,display_name,status,created_at,password_set_by_admin_at,password_changed_at',
+      )
       .order('created_at', { ascending: false }),
     db.from(TABLES.userRoles).select('user_id,role'),
   ]);
@@ -140,6 +206,9 @@ export async function fetchAdminUsers(): Promise<readonly AdminUser[]> {
     status: p.status,
     created_at: p.created_at,
     roles: roleMap.get(p.id) ?? [],
+    password_set_by_admin_at: p.password_set_by_admin_at,
+    password_changed_at: p.password_changed_at,
+    password_change_outstanding: hasOutstandingPasswordChange(p),
   }));
 }
 
@@ -202,7 +271,11 @@ export type AdminActionKind =
   | 'set_roles'
   | 'create_delegation'
   | 'revoke_delegation'
-  | 'upsert_controlled_value';
+  | 'upsert_controlled_value'
+  /** Migration 0019: an administrator makes an account with a temporary password. */
+  | 'create_account'
+  /** Migration 0019: an administrator replaces a forgotten password with a temporary one. */
+  | 'set_password';
 
 export interface AdminActionInput {
   readonly action: AdminActionKind;
@@ -217,7 +290,38 @@ export interface AdminActionInput {
   readonly value?: string;
   readonly label?: string;
   readonly active?: boolean;
+  /** `create_account` only. */
+  readonly email?: string;
+  /**
+   * `create_account` only. It is sent as `displayName` because
+   * `tg_handle_new_auth_user` derives `profiles.display_name` from
+   * `raw_user_meta_data->>'full_name'` first, so an account created without a
+   * name provisions itself with the email local part instead of the person.
+   */
+  readonly displayName?: string;
+  /**
+   * THERE IS DELIBERATELY NO `temporaryPassword` FIELD HERE.
+   *
+   * It used to be one, and that is what put a plaintext credential in the
+   * MutationCache for five minutes. Everything in this interface becomes
+   * `mutation.state.variables`, which the cache retains until a
+   * garbage-collection timer removes it, so the credential travels outside the
+   * input instead: the caller calls `stashTemporaryPassword(key, password)`
+   * and `useAdminAction` takes it out when it builds the body. See the block
+   * comment above `stashTemporaryPassword` for why `reset()` could not do the
+   * job it was given.
+   */
   readonly reason: string;
+  /**
+   * The key the server replays a retry under.
+   *
+   * Optional, and generated per call when absent, which is what every existing
+   * caller relies on. A caller that must be able to retry the SAME act — one
+   * carrying a credential it cannot regenerate, for instance — passes its own
+   * key so the second request replays the first outcome instead of performing
+   * a second act (PRD §10.3).
+   */
+  readonly idempotencyKey?: string;
 }
 
 export interface AdminActionResult {
@@ -225,11 +329,188 @@ export interface AdminActionResult {
   readonly message: string;
 }
 
+/**
+ * The request body for one administrative action.
+ *
+ * Extracted from `useAdminAction` so the wire names can be asserted by a test
+ * without a network or a mocked client. Those names are the contract between
+ * this file and `supabase/functions/_shared/handlers/admin.ts`, and this
+ * project's three worst outages were all a name that differed across exactly
+ * such a boundary.
+ *
+ * A field is included only when the caller supplied one. That is not tidiness:
+ * `readRoles` on the server distinguishes an ABSENT `roles` ("leave the roles
+ * alone") from an EMPTY one ("hold no roles"), and `upsert_controlled_value`
+ * distinguishes an absent `active` from `false`. Sending `undefined` would be
+ * dropped by `JSON.stringify` anyway; building the body explicitly makes the
+ * distinction visible rather than incidental.
+ */
+export function adminActionBody(
+  input: AdminActionInput,
+  idempotencyKey: string,
+  /**
+   * The plaintext credential, passed as an argument rather than read out of
+   * `input`, so this function stays pure and the credential's only route into
+   * a request is the one place that takes it out of the stash.
+   */
+  temporaryPassword?: string,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    action: input.action,
+    reason: input.reason,
+    // The header below is the primary carrier; this is the documented fallback
+    // for a proxy that strips custom headers. `NON_PAYLOAD_KEYS` in
+    // `adapters/mutation.ts` excludes it from the payload hash, so sending
+    // both cannot manufacture an idempotency conflict.
+    idempotencyKey,
+  };
+  if (input.userId !== undefined) body['userId'] = input.userId;
+  if (input.status !== undefined) body['status'] = input.status;
+  if (input.roles !== undefined) body['roles'] = [...input.roles];
+  if (input.permission !== undefined) body['permission'] = input.permission;
+  if (input.effectiveFrom !== undefined) body['effectiveFrom'] = input.effectiveFrom;
+  if (input.effectiveTo !== undefined) body['effectiveTo'] = input.effectiveTo;
+  if (input.delegationId !== undefined) body['delegationId'] = input.delegationId;
+  if (input.listKey !== undefined) body['listKey'] = input.listKey;
+  if (input.value !== undefined) body['value'] = input.value;
+  if (input.label !== undefined) body['label'] = input.label;
+  if (input.active !== undefined) body['active'] = input.active;
+  if (input.email !== undefined) body['email'] = input.email;
+  if (input.displayName !== undefined) body['displayName'] = input.displayName;
+  if (temporaryPassword !== undefined) body['temporaryPassword'] = temporaryPassword;
+  return body;
+}
+
+/**
+ * Does this action carry a plaintext credential?
+ *
+ * Keyed on the ACTION rather than on the presence of a field, so a payload
+ * that should have carried a password and did not is still treated as
+ * credential-bearing — and is refused rather than sent incomplete.
+ */
+export function carriesCredential(action: AdminActionKind): boolean {
+  return action === 'create_account' || action === 'set_password';
+}
+
+// ---------------------------------------------------------------------------
+// The credential hand-off
+//
+// WHY A STASH AND NOT A FIELD ON THE MUTATION INPUT
+//
+// `useMutation` keeps the variables it was called with in the MutationCache,
+// and the previous design put the plaintext password among them and then
+// "scrubbed" it by calling `reset()`. That does not work, and the reason
+// generalises: a release API is a claim about a REFERENCE, not about memory.
+// `MutationObserver.reset()` in @tanstack/query-core is
+//
+//     reset() { this.#currentMutation?.removeObserver(this);
+//               this.#currentMutation = void 0; }
+//
+// — it detaches the observer and never touches the Mutation's state. The
+// Mutation stays in the cache with `state.variables` intact and is removed by
+// a garbage-collection TIMER `gcTime` later (five minutes by default;
+// `src/lib/queryClient.ts` sets `gcTime` for queries only). So the credential
+// outlived the request by five minutes, and the test defending the scrub was a
+// regex over this file's own source text for the `reset()` call — an assertion
+// that the remedy was WRITTEN, never that it worked, and one that passes a
+// mutation probe by construction.
+//
+// A value never stored needs no scrub. So the credential does not travel in
+// the mutation input at all: the caller stashes it against the idempotency key
+// it has already generated, and `useAdminAction` takes it out — read AND
+// delete — at the moment it builds the request body. What stays in the
+// MutationCache is the action, the target and the written reason.
+//
+// The stash is module-scoped rather than React state because the value must
+// not be reachable from a component's props, context or devtools tree. It is
+// bounded by construction: `take` deletes, and `clearTemporaryPassword` exists
+// for the path where the act is abandoned before any request is built.
+// ---------------------------------------------------------------------------
+
+const temporaryPasswordStash = new Map<string, string>();
+
+/**
+ * Hold a plaintext temporary password until its request body is built.
+ *
+ * Keyed on the idempotency key, which the caller must already have generated
+ * for the same act — so the key that makes the request replayable is also what
+ * ties the credential to it, and there is no second identifier to keep in step.
+ */
+export function stashTemporaryPassword(idempotencyKey: string, password: string): void {
+  temporaryPasswordStash.set(idempotencyKey, password);
+}
+
+/** Read and remove. Called once, by the mutation function, and never twice. */
+function takeTemporaryPassword(idempotencyKey: string): string | undefined {
+  const password = temporaryPasswordStash.get(idempotencyKey);
+  temporaryPasswordStash.delete(idempotencyKey);
+  return password;
+}
+
+/**
+ * Drop a stashed credential for an act that was abandoned.
+ *
+ * Needed because the stash happens when the form is submitted and the request
+ * is built only after the reason dialog is confirmed. Cancelling that dialog
+ * means no mutation function ever runs, so nothing would otherwise delete the
+ * entry.
+ */
+export function clearTemporaryPassword(idempotencyKey: string): void {
+  temporaryPasswordStash.delete(idempotencyKey);
+}
+
+/**
+ * How many credentials are waiting to be sent. Exported for the test that
+ * asserts the stash empties, because "read and delete" is a claim about state
+ * and a claim about state is settled by reading it back.
+ */
+export function temporaryPasswordStashSize(): number {
+  return temporaryPasswordStash.size;
+}
+
+/**
+ * Every administrative action, through one Edge Function with a written reason.
+ *
+ * THE IDEMPOTENCY KEY IS NOT OPTIONAL ON THE WIRE. `runMutation` refuses any
+ * request without one before it does anything else — "Every save must carry an
+ * Idempotency-Key header so a retry cannot create a second record" — so the
+ * seven actions this hook already posted were being refused with `bad_request`
+ * for want of a key no caller sent. A key is therefore generated here when the
+ * caller does not supply one, and sent both as the header and as the
+ * documented body fallback, exactly as `useRegisterSample` does.
+ *
+ * WHAT HAPPENS TO A TEMPORARY PASSWORD. It never enters the mutation input, so
+ * it is never in `mutation.state.variables` and there is nothing in the
+ * MutationCache to scrub. The caller stashes it against the idempotency key it
+ * generated for the same act; the mutation function below takes it out — read
+ * and delete — builds the body with it, and the local `const` dies with the
+ * call. The earlier design put it in the input and called `reset()`
+ * afterwards, which detaches the observer and leaves the Mutation's state
+ * untouched in the cache for `gcTime`; the block comment above
+ * `stashTemporaryPassword` has the measurement.
+ *
+ * A credential-bearing action with NO stashed credential is refused here rather
+ * than sent incomplete. The server would refuse it anyway, with a message about
+ * a missing field; refusing it at the point the stash is read names the real
+ * cause, which is a caller that did not stash.
+ */
 export function useAdminAction() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (input: AdminActionInput): Promise<AdminActionResult> => {
-      const { data, error } = await db.functions.invoke(FUNCTIONS.adminAction, { body: input });
+      const key = input.idempotencyKey ?? newIdempotencyKey();
+      const credential = takeTemporaryPassword(key);
+      if (carriesCredential(input.action) && credential === undefined) {
+        throw new Error(
+          'The temporary password for this action was not available when the request was ' +
+            'built, so nothing was sent and nothing was changed. Type or generate the ' +
+            'password again.',
+        );
+      }
+      const { data, error } = await db.functions.invoke(FUNCTIONS.adminAction, {
+        body: adminActionBody(input, key, credential),
+        headers: { 'Idempotency-Key': key },
+      });
       if (error) throw new Error(error.message);
       const result = data as AdminActionResult | null;
       if (!result) throw new Error('The server returned no result. Nothing was changed.');
@@ -241,6 +522,160 @@ export function useAdminAction() {
       void client.invalidateQueries({ queryKey: ['authority'] });
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Temporary passwords
+//
+// An administrator types a temporary password, then READS IT ALOUD or writes it
+// on paper for somebody standing in front of them. Everything below is shaped
+// by that single fact, which is why the alphabet is smaller than the keyboard
+// and why nothing here keeps a copy.
+// ---------------------------------------------------------------------------
+
+/**
+ * Characters deliberately NOT in a generated temporary password, each with the
+ * pair it is confusable with. Exported so the test asserts the exclusion
+ * against this table rather than against a second hard-coded list.
+ *
+ * Only VISUAL and HANDWRITTEN confusions are removed from the alphabet.
+ * Spoken confusion — "d" against "t", "m" against "n" — cannot be fixed by
+ * deleting characters, because almost every English letter name rhymes with
+ * another one and an alphabet stripped of all of them has nothing left. It is
+ * fixed instead by `spellTemporaryPassword`, which gives the administrator a
+ * word per character to read out.
+ *
+ * There is NO UPPERCASE at all. "Capital" versus "small" is one more thing to
+ * say, hear and get wrong on a phone, it doubles the number of visual
+ * confusions, and it costs a shift keypress per character on a plant tablet.
+ */
+export const TEMPORARY_PASSWORD_EXCLUSIONS: Readonly<Record<string, string>> = {
+  b: 'reads as 6 or 8',
+  g: 'reads as 9, and as q',
+  i: 'reads as 1, l or j',
+  l: 'reads as 1 or i',
+  o: 'reads as 0',
+  q: 'reads as 9, and as g',
+  s: 'reads as 5',
+  v: 'written by hand, reads as u',
+  z: 'reads as 2',
+  '0': 'reads as o, and is said "oh"',
+  '1': 'reads as l, i or 7',
+};
+
+/** The 25 characters a generated temporary password is drawn from. */
+export const TEMPORARY_PASSWORD_ALPHABET = 'acdefhjkmnprtuwxy23456789';
+
+/** Random characters per password, and how many per spoken group. */
+export const TEMPORARY_PASSWORD_LENGTH = 12;
+export const TEMPORARY_PASSWORD_GROUP = 4;
+
+/** The one character in a generated password that is not in the alphabet. */
+export const TEMPORARY_PASSWORD_SEPARATOR = '-';
+
+/**
+ * A word for each character, so a password can be read down a plant telephone.
+ *
+ * Letters use the NATO spelling alphabet, which is what a radio-trained or
+ * aviation-trained listener already expects, and digits are spelled as words
+ * because "five" and "nine" collide in noise where "fife" and "niner" do not.
+ */
+const SPOKEN: Readonly<Record<string, string>> = {
+  a: 'alfa',
+  c: 'charlie',
+  d: 'delta',
+  e: 'echo',
+  f: 'foxtrot',
+  h: 'hotel',
+  j: 'juliett',
+  k: 'kilo',
+  m: 'mike',
+  n: 'november',
+  p: 'papa',
+  r: 'romeo',
+  t: 'tango',
+  u: 'uniform',
+  w: 'whiskey',
+  x: 'x-ray',
+  y: 'yankee',
+  '2': 'two',
+  '3': 'three',
+  '4': 'four',
+  '5': 'fife',
+  '6': 'six',
+  '7': 'seven',
+  '8': 'eight',
+  '9': 'niner',
+  [TEMPORARY_PASSWORD_SEPARATOR]: 'dash',
+};
+
+/**
+ * One temporary password, generated from the operating system's CSPRNG.
+ *
+ * `crypto.getRandomValues` and NOTHING ELSE. `Math.random` is seeded from
+ * values an attacker can often reconstruct and is specified nowhere as
+ * unpredictable; a password drawn from it is a password somebody else can
+ * draw again. Where the API is absent the generator REFUSES rather than
+ * degrading — the same choice `newIdempotencyKey` makes, and for a stronger
+ * reason: a predictable idempotency key duplicates a record, a predictable
+ * temporary password hands over an account. A plant tablet on a plain-http LAN
+ * is an insecure context, where `crypto.randomUUID` is absent but
+ * `getRandomValues` is not, so this depends only on the latter.
+ *
+ * REJECTION SAMPLED, not `byte % 25`. 256 is not a multiple of 25, so the
+ * modulo of a uniform byte favours the first six characters of the alphabet by
+ * 6/5. 250 is the largest multiple of 25 below 256, so bytes 250–255 are
+ * discarded and every character is equally likely.
+ *
+ * STRENGTH. 25 characters, 12 draws: 25^12 ≈ 5.96 × 10^16, about 55.7 bits.
+ * Grouped 4-4-4 by `TEMPORARY_PASSWORD_SEPARATOR`, which is part of the
+ * password and must be typed; it is there because a 12-character run read
+ * aloud loses its place and three groups of four does not.
+ */
+export function generateTemporaryPassword(): string {
+  const source = globalThis.crypto;
+  if (source === undefined || typeof source.getRandomValues !== 'function') {
+    throw new Error(
+      'This browser does not provide a secure random number generator, so no temporary ' +
+        'password was generated. Type one yourself, long and unguessable, or open the ' +
+        'application over https where the generator is available. Nothing was created.',
+    );
+  }
+
+  const alphabet = TEMPORARY_PASSWORD_ALPHABET;
+  const limit = Math.floor(256 / alphabet.length) * alphabet.length;
+  const picked: string[] = [];
+  // Drawn one block at a time rather than one byte at a time: a rejected byte
+  // must be replaced, and asking for a fresh block is cheaper than a syscall
+  // per character.
+  while (picked.length < TEMPORARY_PASSWORD_LENGTH) {
+    const bytes = source.getRandomValues(new Uint8Array(TEMPORARY_PASSWORD_LENGTH));
+    for (const byte of bytes) {
+      if (byte >= limit) continue;
+      picked.push(alphabet[byte % alphabet.length]!);
+      if (picked.length === TEMPORARY_PASSWORD_LENGTH) break;
+    }
+  }
+
+  const groups: string[] = [];
+  for (let at = 0; at < picked.length; at += TEMPORARY_PASSWORD_GROUP) {
+    groups.push(picked.slice(at, at + TEMPORARY_PASSWORD_GROUP).join(''));
+  }
+  return groups.join(TEMPORARY_PASSWORD_SEPARATOR);
+}
+
+/**
+ * A password as words to say out loud, e.g. `k3-mn` → "kilo, three, dash, mike,
+ * november".
+ *
+ * A character with no spoken word — which only a hand-typed password can
+ * contain — is returned quoted rather than dropped, because a readout missing a
+ * character is a readout that fails at the keyboard with no clue why.
+ */
+export function spellTemporaryPassword(password: string): string {
+  return [...password]
+    .map((character) => SPOKEN[character] ?? `"${character}"`)
+    .join(', ');
 }
 
 // ---------------------------------------------------------------------------
@@ -522,12 +957,38 @@ export function useAuditDeadLetters() {
   });
 }
 
+/**
+ * Retry one dead-lettered sync job.
+ *
+ * THE IDEMPOTENCY KEY IS NOT OPTIONAL ON THE WIRE, and this hook sent none.
+ * `sync-action/index.ts` reasons from a key that never arrived — "`runMutation`
+ * has already claimed the key, so pressing the button twice cannot queue the
+ * same work twice" — but `runMutation` resolves the key and refuses the request
+ * with `bad_request` before it authenticates anybody, so the real consequence
+ * was not a double retry: it was that the retry button on the sync-health
+ * screen did nothing at all, and a dead-lettered job was unrescuable through
+ * the only interface that offers it.
+ *
+ * The key is generated per call, NOT derived from `jobId`. A job-derived key
+ * would be permanent, so a legitimate second attempt on the same job — the
+ * first retry having failed again — would replay the stale outcome and report
+ * a success that did not happen. `SyncTab` disables the button for the job it
+ * is retrying, which is where a double press belongs.
+ */
 export function useSyncRetry() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { jobId: string }): Promise<AdminActionResult> => {
+    mutationFn: async (input: {
+      jobId: string;
+      /** Supplied only by a caller that must replay one specific attempt. */
+      idempotencyKey?: string;
+    }): Promise<AdminActionResult> => {
+      const key = input.idempotencyKey ?? newIdempotencyKey();
       const { data, error } = await db.functions.invoke(FUNCTIONS.syncAction, {
-        body: { action: 'retry', jobId: input.jobId },
+        // Header first, body as the documented fallback for a proxy that
+        // strips custom headers.
+        body: { action: 'retry', jobId: input.jobId, idempotencyKey: key },
+        headers: { 'Idempotency-Key': key },
       });
       if (error) throw new Error(error.message);
       const result = data as AdminActionResult | null;

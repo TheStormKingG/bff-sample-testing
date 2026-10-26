@@ -27,10 +27,12 @@
  * ===========================================================================
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
+  ClipboardCopy,
   Database,
   FileSearch,
+  KeyRound,
   ListChecks,
   RefreshCw,
   ShieldAlert,
@@ -38,6 +40,7 @@ import {
   TableProperties,
   UserCheck,
   UserCog,
+  UserPlus,
   Users,
 } from 'lucide-react';
 
@@ -57,6 +60,12 @@ import { formatPlantDateTimeLabelled, plantLocalDate } from '@/lib/time';
 import { useAuthority } from '@/hooks/useSamples';
 import {
   EMPTY_AUDIT_QUERY,
+  TEMPORARY_PASSWORD_LENGTH,
+  carriesCredential,
+  clearTemporaryPassword,
+  generateTemporaryPassword,
+  spellTemporaryPassword,
+  stashTemporaryPassword,
   useAdminAction,
   useAdminDelegations,
   useAdminUsers,
@@ -70,6 +79,7 @@ import {
   type AdminUser,
   type AuditQuery,
 } from '@/hooks/useAdmin';
+import { newIdempotencyKey } from '@/hooks/useRegisterSample';
 import { StatusChip, type Tone } from '@/components/ui';
 import { ReasonDialog } from '@/components/form/ReasonDialog';
 import {
@@ -116,12 +126,174 @@ const USER_STATUS_LABELS: Record<UserStatus, string> = {
   disabled: 'Disabled',
 };
 
+/**
+ * A temporary password an administrator is about to be shown, once.
+ *
+ * It travels with the pending action rather than being read back from
+ * anywhere, because there is nowhere to read it back from: the server stores a
+ * hash of the credential, never the credential, and this application keeps no
+ * copy once the panel is dismissed.
+ */
+interface Credential {
+  readonly password: string;
+  readonly personLabel: string;
+  readonly emailLabel: string;
+  readonly isNewAccount: boolean;
+}
+
 /** A mutation waiting for its written reason. */
 interface PendingAction {
   readonly input: Omit<AdminActionInput, 'reason'>;
   readonly title: string;
   readonly prompt: string;
   readonly confirmLabel: string;
+  /**
+   * Present only for `create_account` and `set_password`. Its presence is what
+   * makes `AdminPage` show the one-time panel and scrub the mutation's
+   * retained variables afterwards.
+   */
+  readonly credential?: Credential;
+}
+
+/** A credential being shown, plus whether the server confirmed the act. */
+interface Revealed extends Credential {
+  readonly confirmed: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// The one-time temporary-password panel
+// ---------------------------------------------------------------------------
+
+/**
+ * Show a temporary password once, and mean it.
+ *
+ * "Shown once" is a claim about the whole system, not about this component, so
+ * every place a second look could come from is closed:
+ *
+ *  - It is NOT in the audit trail. The two actions send the password to the
+ *    Edge Function, which hands the database only the instant of the reset;
+ *    `identity.password_set_by_administrator` records who, when and why.
+ *  - It is NOT in the query cache. Nothing reads it back, and the mutation's
+ *    retained variables are reset once the action settles.
+ *  - It is NOT in localStorage, sessionStorage or any draft. Only
+ *    `useSampleDraft` touches storage in this app and it stores stage forms.
+ *  - It is NOT in a log. The Edge wrapper logs the function name, correlation
+ *    id, status and duration; no path logs a request body.
+ *  - It is NOT in this component after Done: the state holding it is cleared,
+ *    and the form that produced it is remounted empty.
+ *
+ * What is left, stated on the screen rather than hidden here: the device
+ * clipboard if Copy is used, and whatever the administrator writes down.
+ */
+function TemporaryPasswordPanel({
+  revealed,
+  onDismiss,
+}: {
+  revealed: Revealed;
+  onDismiss: () => void;
+}) {
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'unavailable'>('idle');
+
+  function copy() {
+    // `navigator.clipboard` is absent in an insecure context, which a plant
+    // tablet on a plain-http LAN is. Saying so is the point: a Copy button
+    // that silently did nothing would have an administrator paste an old
+    // clipboard entry into a message and believe they had sent the password.
+    const target = globalThis.navigator?.clipboard;
+    if (target === undefined || typeof target.writeText !== 'function') {
+      setCopyState('unavailable');
+      return;
+    }
+    target.writeText(revealed.password).then(
+      () => setCopyState('copied'),
+      () => setCopyState('unavailable'),
+    );
+  }
+
+  return (
+    <section
+      // `alert` rather than a quiet region: this is the only moment the
+      // password exists on screen, so it must reach a screen-reader user
+      // without them going looking for it.
+      role="alert"
+      aria-label="Temporary password, shown once"
+      className="mb-6 rounded-md border-2 border-bff-700 bg-white p-4"
+    >
+      <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+        <KeyRound aria-hidden className="h-6 w-6" />
+        Temporary password for {revealed.personLabel}
+      </h2>
+
+      {revealed.confirmed ? (
+        <p className="mt-1 text-base text-slate-800">
+          {revealed.isNewAccount
+            ? 'The account has been created.'
+            : 'The password on this account has been replaced.'}{' '}
+          Give this password to <strong>{revealed.emailLabel}</strong> and to nobody else.
+        </p>
+      ) : (
+        <p className="mt-1 text-base font-semibold text-red-900">
+          The server did not confirm this. It is shown because it was sent, not because it
+          works. Check <strong>{revealed.emailLabel}</strong> in the list below before you
+          act: if the account is there, use <em>Reset password</em> on it rather than
+          creating it again.
+        </p>
+      )}
+
+      <p
+        className="mt-3 select-all break-all rounded-md border border-slate-300 bg-slate-50 px-3 py-3 font-mono text-2xl tracking-wider text-slate-900"
+        // The password is the only content of this element, so its accessible
+        // name is the password itself; the readout below is what a listener
+        // actually needs, and is announced with it.
+        aria-label={`Temporary password: ${spellTemporaryPassword(revealed.password)}`}
+      >
+        {revealed.password}
+      </p>
+
+      <p className="mt-2 text-sm text-slate-700">
+        <span className="font-medium">To read out: </span>
+        {spellTemporaryPassword(revealed.password)}. The dashes are part of the password and
+        must be typed.
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button onClick={copy}>
+          <ClipboardCopy aria-hidden className="h-4 w-4" />
+          Copy the password
+        </Button>
+        <Button variant="primary" onClick={onDismiss}>
+          I have given it to them — hide it now
+        </Button>
+      </div>
+
+      {copyState === 'copied' ? (
+        <p role="status" className="mt-2 text-sm text-slate-700">
+          Copied to this device&rsquo;s clipboard. Clear the clipboard when you are finished —
+          this page cannot do that for you.
+        </p>
+      ) : null}
+      {copyState === 'unavailable' ? (
+        <p role="status" className="mt-2 text-sm font-medium text-red-900">
+          This device will not let the page copy to the clipboard, so <strong>nothing was
+          copied</strong>. Read the password out using the words above, or write it down.
+        </p>
+      ) : null}
+
+      <div className="mt-3">
+        <InfoNote tone="warning">
+          <span>
+            <strong>This is the only time this password is shown.</strong> Nothing in this
+            application keeps a copy — not the audit log, not the browser, not the server —
+            so once this panel is hidden it cannot be recovered and the only way to give this
+            person a password is to reset it again. The holder{' '}
+            <strong>must choose their own password the next time they sign in</strong> and can
+            do nothing at all until they have, which is what makes their records attributable
+            to them rather than to you.
+          </span>
+        </InfoNote>
+      </div>
+    </section>
+  );
 }
 
 type AdminTab = 'access' | 'delegations' | 'lists' | 'sync' | 'schema' | 'audit';
@@ -159,8 +331,278 @@ function describeName(user: AdminUser): string {
 }
 
 // ---------------------------------------------------------------------------
+// Temporary-password entry, shared by the create form and every account row
+// ---------------------------------------------------------------------------
+
+/**
+ * A hand-typed temporary password is allowed, and held to the same length as a
+ * generated one.
+ *
+ * The number is `TEMPORARY_PASSWORD_LENGTH` rather than a second constant, so
+ * the floor cannot drift away from what the generator produces. The server has
+ * its own minimum, which this does not know and does not guess at: a refusal
+ * from the server is shown verbatim rather than pre-empted with a rule that
+ * might not be the real one.
+ */
+function passwordProblem(value: string): string | null {
+  if (value === '') return 'Type a temporary password, or press Generate one.';
+  if (/\s/.test(value)) {
+    return 'A temporary password must not contain a space — a space read aloud is invisible.';
+  }
+  if (value.length < TEMPORARY_PASSWORD_LENGTH) {
+    return `A temporary password needs at least ${TEMPORARY_PASSWORD_LENGTH} characters. Press Generate one.`;
+  }
+  return null;
+}
+
+/**
+ * `forWhom` is not decoration.
+ *
+ * This field appears once for the create form and once for EVERY account row,
+ * so a page with four accounts has five identically-named password boxes and
+ * five identically-named Generate buttons. Sighted use disambiguates them by
+ * position; a screen reader reads the name, and five "Temporary password,
+ * edit text" in a row is a form nobody can fill correctly. Naming each one
+ * after the account it belongs to is the fix, and it has the useful side
+ * effect of making each one addressable in a test.
+ */
+function TemporaryPasswordField({
+  id,
+  forWhom,
+  value,
+  onChange,
+  onGenerateError,
+}: {
+  id: string;
+  forWhom: string;
+  value: string;
+  onChange: (next: string) => void;
+  onGenerateError: (message: string) => void;
+}) {
+  function generate() {
+    try {
+      onChange(generateTemporaryPassword());
+    } catch (cause) {
+      onChange('');
+      onGenerateError(
+        cause instanceof Error ? cause.message : 'No temporary password could be generated.',
+      );
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Labelled
+        id={id}
+        label={`Temporary password for ${forWhom}`}
+        hint="It is shown to you once, after the account is saved, and the holder must replace it before they can do anything. Avoid inventing one — a generated one has no words in it to mishear."
+      >
+        {/* `type="text"`, not `type="password"`: the administrator has to READ
+            this out or write it down, and a field of dots cannot be read out.
+            Autofill and autocorrect are off so a browser does not offer to
+            save it as the administrator's own credential, and so a tablet
+            keyboard does not capitalise the first character into something
+            that is no longer the password that was sent. */}
+        <input
+          id={id}
+          type="text"
+          className={`${INPUT_CLASS} font-mono`}
+          value={value}
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </Labelled>
+      <div>
+        <Button onClick={generate} ariaLabel={`Generate a temporary password for ${forWhom}`}>
+          <KeyRound aria-hidden className="h-4 w-4" />
+          Generate one
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Users and access
 // ---------------------------------------------------------------------------
+
+/**
+ * The password controls for one existing account.
+ *
+ * Deliberately in its own bordered block, with no `danger` variant anywhere in
+ * it. Resetting a password is NOT a destructive act — the account, its roles
+ * and every record it has ever signed keep standing — and placing it among
+ * Deny access and the status dropdown would invite the wrong kind of care: an
+ * administrator avoiding a legitimate reset, or treating one as equivalent to
+ * disabling someone.
+ */
+function PasswordRow({
+  user,
+  onRequest,
+}: {
+  user: AdminUser;
+  onRequest: (action: PendingAction) => void;
+}) {
+  // Never rendered for the actor's own account — `UserRow` does not mount it.
+  // See `SELF_ADMINISTRATION_NOTICE` for why, and for the other three controls
+  // the same refusal governs.
+  const [password, setPassword] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+
+  function submit() {
+    const problem = passwordProblem(password);
+    if (problem !== null) {
+      setFormError(problem);
+      return;
+    }
+    // Generated here, not in the transport, so that confirming this exact
+    // reset twice replays the first outcome instead of setting a second
+    // password the administrator was never shown. It can refuse — same
+    // generator, same insecure-context cause as the password itself — and a
+    // throw out of an event handler would take the screen down, so it is
+    // reported where the other refusals are.
+    let key: string;
+    try {
+      key = newIdempotencyKey();
+    } catch (cause) {
+      setFormError(
+        cause instanceof Error
+          ? `${cause.message} Nothing was sent and the password was not changed.`
+          : 'No unique save key could be made, so nothing was sent.',
+      );
+      return;
+    }
+    setFormError(null);
+    const person = describeName(user);
+    // THE CREDENTIAL LEAVES THE REACT TREE HERE, and not through the mutation
+    // input. Anything in `input` becomes `mutation.state.variables`, which the
+    // MutationCache keeps until a garbage-collection timer removes it — five
+    // minutes, and `reset()` does not shorten it. Stashed against the key
+    // instead, and taken out by `useAdminAction` as it builds the body.
+    stashTemporaryPassword(key, password);
+    onRequest({
+      input: {
+        action: 'set_password',
+        userId: user.id,
+        idempotencyKey: key,
+      },
+      title: `Set a temporary password for ${person}`,
+      prompt: `State why this password is being reset — who asked, and how you confirmed it was ${person}. Until they choose their own password this account's actions are not attributable to one person, so the reason is recorded permanently.`,
+      confirmLabel: 'Set this temporary password',
+      credential: {
+        password,
+        personLabel: person,
+        emailLabel: user.email ?? person,
+        isNewAccount: false,
+      },
+    });
+    // Cleared the moment it is handed over, so the password lives in exactly
+    // one place on screen — the one-time panel — and the claim that panel
+    // makes is true.
+    setPassword('');
+  }
+
+  return (
+    <fieldset className="mt-3 rounded-md border border-slate-200 p-3">
+      <legend className="px-1 text-sm font-medium text-slate-800">Password</legend>
+
+      {user.password_change_outstanding ? (
+        <p className="mt-1 rounded-md border border-amber-300 bg-amber-50 p-3 text-base text-amber-900">
+          <strong>This account is still using a password an administrator knows.</strong> It
+          was set on their behalf {instant(user.password_set_by_admin_at)} and the holder has
+          not chosen their own since
+          {user.password_changed_at === null
+            ? ' — they have never chosen one'
+            : ` (last chosen ${instant(user.password_changed_at)})`}
+          . Until they do, anything this account records is not attributable to one person, so
+          the server allows it nothing: every request is refused until the password is
+          changed. Signing in and reaching the change-password screen still work.
+        </p>
+      ) : (
+        <p className="mt-1 text-sm text-slate-700">
+          {user.password_set_by_admin_at === null
+            ? 'No administrator has set a password for this account through this application, so it has only ever signed in with Google.'
+            : `The holder chose their own password ${instant(user.password_changed_at)}, after the reset on ${instant(user.password_set_by_admin_at)}. No administrator knows it.`}
+        </p>
+      )}
+
+      <p className="mt-2 text-sm text-slate-700">
+        Use this when someone has forgotten their password. There is no emailed reset link in
+        this system — no mail is sent at all — so a reset is you giving them a password face
+        to face or on the telephone.{' '}
+        <strong>
+          They will be required to choose a new one the next time they sign in, before they
+          can do anything.
+        </strong>{' '}
+        Their account, roles and records are untouched.
+      </p>
+
+      <div className="mt-3">
+        <TemporaryPasswordField
+          id={`password-${user.id}`}
+          forWhom={describeName(user)}
+          value={password}
+          onChange={(next) => {
+            setPassword(next);
+            setFormError(null);
+          }}
+          onGenerateError={setFormError}
+        />
+      </div>
+
+      {formError !== null ? (
+        <p role="alert" className="mt-2 text-base font-medium text-red-900">
+          {formError}
+        </p>
+      ) : null}
+
+      <div className="mt-3">
+        <Button onClick={submit}>
+          <KeyRound aria-hidden className="h-4 w-4" />
+          Reset password
+        </Button>
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * Everything on an account row that the server refuses when the account is the
+ * signed-in administrator's own.
+ *
+ * `public.assert_administers_other(p_actor, p_target_user)` raises
+ * `BFF_SELF_ADMINISTRATION` whenever actor and target are the same id. It is
+ * unconditional, has no override, and is performed before anything else by
+ * five RPCs: `rpc_approve_account`, `rpc_set_user_status`,
+ * `rpc_set_user_roles`, `rpc_grant_delegation` and
+ * `rpc_record_admin_password_set` (`rpc_revoke_delegation` deliberately does
+ * NOT, so withdrawing your own delegation stays possible).
+ *
+ * `fetchAdminUsers` selects every profile with no filter, so the actor's own
+ * row is in this list like anybody else's. Rendering those controls on it
+ * offers four acts whose only reachable outcome is a refusal — and for the
+ * password reset the refusal arrives AFTER the screen has displayed a
+ * generated password and told the administrator to hand it over. The Edge
+ * handler arms the forced change through the RPC first and sets the password
+ * only afterwards, so the RPC raises and the password is never set on any
+ * account: a credential that exists on a sticky note and nowhere else.
+ *
+ * The controls are therefore not disabled, they are not rendered. A disabled
+ * control invites an administrator to hunt for the permission that would
+ * enable it; an absent one with a stated reason answers the question instead.
+ * Approve/Deny was already handled this way through `checkSeparationOfDuties`,
+ * and this follows that precedent rather than inventing a second idiom.
+ */
+const SELF_ADMINISTRATION_NOTICE =
+  'This is your own account, so nothing here can be administered by you — not your ' +
+  'roles, not your status and not your password. The server refuses any administrative ' +
+  'act aimed at the account making it, so a second person is always in the record. ' +
+  'If you have forgotten your own password you cannot reset it yourself and there is ' +
+  'no emailed reset link in this system: another administrator has to set you a ' +
+  'temporary one, which you then replace.';
 
 function UserRow({
   user,
@@ -179,6 +621,15 @@ function UserRow({
     actorId,
     subjectActorId: user.id,
   });
+  /**
+   * Compared on the id and nothing else, because that is what the SQL compares.
+   * Not routed through `checkSeparationOfDuties`: that function answers a
+   * different question — separation of duties for three named decisions, with
+   * an override by a second person — whereas this refusal admits no override
+   * and covers acts that are not quality decisions at all. Borrowing it would
+   * also mean editing `src/lib/roles.ts`, which the Edge Functions import.
+   */
+  const isOwnAccount = user.id === actorId;
 
   const rolesChanged =
     roles.length !== user.roles.length || roles.some((r) => !user.roles.includes(r));
@@ -201,18 +652,42 @@ function UserRow({
               claimed here. */}
           <p className="text-xs text-slate-500">Account created {instant(user.created_at)}</p>
         </div>
-        <StatusChip
-          label={USER_STATUS_LABELS[user.status]}
-          tone={USER_STATUS_TONE[user.status]}
-          srPrefix="Account status:"
-        />
+        <div className="flex flex-col items-end gap-2">
+          <StatusChip
+            label={USER_STATUS_LABELS[user.status]}
+            tone={USER_STATUS_TONE[user.status]}
+            srPrefix="Account status:"
+          />
+          {/* The fact an auditor asks for, in the words they would use. Not
+              "must change password", which describes a screen the holder sees:
+              what matters on an administrator's screen is that a second person
+              knows this account's credential, so its records are not yet
+              attributable to one person. */}
+          {user.password_change_outstanding ? (
+            <StatusChip
+              label="Password an administrator knows"
+              tone="warning"
+              size="sm"
+              srPrefix="Credential:"
+            />
+          ) : null}
+        </div>
       </div>
 
       {user.status === 'pending' ? (
         <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3">
+          {/* TWO WAYS TO ARRIVE HERE, and they are not interchangeable. The
+              wording used to say "has signed in with Google", which became
+              false the moment an administrator could create an account with a
+              password: such an account is pending before anybody has signed
+              in to it at all. `password_set_by_admin_at` is the one column
+              that distinguishes them, so it is what this branches on rather
+              than a guess from the status. */}
           <p className="text-base font-medium text-amber-900">
-            This account has signed in with Google but can see no data at all until it is
-            approved. Approving it does not give it any role — grant roles below, deliberately.
+            {user.password_set_by_admin_at === null
+              ? 'This account has signed in with Google but can see no data at all until it is approved.'
+              : 'This account was created here with a temporary password and can see no data at all until it is approved.'}{' '}
+            Approving it does not give it any role — grant roles below, deliberately.
           </p>
           {!canApproveAccess ? (
             <div className="mt-2">
@@ -258,6 +733,32 @@ function UserRow({
         </div>
       ) : null}
 
+      {isOwnAccount ? (
+        /**
+         * THE OWN ROW. No controls, and the roles and status restated as facts
+         * rather than dropped — this screen is the only place an administrator
+         * can read their own roles, and a row that went blank would read as a
+         * failed query rather than as a deliberate refusal.
+         */
+        <div className="mt-3">
+          <InfoNote tone="warning">
+            <span>
+              <strong>{SELF_ADMINISTRATION_NOTICE}</strong>
+            </span>
+          </InfoNote>
+          <dl className="mt-3 rounded-md border border-slate-200 p-3 text-sm">
+            <dt className="font-medium text-slate-800">Your roles</dt>
+            <dd className="mt-0.5 text-slate-700">
+              {user.roles.length === 0
+                ? 'No role. A role grants base permissions only; anything beyond them needs a recorded delegation.'
+                : user.roles.map((role) => ROLE_LABELS[role]).join(', ')}
+            </dd>
+            <dt className="mt-2 font-medium text-slate-800">Your account status</dt>
+            <dd className="mt-0.5 text-slate-700">{USER_STATUS_LABELS[user.status]}</dd>
+          </dl>
+        </div>
+      ) : (
+        <>
       <fieldset className="mt-3 rounded-md border border-slate-200 p-3">
         <legend className="px-1 text-sm font-medium text-slate-800">Roles</legend>
         <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-4">
@@ -303,6 +804,8 @@ function UserRow({
         </div>
       </fieldset>
 
+      <PasswordRow user={user} onRequest={onRequest} />
+
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <Labelled
           id={`status-${user.id}`}
@@ -335,7 +838,172 @@ function UserRow({
           </select>
         </Labelled>
       </div>
+        </>
+      )}
     </li>
+  );
+}
+
+/**
+ * Make an account for somebody who has no Google account.
+ *
+ * This is the only way into the system for a plant-floor operator: there is no
+ * self-service signup and no "forgot password" link, because the project has
+ * no mail sender at all. An administrator types an address and a temporary
+ * password, says both to the person, and the person is forced to replace the
+ * password before the server will let them do anything.
+ *
+ * `email` and `displayName` are both required here although only the first is
+ * required by the database. `tg_handle_new_auth_user` derives the profile's
+ * display name from `full_name` in the user metadata, then `name`, then the
+ * EMAIL LOCAL PART — so an account created without a name lands in the user
+ * list as "jsmith", and a quality record signed by "jsmith" names nobody.
+ */
+function CreateAccountCard({ onRequest }: { onRequest: (action: PendingAction) => void }) {
+  const [email, setEmail] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+
+  function submit() {
+    const address = email.trim();
+    const person = displayName.trim();
+    // Shape only. The real address rules belong to the auth service, and a
+    // stricter pattern here would refuse addresses it will accept — so this
+    // checks the one thing whose absence is certainly a typing mistake.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+      setFormError('Type the email address this person will sign in with.');
+      return;
+    }
+    if (person === '') {
+      setFormError(
+        'Type the person’s full name. It is the name that will appear on every record they sign, and without it the account is listed by the first part of its address.',
+      );
+      return;
+    }
+    const problem = passwordProblem(password);
+    if (problem !== null) {
+      setFormError(problem);
+      return;
+    }
+    // See the matching comment in `PasswordRow`: this can refuse, and a throw
+    // out of a click handler would take the screen down with it.
+    let key: string;
+    try {
+      key = newIdempotencyKey();
+    } catch (cause) {
+      setFormError(
+        cause instanceof Error
+          ? `${cause.message} Nothing was sent and no account was created.`
+          : 'No unique save key could be made, so nothing was sent.',
+      );
+      return;
+    }
+    setFormError(null);
+    // See the matching comment in `PasswordRow`: out of the React tree and out
+    // of the mutation variables, into the keyed stash the request body is built
+    // from.
+    stashTemporaryPassword(key, password);
+    onRequest({
+      input: {
+        action: 'create_account',
+        email: address,
+        displayName: person,
+        idempotencyKey: key,
+      },
+      title: `Create an account for ${person}`,
+      prompt: `State who authorised this account and how you confirmed the identity of ${person} (${address}). Creating an account is recorded against your name permanently.`,
+      confirmLabel: 'Create the account',
+      credential: { password, personLabel: person, emailLabel: address, isNewAccount: true },
+    });
+    // Two mechanisms clear this field and both are wanted. The remount in
+    // `AccessTab` covers the path where the action completes; this covers the
+    // path where the administrator presses Go back in the reason dialog, after
+    // which no reveal and no remount ever happen. Cancelling a
+    // credential-bearing action discards the credential, deliberately: the
+    // password was composed for a hand-over that did not take place, and
+    // `tests/adminPasswordScreen.test.tsx` enters exactly that path so this
+    // line cannot be removed as redundant with the remount.
+    setPassword('');
+  }
+
+  return (
+    <Card
+      title="Create an account"
+      description="For someone who has no Google account. The account is created with a temporary password you read out, and it starts with no role and no data access until it is approved below."
+    >
+      <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Labelled
+            id="create-email"
+            label="Email address"
+            hint="What they will type to sign in. No message is sent to it — this system sends no email at all."
+          >
+            <input
+              id="create-email"
+              type="email"
+              className={INPUT_CLASS}
+              value={email}
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setFormError(null);
+              }}
+            />
+          </Labelled>
+          <Labelled
+            id="create-name"
+            label="Full name"
+            hint="As it should appear on the records they sign."
+          >
+            <input
+              id="create-name"
+              className={INPUT_CLASS}
+              value={displayName}
+              onChange={(event) => {
+                setDisplayName(event.target.value);
+                setFormError(null);
+              }}
+            />
+          </Labelled>
+        </div>
+
+        <TemporaryPasswordField
+          id="create-password"
+          forWhom="the new account"
+          value={password}
+          onChange={(next) => {
+            setPassword(next);
+            setFormError(null);
+          }}
+          onGenerateError={setFormError}
+        />
+
+        {formError !== null ? (
+          <p role="alert" className="text-base font-medium text-red-900">
+            {formError}
+          </p>
+        ) : null}
+
+        <InfoNote>
+          The password you set here is shown to you <strong>once</strong>, after the account
+          is saved, and is kept nowhere afterwards. The holder cannot use the system with it:
+          the server refuses every request from an account whose password an administrator
+          set, until the holder has chosen their own. Signing in and reaching the
+          change-password screen are the two things that still work.
+        </InfoNote>
+
+        <div>
+          <Button variant="primary" onClick={submit}>
+            <UserPlus aria-hidden className="h-4 w-4" />
+            Continue and state the reason
+          </Button>
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -343,10 +1011,19 @@ function AccessTab({
   actorId,
   canApproveAccess,
   onRequest,
+  formGeneration,
 }: {
   actorId: string;
   canApproveAccess: boolean;
   onRequest: (action: PendingAction) => void;
+  /**
+   * Bumped by `AdminPage` whenever a temporary password has been handed to the
+   * one-time panel. It is the create form's `key`, so the form REMOUNTS and
+   * every field it held — including the credential — is discarded by React
+   * rather than by a cleanup somebody has to remember to write. The same
+   * device as `roleKey` below.
+   */
+  formGeneration: number;
 }) {
   const users = useAdminUsers();
 
@@ -356,6 +1033,19 @@ function AccessTab({
   );
   const rest = useMemo(
     () => (users.data ?? []).filter((u) => u.status !== 'pending'),
+    [users.data],
+  );
+  /**
+   * Every account whose password an administrator still knows.
+   *
+   * The per-row chip answers "is this one of them"; this answers "how many are
+   * there", which is the question an auditor asks and the one a long list
+   * cannot be scanned for. Not filtered by status: a suspended account with an
+   * outstanding change is still an account whose credential a second person
+   * holds.
+   */
+  const administratorKnows = useMemo(
+    () => (users.data ?? []).filter((u) => u.password_change_outstanding),
     [users.data],
   );
 
@@ -398,14 +1088,68 @@ function AccessTab({
         is in the audit log — search it by their email address under <strong>Audit query</strong>.
       </InfoNote>
 
+      {/*
+        THE CONSEQUENCE OF THE SELF-ADMINISTRATION RULE, STATED BEFORE IT BITES.
+
+        The rule itself is on the administrator's own row, where the missing
+        controls raise the question. This is the same fact in the one place it
+        is useful IN ADVANCE: an administrator who discovers at the moment they
+        are locked out that there is no self-service reset and no emailed link
+        has discovered it too late, and the remedy — a second administrator
+        account that exists and whose holder is reachable — has to be arranged
+        while everything still works.
+
+        Not conditional on the actor's own row being visible or scrolled to.
+        The fact is true whether or not the list has loaded.
+      */}
+      <InfoNote tone="warning">
+        <span>
+          <strong>You cannot reset your own password here, and nobody can reset it for you by
+          email.</strong>{' '}
+          The server refuses every administrative act aimed at the account making it, so a
+          forgotten administrator password is cleared only by{' '}
+          <strong>another administrator</strong> setting you a temporary one face to face.
+          Make sure a second administrator account exists and that you know who holds it
+          before you need it — this system sends no mail at all, so there is no other way
+          back in.
+        </span>
+      </InfoNote>
+
+      {/* The `key` is what makes "shown once" true for this form: once a
+          temporary password has gone to the one-time panel, the form is a
+          different element and React throws the old one's state away. */}
+      <CreateAccountCard key={`create-account-${formGeneration}`} onRequest={onRequest} />
+
+      {/* Silent when there is nothing to say, and silent while the list is
+          unknown — `users.isPending` and `users.isError` have already
+          returned above, so reaching here means the list was read. A
+          reassuring "0 accounts" built from a failed query would be worse
+          than no line at all. */}
+      {administratorKnows.length > 0 ? (
+        <InfoNote tone="warning">
+          <span>
+            <strong>
+              {administratorKnows.length === 1
+                ? '1 account is still using a password an administrator knows'
+                : `${administratorKnows.length} accounts are still using a password an administrator knows`}
+              :
+            </strong>{' '}
+            {administratorKnows.map((u) => describeName(u)).join(', ')}. Until each holder
+            chooses their own password, what those accounts record is not attributable to one
+            person — so the server allows them nothing at all, and they are listed here rather
+            than left to be noticed.
+          </span>
+        </InfoNote>
+      ) : null}
+
       <Card
         title={`Waiting for approval (${pending.length})`}
-        description="A new Google sign-in lands here with no role and no data access. Nothing is granted by signing in."
+        description="A new Google sign-in and an account created above both land here with no role and no data access. Nothing is granted by signing in, and nothing by being created."
       >
         {pending.length === 0 ? (
           <EmptyState
             title="No account is waiting for approval."
-            hint="A new sign-in appears here immediately, before it can read anything."
+            hint="A new sign-in, or an account created above, appears here immediately, before it can read anything."
           />
         ) : (
           <ul className="list-none">
@@ -458,7 +1202,13 @@ function AccessTab({
 // Delegated authority
 // ---------------------------------------------------------------------------
 
-function DelegationsTab({ onRequest }: { onRequest: (action: PendingAction) => void }) {
+function DelegationsTab({
+  actorId,
+  onRequest,
+}: {
+  actorId: string;
+  onRequest: (action: PendingAction) => void;
+}) {
   const delegations = useAdminDelegations();
   const users = useAdminUsers();
 
@@ -535,8 +1285,18 @@ function DelegationsTab({ onRequest }: { onRequest: (action: PendingAction) => v
                   onChange={(event) => setUserId(event.target.value)}
                 >
                   <option value="">Choose a person…</option>
+                  {/*
+                    THE ACTOR IS NOT IN THIS LIST. `rpc_grant_delegation`
+                    performs `assert_administers_other`, which refuses a
+                    self-target unconditionally, so offering yourself here
+                    offers an act that can only fail — and a delegation is
+                    exactly the thing an administrator would most want to grant
+                    themselves, which is why the server forbids it. Filtered
+                    out rather than refused on submit: the refusal would arrive
+                    after the reason had been typed.
+                  */}
                   {(users.data ?? [])
-                    .filter((u) => u.status === 'active')
+                    .filter((u) => u.status === 'active' && u.id !== actorId)
                     .map((u) => (
                       <option key={u.id} value={u.id}>
                         {describeName(u)}
@@ -1170,6 +1930,24 @@ export default function AdminPage() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  /**
+   * The temporary password currently on screen, and nothing else anywhere.
+   *
+   * Ordinary component state, so it dies with the component: a navigation away
+   * from this page, a reload or a sign-out all take it with them. That is the
+   * intended lifetime — there is nowhere to put it that would survive, and
+   * nowhere it should.
+   */
+  const [revealed, setRevealed] = useState<Revealed | null>(null);
+  /**
+   * The credential the mutation callbacks will need, held so they do not have
+   * to close over it. See the note in `confirm`: `mutate`'s per-call options
+   * are retained by the MutationObserver for the life of this component and
+   * `reset()` does not clear them, so a closure over the plaintext would
+   * outlive the panel that displays it.
+   */
+  const credentialRef = useRef<Credential | null>(null);
+  const [formGeneration, setFormGeneration] = useState(0);
 
   const canApproveAccess = allows('user.approve_access');
   const canViewSync = allows('sync.view');
@@ -1188,27 +1966,121 @@ export default function AdminPage() {
   function request(next: PendingAction) {
     setFailure(null);
     setSuccess(null);
+    // A password already on screen is withdrawn before a new action starts, so
+    // two credentials are never shown at once and the older one cannot be read
+    // off a stale panel after it has been superseded.
+    setRevealed(null);
     setPending(next);
+  }
+
+  /**
+   * The reason dialog was dismissed, so the act never happens.
+   *
+   * The stashed credential has to go with it. `stashTemporaryPassword` is
+   * called when the form is submitted and the entry is removed by
+   * `useAdminAction` when it builds the request — on this path no request is
+   * ever built, so nothing else would delete it.
+   */
+  function cancel() {
+    const current = pending;
+    setPending(null);
+    if (current?.input.idempotencyKey !== undefined) {
+      clearTemporaryPassword(current.input.idempotencyKey);
+    }
   }
 
   function confirm(reason: string) {
     const current = pending;
     if (current === null) return;
     setPending(null);
+    const credential = current.credential;
+    /**
+     * Two independent reasons to expect a credential, deliberately OR-ed
+     * rather than one derived from the other.
+     *
+     * `credential` says a password is about to be shown; `carriesCredential`
+     * says the ACTION is one that sends a password. They should always agree,
+     * and if a later edit adds a password-bearing action and forgets the panel,
+     * the form is still remounted — the failure is then a missing readout,
+     * which somebody notices immediately, rather than a password left sitting
+     * in a field on an unattended plant tablet, which nobody does.
+     */
+    const hadCredential = credential !== undefined || carriesCredential(current.input.action);
+    /**
+     * The password is put where the callbacks can reach it WITHOUT capturing
+     * it. `mutate(variables, options)` stores those options on the
+     * MutationObserver (`#mutateOptions`), which `reset()` does not clear and
+     * which lives as long as this component — so a closure over
+     * `credential.password` would be a second retention site with a longer
+     * lifetime than the panel that is showing it on purpose. A ref is one
+     * object the closures capture instead, and its contents are dropped when
+     * the panel is dismissed.
+     */
+    credentialRef.current = credential ?? null;
+    /**
+     * Copied out BEFORE the closures are written, and this is not style.
+     *
+     * The callbacks below need the action's title for their message. Reading
+     * `current.title` inside one of them captures `current` — the whole
+     * `PendingAction`, `credential.password` included — in the retained
+     * `#mutateOptions`, which is exactly the retention site the ref above
+     * exists to avoid. A closure's reach is the whole object it dereferences,
+     * not the property it reads, so the string is lifted out here and nothing
+     * in the callbacks refers to `current` at all.
+     */
+    const title = current.title;
     action.mutate(
       { ...current.input, reason },
       {
         onSuccess: (result) => {
           setSuccess(result.message);
           setFailure(null);
+          const shown = credentialRef.current;
+          if (shown !== null) setRevealed({ ...shown, confirmed: true });
         },
         onError: (error: unknown) => {
+          const shown = credentialRef.current;
           setFailure(
-            `${current.title} did not go through: ${
-              error instanceof Error ? error.message : String(error)
-            }. Nothing was changed.`,
+            shown === null
+              ? `${title} did not go through: ${
+                  error instanceof Error ? error.message : String(error)
+                }. Nothing was changed.`
+              : // "Nothing was changed" is not a claim that can be made about
+                // these two. The password reached the server; whether an
+                // account was created or a credential replaced before the
+                // failure is not knowable from here, and saying otherwise
+                // would send an administrator to create a second account for
+                // a person who already has one.
+                `${title} was not confirmed: ${
+                  error instanceof Error ? error.message : String(error)
+                }. It may or may not have taken effect — check the account in the list below before trying again.`,
           );
           setSuccess(null);
+          if (shown !== null) setRevealed({ ...shown, confirmed: false });
+        },
+        onSettled: () => {
+          if (!hadCredential) return;
+          /**
+           * NOT A SCRUB, AND THE COMMENT HERE USED TO SAY IT WAS.
+           *
+           * It claimed `reset()` "puts the mutation back to its default state,
+           * which has no variables, so the only remaining copy is the one in
+           * `revealed`". That is false. `MutationObserver.reset()` removes the
+           * OBSERVER from the mutation and clears its own pointer; the
+           * Mutation stays in the MutationCache with `state.variables` intact,
+           * and is removed by a garbage-collection timer `gcTime` later —
+           * five minutes by default. A twelve-line probe reads the plaintext
+           * out of the cache after `reset()` has run
+           * (`tests/adminCredentialCache.test.tsx` does exactly that).
+           *
+           * The credential is no longer in the variables at all, so there is
+           * nothing here to scrub. `reset()` is kept because it still does
+           * what it says — detach this observer, letting the settled mutation
+           * be collected — and the remount clears the form field, which is a
+           * copy in the DOM and a real one.
+           */
+          action.reset();
+          setFormGeneration((current) => current + 1);
         },
       },
     );
@@ -1274,6 +2146,23 @@ export default function AdminPage() {
         </div>
       ) : null}
 
+      {/* Above the tabs, so switching tab does not hide the one moment a
+          temporary password is readable. */}
+      {revealed !== null ? (
+        <TemporaryPasswordPanel
+          revealed={revealed}
+          onDismiss={() => {
+            // Both copies, in the one handler. `revealed` is what the panel
+            // renders; `credentialRef` is what the mutation callbacks read
+            // instead of closing over the plaintext. Clearing one and not the
+            // other would leave the credential reachable after the panel says
+            // it is gone.
+            credentialRef.current = null;
+            setRevealed(null);
+          }}
+        />
+      ) : null}
+
       <nav aria-label="Administration sections" className="mb-5">
         <ul className="flex flex-wrap gap-2">
           {TABS.map((entry) => {
@@ -1305,10 +2194,13 @@ export default function AdminPage() {
           actorId={user.id}
           canApproveAccess={canApproveAccess}
           onRequest={request}
+          formGeneration={formGeneration}
         />
       ) : null}
 
-      {tab === 'delegations' ? <DelegationsTab onRequest={request} /> : null}
+      {tab === 'delegations' ? (
+        <DelegationsTab actorId={user.id} onRequest={request} />
+      ) : null}
 
       {tab === 'lists' ? <ListsTab onRequest={request} /> : null}
 
@@ -1337,7 +2229,7 @@ export default function AdminPage() {
         confirmLabel={pending?.confirmLabel ?? 'Confirm'}
         busy={action.isPending}
         onConfirm={confirm}
-        onCancel={() => setPending(null)}
+        onCancel={cancel}
       />
     </div>
   );
