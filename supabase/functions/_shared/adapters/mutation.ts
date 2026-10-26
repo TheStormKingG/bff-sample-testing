@@ -90,6 +90,37 @@ export interface MutationArgs {
 export interface MutationSpec<TResult> {
   /** Stable operation name. Part of the idempotency key's scope. */
   readonly operation: string;
+  /**
+   * The operation name THE RPC CLAIMS THE KEY UNDER, when it differs.
+   *
+   * WHY THIS EXISTS, because it looks like duplication and is not. This adapter
+   * claims the idempotency key BEFORE calling the RPC, and the RPC then claims
+   * the same key again from inside Postgres. `claim_mutation` compares the two
+   * operation names and raises `BFF_IDEMPOTENCY_CONFLICT: operation_mismatch`
+   * on any disagreement — so the two strings are a contract, and nothing used
+   * to compare them.
+   *
+   * They disagreed for every handler that prefixes its operation. Proved by
+   * execution: a key claimed as `admin_action.set_roles` and then re-claimed by
+   * `rpc_set_user_roles` as `set_user_roles` is REFUSED, while the identical
+   * call with matching names is accepted. Ten of fifteen write actions were
+   * unreachable that way — every administrator action, both hold actions and
+   * two of three specification actions — while the five whose names happened to
+   * match (register_sample, update_results, review_sample, set_disposition,
+   * approve_specification) worked, which is exactly why it went unnoticed.
+   *
+   * The fix separates two things that were conflated. `operation` stays the
+   * specific, action-level name and keeps feeding the AUDIT record, because
+   * `deny_access` and `set_status` call one RPC and an audit trail that cannot
+   * tell them apart is worse than one that can. `claimOperation` is what the
+   * registry uses, and it must equal the literal the RPC hands
+   * `claim_mutation`. `tests/idempotencyOperationContract.test.ts` enumerates
+   * both sides and fails if any pair drifts again.
+   *
+   * Omit it when the two already agree — that is the common case and the
+   * default.
+   */
+  readonly claimOperation?: string;
   readonly permission: Permission;
   readonly subjectType: string;
   /** Subject id for the audit event, read from the body before authorisation. */
@@ -295,16 +326,20 @@ export async function runMutation<TResult>(
 
   // 3. Canonical payload hash.
   const hash = payloadHash(canonicalPayload(spec.operation, body));
+  // The registry is keyed by the name the RPC will re-claim under; the audit
+  // record below still uses the specific `spec.operation`. See `claimOperation`.
+  const claimOperation = spec.claimOperation ?? spec.operation;
+
   const incoming = {
     key,
-    operation: spec.operation,
+    operation: claimOperation,
     actorId: actor.userId,
     payloadHash: hash,
   };
 
   // 4. Fast path: an already-completed identical request replays without
   //    touching anything else.
-  const existing = await registry.read(key, spec.operation);
+  const existing = await registry.read(key, claimOperation);
   const firstDecision = decideIdempotency(existing, incoming, now);
 
   if (firstDecision.action === 'replay') {
@@ -327,7 +362,7 @@ export async function runMutation<TResult>(
   // assumed.
   const claim = await registry.begin({
     key,
-    operation: spec.operation,
+    operation: claimOperation,
     actorId: actor.userId,
     payloadHash: hash,
     staleAfterMs: IN_PROGRESS_TIMEOUT_MS,
@@ -385,7 +420,7 @@ export async function runMutation<TResult>(
 
     await registry.complete({
       key,
-      operation: spec.operation,
+      operation: claimOperation,
       actorId: actor.userId,
       state: 'succeeded',
       response: result,
@@ -421,7 +456,7 @@ export async function runMutation<TResult>(
     if (outcome.registry !== 'leave') {
       await registry.complete({
         key,
-        operation: spec.operation,
+        operation: claimOperation,
         actorId: actor.userId,
         state: outcome.registry,
         response:

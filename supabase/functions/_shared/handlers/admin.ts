@@ -45,6 +45,7 @@ import {
 } from '../rpc.ts';
 import { recordAudit, requireSeparation } from '../adapters/authorize.ts';
 import {
+  ADMIN_ACTION_CLAIM_OPERATION,
   ADMIN_ACTION_PERMISSION,
   delegationGrantRefusal,
   type AdminAction,
@@ -154,6 +155,9 @@ function requireReason(body: Record<string, unknown>): string {
 export function adminSpec(action: AdminAction): MutationSpec<Record<string, unknown>> {
   return {
     operation: `admin_action.${action}`,
+    // The RPC re-claims the key under its own literal; see
+    // ADMIN_ACTION_CLAIM_OPERATION for why these differ at all.
+    claimOperation: ADMIN_ACTION_CLAIM_OPERATION[action],
     /**
      * The permission for THIS action, from the total table. `runMutation`
      * checks it before any work and audits the denial, so there is no
