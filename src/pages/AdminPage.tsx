@@ -195,10 +195,11 @@ function UserRow({
         <div className="min-w-0">
           <p className="text-base font-semibold text-slate-900">{describeName(user)}</p>
           <p className="text-sm text-slate-600">{user.email ?? 'No email recorded'}</p>
-          <p className="text-xs text-slate-500">
-            Account created {instant(user.created_at)} · last signed in{' '}
-            {instant(user.last_sign_in_at)}
-          </p>
+          {/* Account creation is the only instant `profiles` records for an
+              account. There is no sign-in or last-activity timestamp in the
+              schema — see the comment on `fetchAdminUsers` — so none is
+              claimed here. */}
+          <p className="text-xs text-slate-500">Account created {instant(user.created_at)}</p>
         </div>
         <StatusChip
           label={USER_STATUS_LABELS[user.status]}
@@ -371,6 +372,32 @@ function AccessTab({
 
   return (
     <div className="flex flex-col gap-6">
+      {/* States the limit rather than leaving it to be inferred from an absent
+          field.
+
+          BE PRECISE HERE, and do not restore the shorter wording this replaced.
+          That version said no last-activity time existed "anywhere in the
+          schema", which is false: `profiles.last_seen_at` exists. What does not
+          exist is a WRITER for it — nothing in any migration, RPC, Edge
+          Function or trigger ever sets it, so it is NULL for every account
+          including the one reading this screen. "The column is absent" and "the
+          column is never populated" are different claims, and asserting the
+          stronger one on a quality screen is the same defect this note exists
+          to avoid.
+
+          Nor does this list claim to be everything the ledger holds: `profiles`
+          also records approval_basis, approved_by, approved_at and
+          last_access_review_at, none of which is rendered. PRD §81 asks the
+          Users register for approval authority and last access review, so that
+          is an outstanding gap, not a thing to paper over with a note. */}
+      <InfoNote>
+        This list shows when an account was created, its status and its roles. It does not
+        show a last sign-in: nothing in this system records one, and the single activity
+        field the database has is never written to, so any time shown here would be invented.
+        Dormancy is therefore not answerable on this screen. What a person has actually done
+        is in the audit log — search it by their email address under <strong>Audit query</strong>.
+      </InfoNote>
+
       <Card
         title={`Waiting for approval (${pending.length})`}
         description="A new Google sign-in lands here with no role and no data access. Nothing is granted by signing in."
@@ -609,10 +636,17 @@ function DelegationsTab({ onRequest }: { onRequest: (action: PendingAction) => v
                       </code>{' '}
                       to {d.user_email ?? d.user_id}
                     </p>
+                    {/* `effective_from` and `effective_to` are timestamptz, not
+                        date columns: the raw value is a UTC instant, and it used
+                        to be printed verbatim under the words "(Guyana dates)",
+                        which is two claims the column does not support. The
+                        formatter converts to plant-local time and labels it. */}
                     <p className="text-sm text-slate-700">
-                      From {d.effective_from}
-                      {d.effective_to === null ? ' with no end date' : ` until ${d.effective_to}`}{' '}
-                      (Guyana dates) · granted by {d.granted_by_name ?? d.granted_by ?? 'not recorded'}
+                      In force from {instant(d.effective_from)}
+                      {d.effective_to === null
+                        ? ' with no end date'
+                        : ` until ${instant(d.effective_to)}`}{' '}
+                      · granted by {d.granted_by_name ?? d.granted_by ?? 'not recorded'}
                     </p>
                     {d.reason !== null && d.reason !== '' ? (
                       <p className="mt-1 text-base text-slate-800">
@@ -620,26 +654,44 @@ function DelegationsTab({ onRequest }: { onRequest: (action: PendingAction) => v
                         {d.reason}
                       </p>
                     ) : null}
+                    {d.revoked_at !== null ? (
+                      <p className="mt-1 text-base font-medium text-slate-900">
+                        Revoked {instant(d.revoked_at)}
+                        {d.revoke_reason !== null && d.revoke_reason !== ''
+                          ? ` — ${d.revoke_reason}`
+                          : ''}
+                      </p>
+                    ) : null}
                   </div>
-                  {DELEGATION_ONLY_PERMISSIONS.includes(d.permission) ? (
-                    <StatusChip label="Delegation-only authority" tone="warning" size="sm" />
-                  ) : null}
+                  <div className="flex flex-col items-end gap-2">
+                    {DELEGATION_ONLY_PERMISSIONS.includes(d.permission) ? (
+                      <StatusChip label="Delegation-only authority" tone="warning" size="sm" />
+                    ) : null}
+                    {d.revoked_at !== null ? (
+                      <StatusChip label="Revoked" tone="neutral" size="sm" />
+                    ) : null}
+                  </div>
                 </div>
-                <div className="mt-2">
-                  <Button
-                    variant="danger"
-                    onClick={() =>
-                      onRequest({
-                        input: { action: 'revoke_delegation', delegationId: d.id },
-                        title: 'Revoke this delegation',
-                        prompt: `State why "${d.permission}" is being revoked. The delegation record is kept; revoking adds an event.`,
-                        confirmLabel: 'Revoke the delegation',
-                      })
-                    }
-                  >
-                    Revoke
-                  </Button>
-                </div>
+                {/* No Revoke on an already-revoked row: `rpc_revoke_delegation`
+                    refuses a second revocation (BFF_ALREADY_REVOKED), so the
+                    button would offer an act the server rejects. */}
+                {d.revoked_at === null ? (
+                  <div className="mt-2">
+                    <Button
+                      variant="danger"
+                      onClick={() =>
+                        onRequest({
+                          input: { action: 'revoke_delegation', delegationId: d.id },
+                          title: 'Revoke this delegation',
+                          prompt: `State why "${d.permission}" is being revoked. The delegation record is kept; revoking adds an event.`,
+                          confirmLabel: 'Revoke the delegation',
+                        })
+                      }
+                    >
+                      Revoke
+                    </Button>
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -999,10 +1051,14 @@ function AuditTab() {
           }}
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {/* `actor_email` is the only text identity `audit_events` keeps, so
+                this searches an address and says so. A surname still matches
+                most addresses, but a display name that differs from the
+                address will never be found here. */}
             <Labelled
               id="audit-actor"
-              label="Person"
-              hint="Part of a name is enough. Press Search."
+              label="Email address"
+              hint="Part of an email address is enough — events record the address, not a display name. Press Search."
             >
               <input
                 id="audit-actor"

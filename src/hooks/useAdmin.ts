@@ -45,7 +45,6 @@ export interface AdminUser {
   readonly full_name: string | null;
   readonly status: UserStatus;
   readonly created_at: string;
-  readonly last_sign_in_at: string | null;
   readonly roles: readonly Role[];
 }
 
@@ -59,6 +58,16 @@ export interface AdminDelegation {
   readonly effective_from: string;
   readonly effective_to: string | null;
   readonly reason: string | null;
+  /**
+   * `user_delegations` keeps a revoked row and stamps it, and
+   * `rpc_revoke_delegation` REFUSES a second revocation
+   * (`BFF_ALREADY_REVOKED`). Both are read because a list that shows every
+   * delegation ever recorded without its revocation reads as live authority,
+   * and because offering Revoke on a revoked row offers an act the server will
+   * reject.
+   */
+  readonly revoked_at: string | null;
+  readonly revoke_reason: string | null;
 }
 
 /** The three columns a uuid can be resolved to a readable person with. */
@@ -74,14 +83,43 @@ interface ProfileRow {
   readonly display_name: string | null;
   readonly status: UserStatus;
   readonly created_at: string;
-  readonly last_seen_at: string | null;
 }
 
+/**
+ * NO SIGN-IN AND NO LAST-ACTIVITY INSTANT IS READ HERE, DELIBERATELY.
+ *
+ * `profiles` has no sign-in timestamp at all. It does have `last_seen_at`
+ * (`0001_identity.sql`, nullable, no default), and this hook used to pipe that
+ * column to a field the screen printed as "last signed in". NOTHING WRITES IT:
+ * no migration, trigger, RPC body, Edge Function or frontend path assigns it.
+ * Checked three ways — a repository-wide grep for the name (declaration and
+ * this file only), `pg_trigger` on `public.profiles` (just
+ * `profiles_set_updated_at`), and every `pg_proc.prosrc` in the database (no
+ * match) — and in `bff_migration_check` the column is NULL on every row. The
+ * label therefore read "last signed in Never" for an account that was signed
+ * in at that moment.
+ *
+ * It was removed rather than filled because both ways to fill it are worse
+ * than silence. Mirroring GoTrue's `auth.users.last_sign_in_at` cannot even be
+ * created against the verification database (that column does not exist in the
+ * local auth shim, so the migration would fail `verify-migrations.sh`) and
+ * would couple a public migration to an internal auth table. Writing the
+ * column from the request path is per-request activity telemetry rather than a
+ * sign-in time, and it would fire `profiles_set_updated_at` on every page
+ * load, so `updated_at` would stop meaning "this record was changed" — in a
+ * system whose audit trail is a regulated artefact. The client's own session
+ * does carry a sign-in instant, but only for the viewer, never for the other
+ * accounts this list is reviewing.
+ *
+ * Nor is one required: PRD §81's `_Users` register asks for the last ACCESS
+ * REVIEW, not the last sign-in, and "when did this person last act" is already
+ * answered under audit by `audit_events`, searchable on the Audit tab.
+ */
 export async function fetchAdminUsers(): Promise<readonly AdminUser[]> {
   const [profileRes, roleRes] = await Promise.all([
     db
       .from(TABLES.profiles)
-      .select('id,email,display_name,status,created_at,last_seen_at')
+      .select('id,email,display_name,status,created_at')
       .order('created_at', { ascending: false }),
     db.from(TABLES.userRoles).select('user_id,role'),
   ]);
@@ -101,10 +139,6 @@ export async function fetchAdminUsers(): Promise<readonly AdminUser[]> {
     full_name: p.display_name,
     status: p.status,
     created_at: p.created_at,
-    // The screen prints this as "last signed in", but the only column the
-    // schema has is `last_seen_at` — last activity, not last authentication,
-    // so the instant can be later than the sign-in that started the session.
-    last_sign_in_at: p.last_seen_at,
     roles: roleMap.get(p.id) ?? [],
   }));
 }
@@ -121,7 +155,9 @@ export function useAdminDelegations() {
     queryFn: async (): Promise<readonly AdminDelegation[]> => {
       const { data, error } = await db
         .from(TABLES.delegations)
-        .select('id,user_id,permission,granted_by,effective_from,effective_to,reason')
+        .select(
+          'id,user_id,permission,granted_by,effective_from,effective_to,reason,revoked_at,revoke_reason',
+        )
         .order('effective_from', { ascending: false });
       if (error) throw new Error(error.message);
       const rows = (data ?? []) as DelegationRow[];

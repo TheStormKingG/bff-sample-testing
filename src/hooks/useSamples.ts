@@ -535,10 +535,26 @@ export function toSpecificationVersionRow(row: SpecificationVersionDbRow): Speci
     proposed_by: row.proposed_by,
     approved_by: row.approved_by,
     approved_at: row.approved_at,
-    // NULL because no name column exists. `SpecificationsPage` already falls
-    // back to the id (`proposed_by_name ?? proposed_by`), so null lets that
-    // fallback work; copying the id into both fields would make the page's own
-    // "Not recorded" branch unreachable and claim a name had been stored.
+    // NULL here because no name column exists: `specification_versions`
+    // stores `proposed_by` and `approved_by` as uuids and nothing else.
+    //
+    // THE NAMES ARE RESOLVED AT READ TIME, NOT RECORDED ON THE SPECIFICATION.
+    // `fetchSpecifications` in `useSpecifications.ts` overwrites these two
+    // fields from a second keyed read of `profiles`, so the limits screen
+    // names the proposer and the approver (risk R-01) instead of printing a
+    // uuid. The consequence is that renaming a person changes what every
+    // HISTORICAL version displays, because the record holds the id and the
+    // name is a current lookup of it — a property of this design, not a bug.
+    //
+    // This mapper is deliberately left pure and single-argument: it is also
+    // called bare by `useSampleDetail` as `.map(toSpecificationVersionRow)`,
+    // and the sample-detail path does NOT resolve names because its own
+    // `toRule()` maps to `SpecificationRule`, which carries no name fields at
+    // all — a lookup there would cost a round trip per sample load and be
+    // discarded. Copying the id into these fields instead of nulling them
+    // would make `SpecificationsPage`'s `?? proposed_by` fallback dead code
+    // and its "Not recorded" branch unreachable, and would claim a name had
+    // been stored.
     proposed_by_name: null,
     approved_by_name: null,
     source_note: row.source_evidence,

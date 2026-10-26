@@ -26,6 +26,95 @@ import {
 
 const db = supabase as unknown as SupabaseClient;
 
+/**
+ * PostgREST carries an `in` filter in the query string, so one unbounded list
+ * of uuids can outgrow a proxy's request-line limit. The profile lookup below
+ * resolves in batches for that reason, not for database cost. Same constant
+ * and same reason as `useAdmin.ts`; it is not exported from there.
+ */
+const ID_BATCH = 100;
+
+function batches<T>(values: readonly T[], size = ID_BATCH): T[][] {
+  const out: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    out.push(values.slice(index, index + size));
+  }
+  return out;
+}
+
+/**
+ * One profile row, reduced to what it takes to name the person.
+ *
+ * Both name columns are typed nullable even though `profiles.display_name` and
+ * `profiles.email` are NOT NULL in the schema: this models what a PostgREST
+ * response can hand back, not what the table guarantees, and `personName`
+ * below treats a missing value as "names nobody" rather than printing blank.
+ */
+interface ProfileNameRow {
+  readonly id: string;
+  readonly display_name: string | null;
+  readonly email: string | null;
+}
+
+/**
+ * The name to print for one profile row, or null if the row names nobody.
+ *
+ * `display_name` is the intended answer. The email fallback is a guard, not an
+ * observed case: `profiles.display_name` is NOT NULL and carries
+ * CHECK (length(btrim(display_name)) > 0), so the live schema cannot produce a
+ * profile row whose display name is missing or blank. The branch exists so a
+ * future relaxation of either constraint degrades to the email instead of
+ * printing an empty cell, and it is recorded here as unexercised so nobody
+ * reads the fallback as evidence that blank display names occur.
+ */
+function personName(person: ProfileNameRow | undefined): string | null {
+  if (person === undefined) return null;
+  const display = person.display_name?.trim();
+  if (display !== undefined && display !== '') return display;
+  const email = person.email?.trim();
+  if (email !== undefined && email !== '') return email;
+  return null;
+}
+
+/**
+ * Resolve `proposed_by` / `approved_by` uuids to the people they identify.
+ *
+ * One keyed read per screen load (batched only against the request-line
+ * limit), never one per row, and no read at all when no row names anybody —
+ * the 34 `reference_only` workbook entries have neither column set, because
+ * CHECK `specification_versions_reference_only_unapproved` forbids it.
+ */
+async function resolvePeople(
+  rows: readonly SpecificationVersionDbRow[],
+): Promise<Map<string, ProfileNameRow>> {
+  const ids = [
+    ...new Set(
+      rows
+        .flatMap((r) => [r.proposed_by, r.approved_by])
+        .filter((v): v is string => v !== null),
+    ),
+  ];
+  const people = new Map<string, ProfileNameRow>();
+  for (const batch of batches(ids)) {
+    // A real second keyed read with a LITERAL select list, deliberately NOT a
+    // PostgREST embedded resource (`profiles(display_name)`). An embed would
+    // fetch the same names in one request, but `scripts/check-frontend-schema.py`
+    // skips any select entry containing a parenthesis, so the embed form would
+    // make these columns INVISIBLE to the schema gate instead of verified by
+    // it — the gate would go green by checking less. This form is more verbose
+    // and is the one the gate can read; do not "simplify" it into an embed.
+    // Same shape and same reasoning as `useAdminDelegations` in useAdmin.ts.
+    const res = await db
+      .from(TABLES.profiles)
+      .select('id,display_name,email')
+      .in('id', batch);
+    if (res.error) throw new Error(res.error.message);
+    for (const person of (res.data ?? []) as ProfileNameRow[]) {
+      people.set(person.id, person);
+    }
+  }
+  return people;
+}
 
 /**
  * The four status strings the live `Limits` tab actually contains. None of them
@@ -58,12 +147,40 @@ export async function fetchSpecifications(): Promise<SpecificationSet> {
     .order('version', { ascending: false });
   if (error) throw new Error(error.message);
 
+  const dbRows = (data ?? []) as SpecificationVersionDbRow[];
+
+  // Who proposed a limit and who approved it are the two names risk R-01 is
+  // about, so this screen resolves them instead of printing 36 hex characters.
+  // `specification_versions` stores only the uuids; the names come from a
+  // second keyed read of `profiles`.
+  //
+  // THE NAME IS RESOLVED AT READ TIME, NOT RECORDED ON THE SPECIFICATION.
+  // The quality record holds the profile id and nothing else, so if a person
+  // is later renamed, every historical version will display the NEW name
+  // against the OLD decision. That is a real property of this design, not an
+  // oversight: the id is the stable identifier and the name is a current
+  // lookup of it. A record that had to show the name as it stood on the
+  // approval date would need the name stored on the version row at approval,
+  // which the schema does not do.
+  const people = await resolvePeople(dbRows);
+
   // Mapped, not cast. Seven of this screen's field names are not column names
   // — see `toSpecificationVersionRow` — and the cast that used to stand here
   // is what let the divergence survive a clean typecheck: `as` asserts the
   // shape rather than producing it, so TypeScript had nothing to disagree
   // with and every field the database does not store arrived `undefined`.
-  const rows = ((data ?? []) as SpecificationVersionDbRow[]).map(toSpecificationVersionRow);
+  //
+  // `toSpecificationVersionRow` is left exactly as it is — it is also called
+  // by `useSampleDetail`, bare, as `.map(toSpecificationVersionRow)` — and the
+  // two name fields it nulls are filled here instead. NULL survives wherever
+  // no profile row answers, so `SpecificationsPage`'s own `?? proposed_by`
+  // fallback stays live and shows the traceable uuid rather than a plausible
+  // name that is not in the database.
+  const rows = dbRows.map((row) => ({
+    ...toSpecificationVersionRow(row),
+    proposed_by_name: row.proposed_by === null ? null : personName(people.get(row.proposed_by)),
+    approved_by_name: row.approved_by === null ? null : personName(people.get(row.approved_by)),
+  }));
   const reference = rows.filter((r) => r.status === 'reference_only');
   const rules = rows.filter((r) => r.status !== 'reference_only');
 
