@@ -37,6 +37,23 @@ export function AppLayout() {
   const isPhone = useIsPhone();
   const onHomeRoute = useMatch({ path: '/', end: true }) !== null;
   const onPhoneHome = isPhone && onHomeRoute;
+  /**
+   * A stage form on a phone gets a compact shell.
+   *
+   * Measured on 375x812 before this: header 153px, secondary nav 57px, title
+   * block 76px and the "Before you start" panel 172px put the FIRST FIELD at
+   * 683px, with a 121px action bar under it — 804 of 812 pixels spent before
+   * the operator could use anything. The one screen whose entire purpose is
+   * typing a value showed no value to type into.
+   *
+   * So on a phone, while a form is open: the identity block goes (the action
+   * bar reports save state when it changes), the secondary nav goes
+   * (navigating away mid-form is not what that bar is for), and the page
+   * footer goes (a build identifier is not worth a field). None of this
+   * applies at `sm` and wider, and none of it applies once the form closes.
+   */
+  const onStageRoute = useMatch({ path: '/stage/:stage' }) !== null;
+  const onPhoneForm = isPhone && onStageRoute;
 
   return (
     <div
@@ -56,8 +73,10 @@ export function AppLayout() {
 
       {!onPhoneHome && (
         <div className="no-print">
-          <Header />
-          <SecondaryNav variant="bar" className="border-b border-slate-200" />
+          <Header compact={onPhoneForm} />
+          {!onPhoneForm && (
+            <SecondaryNav variant="bar" className="border-b border-slate-200" />
+          )}
         </div>
       )}
 
@@ -72,7 +91,7 @@ export function AppLayout() {
         <Outlet />
       </main>
 
-      {!onPhoneHome && (
+      {!onPhoneHome && !onPhoneForm && (
         <footer className="no-print border-t border-slate-200 bg-slate-50">
           <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-4 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <p>Bounty Farm Limited — Feed Factory quality records</p>

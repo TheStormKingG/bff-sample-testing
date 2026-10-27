@@ -155,8 +155,24 @@ export function FieldGroupShell({
  * NFR-004; the focus ring is deliberately thick and offset because the app is
  * used in bright daylight on a scratched phone screen.
  */
+/**
+ * AN INPUT IS CONCAVE. That is the one place the neumorphic metaphor earns
+ * its keep rather than decorating: a surface you put something INTO is
+ * pressed in, while a control you push is raised. The home screen's tiles and
+ * the action bar's buttons are extruded for the same reason, from the same
+ * tokens.
+ *
+ * The border stays. A purely shadow-defined edge is the standard neumorphism
+ * failure — the style is flagged as a low-contrast risk, and this form is
+ * read in daylight on a scratched phone by someone wearing gloves, so the
+ * field's boundary may not depend on a soft shadow being visible. The shadow
+ * is added TO the border, never instead of it.
+ *
+ * `focus:ring-offset-1` and the thick ring are unchanged for the same reason
+ * the original comment gives: the focus ring must survive bright sunlight.
+ */
 export const INPUT_CLASS =
-  'block w-full min-h-[44px] rounded-md border-2 border-slate-400 bg-white px-3 py-2 ' +
+  'block w-full min-h-[44px] rounded-xl border border-slate-300 bg-white px-3 py-2 shadow-neu-inset ' +
   'text-base text-slate-900 placeholder:text-slate-400 ' +
   'focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-1 ' +
   'disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500';

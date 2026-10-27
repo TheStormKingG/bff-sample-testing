@@ -14,20 +14,40 @@ export interface StickyFormFooterProps {
   readonly noActionReason?: string | null;
 }
 
+/**
+ * NO LABEL MAY WRAP. `whitespace-nowrap` is the load-bearing class here.
+ *
+ * Without it "Register sample" broke across two lines on a 375px phone, and
+ * the damage was not cosmetic. The bar is `sticky bottom-0`, so its height is
+ * subtracted from the form the operator can see: two-line buttons made it
+ * 142px tall, three buttons wrapped onto two rows, and the field underneath
+ * was clipped mid-sentence. Measured on the running app before this change —
+ * "Register sample" 2 lines, "Save draft" 2 lines, bar 142px, the Date hint
+ * cut off behind it.
+ *
+ * `shrink-0` on the label text keeps the icon from stealing the room the word
+ * needs, and `min-w-0` is deliberately NOT used: these labels are short and
+ * must never be ellipsised. If a future label genuinely cannot fit at 320px,
+ * shorten the WORD rather than letting it wrap or truncate — a quality action
+ * the operator cannot read is worse than a terse one.
+ */
+const BUTTON_BASE =
+  'inline-flex min-h-[44px] items-center justify-center gap-2 whitespace-nowrap rounded-xl px-4 py-2 ' +
+  'text-base transition-[transform,box-shadow] duration-150 ease-out focus:outline-none focus-visible:ring-2 ' +
+  'focus-visible:ring-offset-2 focus-visible:ring-offset-neu-base disabled:cursor-not-allowed ' +
+  'disabled:opacity-60 active:scale-[0.98]';
+
 const PRIMARY =
-  'inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-md bg-blue-700 px-4 py-2 ' +
-  'text-base font-bold text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-700 ' +
-  'focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60';
+  `${BUTTON_BASE} flex-1 bg-bff-700 font-bold text-white shadow-neu-sm hover:bg-bff-800 ` +
+  'focus-visible:ring-bff-700 active:shadow-neu-pressed';
 
 const SECONDARY =
-  'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border-2 border-slate-400 bg-white ' +
-  'px-4 py-2 text-base font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 ' +
-  'focus:ring-blue-700 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60';
+  `${BUTTON_BASE} bg-neu-base font-semibold text-slate-800 shadow-neu-sm hover:text-slate-900 ` +
+  'focus-visible:ring-bff-700 active:shadow-neu-inset';
 
 const DANGER =
-  'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border-2 border-red-700 bg-white ' +
-  'px-4 py-2 text-base font-semibold text-red-800 hover:bg-red-50 focus:outline-none focus:ring-2 ' +
-  'focus:ring-red-700 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60';
+  `${BUTTON_BASE} bg-neu-base font-semibold text-red-800 shadow-neu-sm hover:text-red-900 ` +
+  'focus-visible:ring-red-700 active:shadow-neu-inset';
 
 /**
  * The action bar, pinned to the bottom of the viewport.
@@ -61,7 +81,10 @@ export function StickyFormFooter({
     actions.canSaveDraft || actions.canRegister || actions.canSaveResults || actions.canVoid;
 
   return (
-    <div className="sticky bottom-0 z-40 border-t-2 border-slate-300 bg-white/95 px-4 py-3 backdrop-blur">
+    <div
+      data-form-actions
+      className="sticky bottom-0 z-40 border-t border-slate-200 bg-neu-base/95 px-4 py-3 backdrop-blur"
+    >
       {!hasAnyAction && noActionReason !== null ? (
         <p className="mb-2 text-sm font-medium text-slate-700">{noActionReason}</p>
       ) : null}

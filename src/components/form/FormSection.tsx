@@ -42,25 +42,33 @@ export function FormSection({
   const Chevron = open ? ChevronDown : ChevronRight;
 
   return (
-    <section className="mb-4 overflow-hidden rounded-lg border-2 border-slate-300 bg-white">
+    <section className="mb-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-neu-sm">
       <h2 id={headingId} className="m-0">
         <button
           type="button"
           onClick={() => onToggle(section, !open)}
           aria-expanded={open}
           aria-controls={regionId}
-          className="flex min-h-[44px] w-full items-center gap-2 bg-slate-50 px-4 py-3 text-left text-lg font-bold text-slate-900 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-700"
+          className="flex min-h-[44px] w-full items-center gap-2 bg-slate-50 px-4 py-3 text-left text-base font-bold text-slate-900 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-700 sm:text-lg"
         >
           <Chevron aria-hidden="true" className="h-5 w-5 shrink-0" />
-          <span className="flex-1">{SECTION_LABELS[section]}</span>
+          {/*
+            `whitespace-nowrap`, and one step smaller until `sm`. The longest
+            label — "Settings when sampled" — wrapped onto two lines at 375px
+            on three of the seven forms, which both looked broken and made the
+            header taller than the row it heads. A section name is not a
+            candidate for truncation either: the operator needs to know which
+            group they are opening, so the type scale gives way instead.
+          */}
+          <span className="flex-1 whitespace-nowrap">{SECTION_LABELS[section]}</span>
 
           {errorCount > 0 ? (
             <span className="inline-flex items-center gap-1 rounded border border-red-700 bg-red-50 px-2 py-0.5 text-sm font-semibold text-red-800">
               <AlertCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
-              {errorCount} to fix
+              <span className="whitespace-nowrap">{errorCount} to fix</span>
             </span>
           ) : (
-            <span className="text-sm font-normal text-slate-600">
+            <span className="whitespace-nowrap text-sm font-normal text-slate-600">
               {fieldCount} {fieldCount === 1 ? 'field' : 'fields'}
             </span>
           )}

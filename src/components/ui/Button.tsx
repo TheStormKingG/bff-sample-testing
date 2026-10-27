@@ -63,7 +63,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={isDisabled}
       aria-busy={loading || undefined}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-semibold',
+        // `whitespace-nowrap` is a product rule, not a style preference: no
+        // button label in this app may break across two lines. A wrapped
+        // label makes the control taller than the row it belongs to, and on
+        // the phone form that extra height came straight out of the sticky
+        // action bar's share of an 812px screen. Enforced here so every
+        // consumer inherits it rather than each remembering.
+        'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg font-semibold',
         'transition-colors disabled:cursor-not-allowed disabled:opacity-60',
         VARIANTS[variant],
         SIZES[size],
