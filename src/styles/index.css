@@ -77,6 +77,79 @@
     @apply absolute left-4 top-0 z-50 -translate-y-full rounded-b-md bg-bff-700 px-4 py-3
            text-white transition-transform focus-visible:translate-y-0;
   }
+
+  /*
+   * ------------------------------------------------------------------
+   * Neumorphic surface — the phone home screen, and nothing else.
+   * ------------------------------------------------------------------
+   *
+   * Written as component classes rather than as a pile of utilities for one
+   * reason that matters: the reduced-motion override below has to come AFTER
+   * the `:active` rule in source order to win, and Tailwind decides the
+   * relative order of the `motion-reduce:` and `active:` variants for itself.
+   * A `motion-reduce:active:scale-100` utility therefore cannot be relied on
+   * to suppress `active:scale-[0.97]`; these two rules can.
+   *
+   * The depth is SURFACE ONLY. Nothing in here sets a text colour, because
+   * the low-contrast grey that usually travels with this style is the one
+   * part of it that a regulated record read in bright light cannot afford.
+   * Text colours are chosen at the call site and are all >= 4.5:1 against
+   * `neu-base`; `text-slate-500` measures 4.31:1 on this surface and is
+   * therefore never used on it.
+   */
+  .neu-tile {
+    @apply relative flex flex-col items-center justify-center overflow-hidden rounded-[1.375rem]
+           bg-neu-base shadow-neu transition-[transform,box-shadow] duration-150 ease-out;
+  }
+
+  /* Extruded at rest, inset concave when held down. */
+  .neu-tile:active {
+    @apply scale-[0.97] shadow-neu-pressed;
+  }
+
+  /* A nested inset slot holding the stage icon. */
+  .neu-slot {
+    @apply flex shrink-0 items-center justify-center rounded-full bg-neu-base shadow-neu-inset;
+  }
+
+  /* A low, wide resting surface: the status strip under the grid. */
+  .neu-strip {
+    @apply rounded-2xl bg-neu-base shadow-neu-sm transition-[transform,box-shadow] duration-150 ease-out;
+  }
+
+  .neu-strip:active {
+    @apply scale-[0.99] shadow-neu-pressed;
+  }
+
+  /*
+   * Focus rings stay. Neumorphic designs routinely drop them because the ring
+   * "spoils" the soft surface; on a plant screen driven by keyboard or a
+   * switch device that is the difference between usable and not. The offset
+   * colour is the surface rather than white so the gap does not read as a
+   * hole. `:where()` keeps the base rule at zero specificity, so a class
+   * selector here wins without `!important`.
+   */
+  .neu-tile:focus-visible,
+  .neu-strip:focus-visible {
+    @apply outline-none ring-2 ring-bff-600 ring-offset-2 ring-offset-neu-base;
+  }
+}
+
+/*
+ * Reduced motion, for the press animation specifically.
+ *
+ * The blanket rule further down already collapses every transition to an
+ * effectively instant change, but an instant jump to 97% scale is still
+ * movement. Under `prefers-reduced-motion` the press is communicated by the
+ * inset shadow alone — a state change, not a motion — so the affordance
+ * survives while the movement does not. This block must stay AFTER the
+ * `.neu-tile:active` rule above.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .neu-tile:active,
+  .neu-strip:active {
+    transform: none;
+  }
 }
 
 /*

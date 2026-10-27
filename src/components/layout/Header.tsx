@@ -8,37 +8,11 @@ import { signOut } from '@/lib/supabase';
 import { lastSuccessfulWriteStore } from '@/lib/queryClient';
 import { formatPlantDateTimeLabelled } from '@/lib/time';
 import { useAccess } from '@/components/layout/accessContext';
-
-/**
- * Browser connectivity, as a subscribable store.
- *
- * `navigator.onLine` is the only signal available to a static frontend and it
- * reports the network interface, not whether Supabase is reachable — so the
- * chip says "Online"/"Offline" and nothing stronger. A failed request reports
- * itself where it happens; this is only the ambient hint.
- */
-const connectivityStore = {
-  subscribe(listener: () => void): () => void {
-    window.addEventListener('online', listener);
-    window.addEventListener('offline', listener);
-    return () => {
-      window.removeEventListener('online', listener);
-      window.removeEventListener('offline', listener);
-    };
-  },
-  getSnapshot(): boolean {
-    return navigator.onLine;
-  },
-};
+import { useOnline } from '@/components/layout/connectivity';
 
 export function Header() {
   const { profile } = useAccess();
-  const online = useSyncExternalStore(
-    connectivityStore.subscribe,
-    connectivityStore.getSnapshot,
-    // Server snapshot: never rendered here, but required by the hook.
-    () => true,
-  );
+  const online = useOnline();
   const lastWriteAt = useSyncExternalStore(
     lastSuccessfulWriteStore.subscribe,
     lastSuccessfulWriteStore.getSnapshot,

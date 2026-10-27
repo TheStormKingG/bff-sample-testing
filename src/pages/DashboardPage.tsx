@@ -12,6 +12,8 @@ import { cn } from '@/lib/cn';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { STAGE_ICON } from '@/components/ui/statusMaps';
 import { SecondaryNav } from '@/components/layout/SecondaryNav';
+import { useIsPhone } from '@/components/layout/viewport';
+import { HomeScreen } from '@/components/home/HomeScreen';
 import { useAccess } from '@/components/layout/accessContext';
 
 /**
@@ -118,8 +120,7 @@ async function fetchDashboardCounts(plantDate: string): Promise<DashboardCounts>
 }
 
 type CountState =
-  | { readonly kind: 'ready'; readonly value: number }
-  | { readonly kind: 'unavailable' };
+  { readonly kind: 'ready'; readonly value: number } | { readonly kind: 'unavailable' };
 
 /**
  * A number, or an honest dash.
@@ -155,6 +156,7 @@ function CountValue({
 
 export function DashboardPage() {
   const { profile, can } = useAccess();
+  const isPhone = useIsPhone();
 
   // The plant-local calendar date the figures belong to, computed once per
   // render and shown on screen, so a tablet left open across midnight shows a
@@ -203,6 +205,36 @@ export function DashboardPage() {
     },
   ].filter((queue) => queue.visible);
 
+  /*
+   * TWO LAYOUTS, ONE QUERY, ONE TREE.
+   *
+   * Below `sm` (640px) the home screen is the eight-tile grid; at `sm` and up
+   * it is the existing dashboard, unchanged. The split is at `sm` and not
+   * higher because the no-scroll problem is a PHONE problem: eight
+   * finger-sized targets plus the app shell will not fit in 812px of height,
+   * while the plant tablet this app also runs on has 1138px and room for the
+   * stage descriptions, the queue section and the records panel. Collapsing a
+   * 1280px desktop to eight big tiles would remove information from the
+   * quality officer at a desk to solve a problem they do not have.
+   *
+   * Exactly ONE of the two is rendered — see `useIsPhone` for why hiding one
+   * with CSS is not an option here.
+   */
+  if (isPhone) {
+    return (
+      <div className="h-[100dvh]">
+        <HomeScreen
+          plantDate={plantDate}
+          mayRecord={mayRecord}
+          todayByStage={data?.todayByStage}
+          awaitingResults={data?.awaitingResults}
+          readyForReview={data?.readyForReview}
+          onHold={data?.onHold}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-10">
       <section aria-labelledby="forms-heading">
@@ -216,8 +248,8 @@ export function DashboardPage() {
         </p>
         <p className="mt-1 text-sm text-slate-500">
           Counts are for samples collected on{' '}
-          <span className="tabular font-medium text-slate-700">{plantDate}</span> (Guyana
-          local time). Drafts are not counted.
+          <span className="tabular font-medium text-slate-700">{plantDate}</span> (Guyana local
+          time). Drafts are not counted.
           {counts.isError && ' Counts could not be loaded.'}
         </p>
 
