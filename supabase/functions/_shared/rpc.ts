@@ -65,6 +65,14 @@ export const RPC = {
   recordOutboxOutcome: 'rpc_record_outbox_outcome',
   confirmRowMapping: 'rpc_confirm_sheet_row',
   markSchemaDrifted: 'rpc_mark_schema_drifted',
+  /**
+   * The other half of the latch. Separate from
+   * `writeWorkbookVerification` because clearing is FENCED and writes its own
+   * audit event in the same transaction, and because it refuses a caller that
+   * has not verified every operational tab — see
+   * `supabase/migrations/0022_schema_drift_recovery.sql`.
+   */
+  clearSchemaDrift: 'rpc_clear_schema_drift',
   readWorkbookState: 'rpc_read_workbook_state',
   writeWorkbookVerification: 'rpc_write_workbook_verification',
   requeueOutboxEvent: 'rpc_requeue_outbox_event',
@@ -257,6 +265,25 @@ export interface OutboxRow {
   readonly confirmed_row_number: number | null;
   readonly confirmed_at: string | null;
   readonly created_at: string;
+}
+
+/**
+ * `rpc_clear_schema_drift` — lift the drift write block.
+ *
+ * Fenced like every other write under the lease, so it carries `p_owner` and
+ * `p_fence`. `p_actor` is the authenticated user who ran the check and lands
+ * on the audit event; it is null only for the scheduler, which has no user
+ * identity. `p_verified_stages` must name EVERY operational stage or the
+ * function refuses — that is what stops this becoming a "mark it fine"
+ * switch, and it is checked in SQL as well as in `_shared/driftRecovery.ts`.
+ */
+export interface ClearSchemaDriftArgs {
+  readonly p_workbook_key: string;
+  readonly p_owner: string;
+  readonly p_fence: number;
+  readonly p_actor: string | null;
+  readonly p_verified_at: string;
+  readonly p_verified_stages: readonly Stage[];
 }
 
 export interface WorkbookStateRow {

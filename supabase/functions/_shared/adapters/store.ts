@@ -206,6 +206,31 @@ export class SupabaseSyncStore implements SyncStore {
   }
 
   /**
+   * Lift the drift latch, and report how many recorded problems went with it.
+   *
+   * FENCED, like `markSchemaDrifted`. The SQL refuses unless `verifiedStages`
+   * names every operational stage, so this method cannot be used to unfence a
+   * workbook nobody has read: the caller must have verified all of it in the
+   * same request. A non-zero return means a latch really was standing.
+   */
+  async clearSchemaDrift(args: {
+    readonly claim: FenceClaim;
+    readonly actorId: string | null;
+    readonly verifiedAt: string;
+    readonly verifiedStages: readonly Stage[];
+  }): Promise<number> {
+    const data = await callRpc<unknown>(this.admin, RPC.clearSchemaDrift, {
+      p_workbook_key: this.workbookKey,
+      p_owner: args.claim.owner,
+      p_fence: args.claim.fence,
+      p_actor: args.actorId,
+      p_verified_at: args.verifiedAt,
+      p_verified_stages: args.verifiedStages,
+    });
+    return typeof data === 'number' ? data : 0;
+  }
+
+  /**
    * One read serves both `latestConfirmedRevision` and `confirmedRowNumber`,
    * cached per event so processing one event costs one query rather than two.
    * The cache is per worker invocation and is cleared when the sample changes.

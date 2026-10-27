@@ -268,8 +268,18 @@ export const SYNC_ACTION_PERMISSION: Readonly<Record<SyncAction, Permission>> = 
 // schema-verify
 // ---------------------------------------------------------------------------
 
-/** `useSchemaVerification` sends `{ action: 'verify_headers' }`. */
-export const SCHEMA_VERIFY_ACTIONS = ['verify_headers'] as const;
+/**
+ * `useSchemaVerification` sends `{ action: 'verify_headers' }`.
+ *
+ * `clear_drift` is the NAMED remedy for a latched workbook. It is not a
+ * separate mechanism: it re-reads the live workbook and runs the same check,
+ * and it clears the latch only as a consequence of that read passing on every
+ * operational tab. When the check still fails it refuses and says which tabs
+ * are still wrong. It exists because the alternative an operator was left with
+ * was a hand-written service_role UPDATE, which nobody in the plant has — not
+ * because clearing needs a path of its own.
+ */
+export const SCHEMA_VERIFY_ACTIONS = ['verify_headers', 'clear_drift'] as const;
 export type SchemaVerifyAction = (typeof SCHEMA_VERIFY_ACTIONS)[number];
 
 /**
@@ -280,14 +290,27 @@ export type SchemaVerifyAction = (typeof SCHEMA_VERIFY_ACTIONS)[number];
  * additionally requires `sync.retry`. Granting the whole action to
  * `sync.retry` would stop a quality officer seeing whether the columns match;
  * granting the latch to `sync.view` would let one halt synchronisation.
+ *
+ * `clear_drift` requires `sync.retry` at the ACTION level, because lifting the
+ * block and recording it are the same decision with opposite signs and both
+ * must be attributable. A `sync.view` holder running `verify_headers` over a
+ * repaired workbook is still told the truth — the headings match — and is told
+ * that lifting the block needs somebody with synchronisation rights.
  */
 export const SCHEMA_VERIFY_ACTION_PERMISSION: Readonly<
   Record<SchemaVerifyAction, Permission>
 > = {
   verify_headers: 'sync.view',
+  clear_drift: 'sync.retry',
 };
 
-/** Permission required to record drift, as distinct from observing it. */
+/**
+ * Permission required to record drift, as distinct from observing it — and,
+ * symmetrically, to LIFT a recorded drift. One constant for both so the two
+ * can never be granted apart: a deployment in which one person could stop
+ * synchronisation and a different, lesser authority could start it again has
+ * the control the wrong way round.
+ */
 export const SCHEMA_DRIFT_LATCH_PERMISSION: Permission = 'sync.retry';
 
 // ---------------------------------------------------------------------------

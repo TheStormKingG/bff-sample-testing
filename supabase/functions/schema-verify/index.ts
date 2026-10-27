@@ -41,6 +41,40 @@
  * secret with no default and is never echoed, not even to an administrator
  * (build rule 1), and `spreadsheetConfigured` is a BOOLEAN by key name — not a
  * length, not a prefix.
+ *
+ * ===========================================================================
+ * THE LATCH LIFTS ITSELF. THREE THINGS THIS FILE GOT WRONG, MEASURED.
+ * ===========================================================================
+ * An operator latched the workbook at 18:58 (a legacy A5 formula on all seven
+ * tabs), cleared the formulas at 19:12, and every check after that returned
+ * HTTP 500 with "Something went wrong. Nothing was saved." It took direct
+ * database access to recover. Three separate defects, all here:
+ *
+ *  1. THE LATCH COULD NOT LIFT. The clean branch carried the stored flag
+ *     forward — `schemaDrifted: previous.schemaDrifted` — so a repaired
+ *     workbook stayed fenced forever with no supported way out.
+ *
+ *  2. THE LATCHED STATE THREW. That same write passed the seven freshly
+ *     verified stages ALONGSIDE `schemaDrifted: true`, and
+ *     `rpc_write_workbook_verification` refuses exactly that pair
+ *     (BFF_DRIFT_WITH_VERIFIED_STAGES) because `verified_stages` is the
+ *     worker's write permit and a fenced workbook has no writable tab. The
+ *     raise became `ApiError('internal')` and a generic 500 that named
+ *     neither the latch nor the tabs.
+ *
+ *  3. THE LEASE WAS NEVER RELEASED. The latching path took the lease and
+ *     returned without giving it back; the row sat expired for twenty
+ *     minutes. (It did not wedge anything — `rpc_acquire_sheet_lease` takes
+ *     over an expired lease and bumps the fence, measured — but a lease held
+ *     by a finished request is a lie the sync-health screen repeats.)
+ *
+ * So now: `_shared/driftRecovery.ts` decides what happens to the latch and is
+ * the testable half; this file is the adapter. A clean read of every
+ * operational tab LIFTS the latch through `rpc_clear_schema_drift`, which is
+ * fenced and writes its own audit event. No code path here ever sends
+ * `schemaDrifted: true` with a non-empty stage list. Every state write is
+ * caught, so a blocked or latched workbook returns a readable answer instead
+ * of a 500. And the lease is released in a `finally`, on every exit path.
  */
 
 import { ApiError } from '../_shared/errors.ts';
@@ -59,8 +93,8 @@ import {
 } from '../_shared/adapters/authorize.ts';
 import { SupabaseSyncStore, WORKBOOK_KEY } from '../_shared/adapters/store.ts';
 import { GoogleSheetsApiAdapter } from '../_shared/adapters/googleSheets.ts';
-import { DEFAULT_LEASE_TTL_MS, validateFence, type FenceClaim } from '../_shared/lease.ts';
 import { verifySchema, type SchemaProblem } from '../_shared/headerCheck.ts';
+import { runDriftRecovery } from '../_shared/driftRecovery.ts';
 import { can } from '../../../src/lib/roles.ts';
 import {
   parseAction,
@@ -152,6 +186,7 @@ async function handler(ctx: RequestContext): Promise<Response> {
       details: { field: 'action', allowed: SCHEMA_VERIFY_ACTIONS },
     });
   }
+  const clearRequested = action === 'clear_drift';
 
   // Identity from the token, or the scheduler's shared secret. Never a body
   // field: a run that can latch drift must be attributable.
@@ -183,8 +218,13 @@ async function handler(ctx: RequestContext): Promise<Response> {
         checkedAt: null,
         drifted: false,
         driftLatched: false,
+        driftLifted: false,
+        problemsCleared: null,
         tabs: unreadTabs(NOT_CONFIGURED),
+        affectedTabs: [],
         message: NOT_CONFIGURED,
+        whatToDo:
+          'An administrator must configure the Google Sheets connection before the live headings can be read.',
         correlationId: ctx.correlationId,
       },
       { request: ctx.request },
@@ -218,8 +258,15 @@ async function handler(ctx: RequestContext): Promise<Response> {
         checkedAt: null,
         drifted: false,
         driftLatched: false,
+        driftLifted: false,
+        problemsCleared: null,
         tabs: unreadTabs(READ_FAILED),
+        affectedTabs: [],
         message: READ_FAILED,
+        whatToDo:
+          clearRequested
+            ? 'The block cannot be cleared without reading the live workbook. Try again; if it persists, quote the reference below to an administrator.'
+            : 'Try again. If it persists, quote the reference below to an administrator.',
         correlationId: ctx.correlationId,
       },
       { request: ctx.request },
@@ -230,51 +277,48 @@ async function handler(ctx: RequestContext): Promise<Response> {
   const checkedAt = new Date().toISOString();
   const previous = await store.readVerificationState();
 
-  let driftLatched = false;
-  if (!schema.ok && mayLatch) {
-    /**
-     * Latching is fenced in SQL, so it needs the workbook lease: the fence is
-     * what stops a slow run that lost the workbook overwriting a newer
-     * worker's verdict. A lease we cannot take is NOT a reason to withhold the
-     * finding — the headers are reported either way, and `driftLatched` says
-     * whether the stop was recorded.
-     */
-    const lease = await store.acquireLease(ctx.correlationId, DEFAULT_LEASE_TTL_MS);
-    if (lease !== null && lease.owner === ctx.correlationId) {
-      const claim: FenceClaim = { owner: lease.owner, fence: lease.fence };
-      if (validateFence(lease, claim, new Date()).ok) {
-        await store.markSchemaDrifted({ claim, problems: schema.problems });
-        driftLatched = true;
-      }
-    }
-    if (!driftLatched) {
-      console.error(
-        JSON.stringify({
-          fn: 'schema-verify',
-          correlationId: ctx.correlationId,
-          event: 'schema_drift_not_latched',
-          detail: 'the workbook lease is held elsewhere; drift was observed but not recorded',
-        }),
-      );
-    }
-  }
-
-  if (schema.ok) {
-    /**
-     * `schemaDrifted` is carried forward, never cleared by a clean run.
-     *
-     * The latch exists so a workbook seen to be wrong stays fenced until a
-     * person looks at it. A later clean read would otherwise silently unfence
-     * it — and the likeliest reason for a clean read after a drift is that the
-     * workbook was repaired badly or a different subset was checked, not that
-     * all is well.
-     */
-    await store.writeVerificationState({
-      lastVerifiedAt: checkedAt,
-      verifiedStages: schema.verifiedStages,
-      schemaDrifted: previous.schemaDrifted,
-    });
-  }
+  /**
+   * The decision, the write and the operator's sentence all live in
+   * `_shared/driftRecovery.ts`, and so does the lease handling. It is decided
+   * from the live reading and the stored flag ONLY: nothing a caller sends
+   * reaches it — `ok` and `verifiedStages` come out of `verifySchema` over
+   * what was just read from the workbook, and `mayLatch` comes from the token.
+   * That is what makes a lifted latch a CONSEQUENCE of a passing read rather
+   * than a request, and it is why the sequence is in a module a test can load
+   * rather than inline here.
+   *
+   * `runDriftRecovery` does not throw. A latched, blocked or contended
+   * workbook comes back as a state with a sentence, so this endpoint returns
+   * 200 and a readable answer where it used to return a generic 500.
+   */
+  const outcome = await runDriftRecovery(
+    {
+      store,
+      correlationId: ctx.correlationId,
+      actorId,
+      now: () => new Date(),
+      log: (record) =>
+        console.error(
+          JSON.stringify({
+            fn: 'schema-verify',
+            correlationId: ctx.correlationId,
+            event: record.event,
+            detail: record.detail,
+          }),
+        ),
+    },
+    {
+      verification: schema,
+      requiredStages: STAGES,
+      previouslyDrifted: previous.schemaDrifted,
+      mayLatch,
+      clearRequested,
+      checkedAt,
+    },
+  );
+  const plan = outcome.plan;
+  const explanation = outcome.explanation;
+  const drifted = outcome.drifted;
 
   await recordAudit({
     actorId,
@@ -287,13 +331,15 @@ async function handler(ctx: RequestContext): Promise<Response> {
       verifiedStages: schema.verifiedStages,
       columnsCompared: schema.columnsCompared,
       problemKinds: schema.problems.map((p) => p.kind),
-      driftLatched,
+      latchPlan: plan.action,
+      driftLatched: outcome.driftLatched,
+      driftLifted: outcome.driftLifted,
+      problemsCleared: outcome.problemsCleared,
+      stateWriteFailed: outcome.stateWriteFailed,
       alreadyDrifted: previous.schemaDrifted,
     },
     appVersion: ctx.appVersion,
   });
-
-  const drifted = previous.schemaDrifted || !schema.ok;
 
   return jsonResponse(
     {
@@ -304,23 +350,29 @@ async function handler(ctx: RequestContext): Promise<Response> {
       checkedAt,
       /**
        * True when this workbook is fenced off — from THIS check or an earlier
-       * one. A clean check does not clear an earlier latch, so `ok: true` with
-       * `drifted: true` is a real and important combination: the columns match
-       * now and writing is still stopped.
+       * one. `ok: true` with `drifted: true` is still a real combination: the
+       * columns match now and writing is stopped because the caller could not
+       * lift the latch. It is no longer PERMANENT, which is the whole change.
        */
       drifted,
       /** Whether THIS run recorded the stop, as opposed to merely seeing it. */
-      driftLatched,
+      driftLatched: outcome.driftLatched,
+      /** Whether THIS run lifted an earlier stop, having re-read the workbook. */
+      driftLifted: outcome.driftLifted,
+      /** Recorded divergences that were cleared with the latch, if any. */
+      problemsCleared: outcome.problemsCleared,
+      /** The plan, named, so the admin screen and the audit event agree. */
+      latchPlan: plan.action,
+      /** A state write did not land. The headings below were still read. */
+      stateWriteFailed: outcome.stateWriteFailed,
       verifiedStages: schema.verifiedStages,
       columnsCompared: schema.columnsCompared,
       tabs: toTabs(STAGES, schema.problems, schema.verifiedStages, checkedAt),
-      message: schema.ok
-        ? previous.schemaDrifted
-          ? 'The column headings match the system, but this workbook is still marked as drifted from an earlier check. An administrator must clear that before writing resumes.'
-          : 'The column headings match the system.'
-        : driftLatched
-          ? 'The Google Sheet column headings no longer match the system. Writing has been stopped until an administrator checks the workbook.'
-          : 'The Google Sheet column headings no longer match the system. The stop could not be recorded by this check — an administrator with synchronisation rights must run it again.',
+      /** The tabs a person has to go and look at. Empty when nothing is wrong. */
+      affectedTabs: explanation.affectedTabs,
+      message: explanation.message,
+      /** The next action, in plain words. Never "try again" for a real block. */
+      whatToDo: explanation.whatToDo,
       correlationId: ctx.correlationId,
     },
     { request: ctx.request },
