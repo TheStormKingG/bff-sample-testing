@@ -284,6 +284,46 @@ export class GoogleSheetsApiAdapter implements GoogleSheetsAdapter {
     };
   }
 
+  /**
+   * The first data row the workbook is offering as blank.
+   *
+   * EMPTINESS IS JUDGED ACROSS THE WHOLE ROW, NOT COLUMN A. That distinction
+   * is the entire safety of this function and it is not hypothetical: the
+   * project's own test double picked its row by "column A is blank", and an
+   * audit demonstrated that silently overwriting a legacy hand-entered row
+   * holding '2019-03-02' and 'HISTORIC PAPER RECORD — no id'. A row somebody
+   * typed into without an identifier is exactly the row a naive check hands
+   * over, and exactly the row that must be left alone.
+   *
+   * A gap in the middle is therefore reused — that is deliberate, since a
+   * cleared row is blank and the workbook offers it again. A row with any
+   * content anywhere is skipped, identifier or not.
+   *
+   * When every row the API returns has content, the answer is the row after
+   * the last one. That is still an UPDATE into a cell the sheet already has
+   * (these tabs carry 1000 rows), so it never inserts and never inherits the
+   * header's formatting. It only runs out at the sheet's own row limit, which
+   * Google reports as a plain error rather than silent truncation.
+   */
+  private async firstEmptyDataRow(stage: Stage): Promise<number> {
+    const schema = STAGE_SCHEMAS[stage];
+    const range = `${quoteTabName(schema.sheetTab)}!A${FIRST_DATA_ROW}:${schema.lastColumn}`;
+    const payload = (await this.call(
+      'read',
+      `/values/${encodeURIComponent(range)}?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE`,
+      { method: 'GET', operation: 'values.get(first free row)' },
+    )) as SheetsValueRange | null;
+
+    const rows = payload?.values ?? [];
+    for (let i = 0; i < rows.length; i++) {
+      // Sheets omits trailing empty cells, so a short row is a sparse row, not
+      // a malformed one. `every` over a shorter array is still the right test.
+      const occupied = (rows[i] ?? []).some((cell) => String(cell ?? '').trim() !== '');
+      if (!occupied) return FIRST_DATA_ROW + i;
+    }
+    return FIRST_DATA_ROW + rows.length;
+  }
+
   /** Read `A5:A` of one tab and return every row whose column A matches. */
   private async findRows(stage: Stage, sampleId: string): Promise<number[]> {
     const params = new URLSearchParams({
@@ -358,21 +398,47 @@ export class GoogleSheetsApiAdapter implements GoogleSheetsAdapter {
       );
       apiCalls++;
     } else {
-      // Append is addressed at the data region, never at the header rows.
-      const appendRange = `${quoteTabName(schema.sheetTab)}!A${FIRST_DATA_ROW}:${schema.lastColumn}`;
-      assertWritableRange(schema.sheetTab, FIRST_DATA_ROW);
-      const payload = (await this.call(
+      /**
+       * FILL THE WORKBOOK'S OWN BLANK ROW. DO NOT APPEND.
+       *
+       * This used to call `values.append` with `insertDataOption=INSERT_ROWS`,
+       * and that was wrong in a way nobody noticed until rows reached the real
+       * workbook. INSERT_ROWS creates a NEW row, and Google Sheets gives an
+       * inserted row the formatting of the row ABOVE it — which, for the first
+       * data row, is row 4, the header. Every synced row therefore arrived
+       * styled as a header: dark fill, white bold text, sitting above the pale
+       * template rows it should have matched. Measured on the live workbook:
+       * a tab that held 1000 rows held 1001 after a single sync.
+       *
+       * The formatting was the visible half. The operational half is worse.
+       * Each tab is a TEMPLATE with roughly 300 pre-formatted blank data rows
+       * carrying the sheet's real presentation — the grey Sample ID column,
+       * borders, number formats, and the data-validation dropdowns an operator
+       * uses when completing a row by hand. An inserted row inherits none of
+       * it, and pushes the genuine template rows down ahead of itself. Left
+       * alone this would have grown every tab by one row per sample forever,
+       * stranding the template below a wall of header-styled inserts.
+       *
+       * So the writer now finds the first blank row the template already
+       * provides and updates it in place. `values.update` never inserts, so
+       * the row keeps whatever the workbook gave it.
+       */
+      const targetFree = await this.firstEmptyDataRow(request.stage);
+      apiCalls++;
+      assertWritableRange(schema.sheetTab, targetFree);
+      const freeRange = rangeForRow(request.stage, targetFree);
+      await this.call(
         'write',
-        `/values/${encodeURIComponent(appendRange)}:append?valueInputOption=${SHEETS_VALUE_INPUT_OPTION}&insertDataOption=INSERT_ROWS&includeValuesInResponse=false`,
+        `/values/${encodeURIComponent(freeRange)}?valueInputOption=${SHEETS_VALUE_INPUT_OPTION}&includeValuesInResponse=false`,
         {
-          method: 'POST',
-          operation: 'values.append',
-          body: JSON.stringify({ majorDimension: 'ROWS', values: [request.row] }),
+          method: 'PUT',
+          operation: 'values.update(first free row)',
+          body: JSON.stringify({ range: freeRange, majorDimension: 'ROWS', values: [request.row] }),
         },
-      )) as { updates?: { updatedRange?: string } } | null;
+      );
       apiCalls++;
 
-      const reported = rowFromRange(payload?.updates?.updatedRange);
+      const reported = targetFree;
       // The reported range is a HINT, not the answer: Master Prompt §7 forbids
       // relying on "an unverified assumption that append returns exactly the
       // final canonical row". The authoritative answer comes from locating the
@@ -381,8 +447,8 @@ export class GoogleSheetsApiAdapter implements GoogleSheetsAdapter {
       apiCalls++;
       if (matches.length === 0) {
         throw new SheetsUnknownOutcomeError(
-          `Appended ${request.sampleId} to "${schema.sheetTab}" but column A does not contain it; the outcome is unknown.`,
-          'values.append',
+          `Wrote ${request.sampleId} into row ${targetFree} of "${schema.sheetTab}" but column A does not contain it; the outcome is unknown.`,
+          'values.update(first free row)',
         );
       }
       targetRow = matches[0]!;
@@ -391,14 +457,14 @@ export class GoogleSheetsApiAdapter implements GoogleSheetsAdapter {
         // it, and the identifier is what we trust. Worth reporting upward.
         if (matches.length > 1) {
           throw new SheetsError(
-            `Appending ${request.sampleId} to "${schema.sheetTab}" produced ${matches.length} rows with that identifier (${matches.join(', ')}). Refusing to continue.`,
+            `Writing ${request.sampleId} to "${schema.sheetTab}" produced ${matches.length} rows with that identifier (${matches.join(', ')}). Refusing to continue.`,
             { retryable: false, status: 409 },
           );
         }
       }
       if (targetRow < FIRST_DATA_ROW) {
         throw new SheetsError(
-          `Append placed ${request.sampleId} at row ${targetRow} of "${schema.sheetTab}", inside the protected header region.`,
+          `The write placed ${request.sampleId} at row ${targetRow} of "${schema.sheetTab}", inside the protected header region.`,
           { retryable: false, status: 500 },
         );
       }

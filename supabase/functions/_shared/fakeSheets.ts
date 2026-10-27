@@ -161,11 +161,25 @@ export class FakeWorkbook {
     rows[rowNumber - 1] = [...cells];
   }
 
-  /** First blank-column-A row in the data region — what `append` targets. */
+  /**
+   * The first row the workbook offers as blank — what the writer targets.
+   *
+   * EMPTINESS IS JUDGED ACROSS THE WHOLE ROW. This used to ask only whether
+   * COLUMN A was blank, and that is a materially different rule: a legacy
+   * hand-entered row with a date and a note but no identifier reads as free
+   * and gets overwritten. An audit demonstrated exactly that against a row
+   * holding '2019-03-02' and 'HISTORIC PAPER RECORD — no id'.
+   *
+   * It matters that the double agrees with production here. It did not: the
+   * real adapter used to append with INSERT_ROWS while this picked a blank
+   * column A and replaced it, so the two differed on the very axis the writer
+   * was being tested against, and a green suite was evidence about neither.
+   */
   firstFreeRow(stage: Stage): number {
     const rows = this.rowsOf(STAGE_SCHEMAS[stage].sheetTab);
     for (let i = PROTECTED_HEADER_ROWS; i < rows.length; i++) {
-      if ((rows[i]?.[0] ?? '') === '') return i + 1;
+      const occupied = (rows[i] ?? []).some((cell) => String(cell ?? '').trim() !== '');
+      if (!occupied) return i + 1;
     }
     return rows.length + 1;
   }
