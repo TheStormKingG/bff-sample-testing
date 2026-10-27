@@ -73,15 +73,6 @@ function parseRetryAfter(header: string | null): number | null {
   return null;
 }
 
-/** Row number out of an A1 range such as `'1 Raw materials'!A17:S17`. */
-function rowFromRange(range: string | undefined): number | null {
-  if (range === undefined) return null;
-  const match = /![A-Z]+(\d+)/.exec(range);
-  if (match === null) return null;
-  const row = Number(match[1]);
-  return Number.isInteger(row) ? row : null;
-}
-
 export class GoogleSheetsApiAdapter implements GoogleSheetsAdapter {
   private readonly readQuota = new QuotaLedger(DEFAULT_READ_BUDGET);
   private readonly writeQuota = new QuotaLedger(DEFAULT_WRITE_BUDGET);
