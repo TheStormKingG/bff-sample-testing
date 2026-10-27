@@ -58,13 +58,29 @@ export function AppLayout() {
   return (
     <div
       className={cn(
-        'flex min-h-screen flex-col bg-white',
+        /*
+          THE TINTED BASE IS WHAT MAKES NEUMORPHISM POSSIBLE AT ALL, so it is
+          the app's background on every route and every width, not just the
+          phone home screen it started on. On pure #FFFFFF the light-side
+          shadow has nothing to sit against and every raised surface collapses
+          into a flat card with a grey drop shadow.
+
+          `neu-base` is #F1F4F8: measured light enough to read as white on a
+          phone in daylight, tinted just enough for the effect to exist. Cards
+          stay white ON that base, which is the classic arrangement — a raised
+          white surface over a slightly cooler ground — and keeps card text
+          contrast at its previous value.
+        */
+        // `app-shell` exists for one reason: the print stylesheet has to be
+        // able to take the tint back off. It already forces `body` white, but
+        // the tint is here, on the shell inside it.
+        'app-shell flex min-h-screen flex-col bg-neu-base',
         // `100dvh`, not `100vh`: on mobile Safari `100vh` is the viewport
         // WITHOUT the collapsing toolbar, so a `min-h-screen` page is taller
         // than what is on screen and scrolls by the toolbar's height — which
         // would break the no-scroll promise on the one browser most likely to
         // be holding it.
-        onPhoneHome && 'min-h-[100dvh] bg-neu-base',
+        onPhoneHome && 'min-h-[100dvh]',
       )}
     >
       <a href="#main-content" className="skip-link no-print">

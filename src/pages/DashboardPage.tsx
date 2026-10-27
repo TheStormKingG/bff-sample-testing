@@ -246,7 +246,7 @@ export function DashboardPage() {
             ? 'Choose the test you are doing.'
             : 'The seven sample testing logs used in the feed factory.'}
         </p>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           Counts are for samples collected on{' '}
           <span className="tabular font-medium text-slate-700">{plantDate}</span> (Guyana local
           time). Drafts are not counted.
@@ -262,7 +262,7 @@ export function DashboardPage() {
                   <Link
                     to={`/stage/${schema.stage}`}
                     className={cn(
-                      'flex h-full min-h-[9.5rem] flex-col gap-2 rounded-xl border-2 border-slate-200 bg-white p-4',
+                      'flex h-full min-h-[9.5rem] flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-neu-sm transition-[transform,box-shadow] duration-150 ease-out active:scale-[0.99] active:shadow-neu-pressed',
                       'hover:border-bff-500 hover:bg-bff-50',
                     )}
                   >
@@ -319,7 +319,7 @@ export function DashboardPage() {
         <section aria-labelledby="queues-heading">
           <h2
             id="queues-heading"
-            className="text-sm font-semibold uppercase tracking-wide text-slate-500"
+            className="text-sm font-semibold uppercase tracking-wide text-slate-600"
           >
             Needs attention
           </h2>
@@ -328,7 +328,7 @@ export function DashboardPage() {
               <li key={queue.key}>
                 <Link
                   to={queue.to}
-                  className="flex min-h-tap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 hover:border-bff-300 hover:bg-bff-50"
+                  className="flex min-h-tap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-neu-sm transition-[transform,box-shadow] duration-150 ease-out hover:border-bff-300 active:scale-[0.99] active:shadow-neu-pressed"
                 >
                   <span className="flex items-center gap-3">
                     <queue.icon aria-hidden="true" className="h-5 w-5 text-slate-500" />

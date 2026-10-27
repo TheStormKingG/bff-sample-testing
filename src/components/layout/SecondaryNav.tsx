@@ -59,7 +59,7 @@ export function SecondaryNav({ variant = 'bar', className }: SecondaryNavProps) 
     <nav aria-labelledby="records-nav-heading" className={className}>
       <h2
         id="records-nav-heading"
-        className="text-sm font-semibold uppercase tracking-wide text-slate-500"
+        className="text-sm font-semibold uppercase tracking-wide text-slate-600"
       >
         Records and administration
       </h2>
@@ -71,7 +71,7 @@ export function SecondaryNav({ variant = 'bar', className }: SecondaryNavProps) 
           <li key={item.to}>
             <NavLink
               to={item.to}
-              className="flex min-h-tap items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3 hover:border-bff-300 hover:bg-bff-50"
+              className="flex min-h-tap items-start gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-neu-sm transition-[transform,box-shadow] duration-150 ease-out hover:border-bff-300 active:scale-[0.99] active:shadow-neu-pressed"
             >
               <item.icon aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-slate-500" />
               <span>

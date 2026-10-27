@@ -202,6 +202,21 @@
   }
 
   /*
+   * The tinted ground, taken back off for paper.
+   *
+   * `bg-neu-base` sits on the app shell INSIDE body, so the rule above does
+   * not reach it. Browsers drop background fills by default when printing,
+   * which is why this was invisible — but an operator who ticks "background
+   * graphics" to get a filled status badge would otherwise also get every
+   * page flooded with tint. The ground exists so raised surfaces have
+   * something to sit against, and the rule below removes every shadow, so on
+   * paper it has no job left to do.
+   */
+  .app-shell {
+    @apply bg-white;
+  }
+
+  /*
    * Every dialog in the app is an `inset-0` overlay on a translucent slate
    * backdrop. On screen that is right; on paper a viewport-sized fixed box
    * becomes one full page of grey with the content trapped inside it and the
@@ -221,5 +236,48 @@
      a laser print. */
   * {
     box-shadow: none !important;
+  }
+}
+
+@layer base {
+  /**
+   * DATE AND TIME INPUTS MUST OBEY THEIR CONTAINER.
+   *
+   * On iOS Safari these are native controls with an intrinsic width taken
+   * from the formatted value, and that width wins over `w-full`: the field
+   * renders wider than the card and its right border is cut off. Reported
+   * from a real iPhone, on Raw materials and Mash.
+   *
+   * It did not reproduce in desktop Chrome's device emulation, which draws a
+   * much narrower control — so emulation is NOT evidence about these two
+   * input types, and the earlier sweep that found "zero elements escaping
+   * their container" was measuring a browser that does not have the bug.
+   *
+   * `appearance: none` is what lets the box be sized. It removes the default
+   * chrome, not the picker: tapping still opens the native date or time
+   * wheel, which is the part that matters for somebody in gloves.
+   */
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* iOS centres the value inside the control; every other field in this form
+     is left-aligned, and a centred date reads as a different kind of thing. */
+  input[type='date']::-webkit-date-and-time-value,
+  input[type='time']::-webkit-date-and-time-value,
+  input[type='datetime-local']::-webkit-date-and-time-value {
+    text-align: left;
+  }
+
+  /* Keep the picker affordance visible once the default chrome is gone. */
+  input[type='date']::-webkit-calendar-picker-indicator,
+  input[type='time']::-webkit-calendar-picker-indicator {
+    opacity: 1;
   }
 }

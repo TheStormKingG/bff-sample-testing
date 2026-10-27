@@ -30,7 +30,7 @@ export function Card({
   return (
     <Element
       className={cn(
-        'rounded-xl border border-slate-200 bg-white shadow-sm',
+        'rounded-2xl border border-slate-200 bg-white shadow-neu-sm',
         className,
       )}
     >
