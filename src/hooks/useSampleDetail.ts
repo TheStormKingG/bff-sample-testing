@@ -14,7 +14,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { supabase, edgeErrorMessage } from '@/lib/supabase';
 import type { FieldDef, Stage } from '@/forms/types';
 import { getField, getSchema, isFieldApplicable } from '@/forms/registry';
 import {
@@ -374,7 +374,7 @@ function viewFor(
 async function fetchSampleRows(ids: readonly string[]): Promise<SampleRow[]> {
   if (ids.length === 0) return [];
   const { data, error } = await db.from(TABLES.samples).select(SAMPLE_COLUMNS).in('id', [...ids]);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(await edgeErrorMessage(error, 'the service'));
   return ((data ?? []) as SampleDbRow[]).map(toSampleRow);
 }
 
@@ -568,7 +568,7 @@ export function useSampleByHumanId(sampleId: string | undefined) {
         .select(SAMPLE_COLUMNS)
         .eq('sample_id', sampleId as string)
         .maybeSingle();
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(await edgeErrorMessage(error, 'the service'));
       const row = data as SampleDbRow | null;
       return row === null ? null : toSampleRow(row);
     },
@@ -649,7 +649,7 @@ export function useSampleAction() {
         body: { ...rest, idempotencyKey: key },
         headers: { 'Idempotency-Key': key },
       });
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(await edgeErrorMessage(error, FUNCTIONS.sampleAction));
       const result = data as SampleActionResult | null;
       if (!result) throw new Error('The server returned no result. The action was not recorded.');
       if (!result.ok) throw new Error(result.message);

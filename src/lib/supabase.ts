@@ -457,6 +457,81 @@ export async function edgeFailureMessage(error: unknown, fnName: string): Promis
 }
 
 /**
+ * The same decoding, for every other Edge Function call in the app.
+ *
+ * WHY THIS EXISTS. `edgeFailureMessage` above has done this since the
+ * change-password screen was built, and it was the ONLY caller. Every other
+ * hook — administration, sample actions, specification decisions, sync retry —
+ * did `throw new Error(error.message)` on the `FunctionsHttpError`, and that
+ * message is always the same sentence: "Edge Function returned a non-2xx
+ * status code."
+ *
+ * So the server's own words never reached anybody. That is not a cosmetic
+ * loss. `admin.ts` carries a thirty-line policy for one case alone — an
+ * account that WAS created but could not be armed — whose whole purpose is to
+ * stop an administrator creating a second account for the same person and
+ * handing out a password that was never applied. Every word of it was
+ * unreachable. When account creation failed in the field, the administrator
+ * was shown the generic sentence and had to guess.
+ *
+ * It is also what made a refused database privilege look like a mystery: the
+ * server said `internal` with a precise `internalDetail` in its log, and the
+ * screen said only that something returned a non-2xx.
+ *
+ * The wording differs from `edgeFailureMessage` only in its fallbacks, which
+ * there promise that no password was changed. Here nothing may be promised
+ * about what was or was not written, because the caller does not know: a
+ * non-2xx can mean the request never arrived or that it committed and the
+ * reply was lost. So the fallbacks state what is OBSERVED and no more.
+ */
+export async function edgeErrorMessage(error: unknown, fnName: string): Promise<string> {
+  if (error instanceof FunctionsFetchError) {
+    return (
+      'The request could not be sent. Check the connection and try again — ' +
+      'if it had already reached the server, trying again is safe, because ' +
+      'every action carries a key that stops it being recorded twice.'
+    );
+  }
+
+  if (error instanceof FunctionsHttpError) {
+    const response = error.context as Response | undefined;
+    const status = typeof response?.status === 'number' ? response.status : null;
+
+    let body: unknown = null;
+    if (response !== undefined && typeof response.json === 'function') {
+      try {
+        body = await response.json();
+      } catch {
+        body = null;
+      }
+    }
+
+    const envelope =
+      typeof body === 'object' && body !== null
+        ? ((body as { error?: unknown }).error as { code?: unknown; message?: unknown } | undefined)
+        : undefined;
+
+    // The server's own sentence, which is the entire point of this function.
+    const message = typeof envelope?.message === 'string' ? envelope.message : '';
+    if (message !== '') return message;
+
+    if (status === 404) {
+      return (
+        `The "${fnName}" service is not deployed to this project, so nothing was done. ` +
+        'An administrator must deploy the Edge Functions.'
+      );
+    }
+    return (
+      'The server refused the request and gave no reason that can be shown. ' +
+      'Check whether it took effect before trying again, and tell an ' +
+      'administrator if this keeps happening.'
+    );
+  }
+
+  return error instanceof Error ? error.message : 'The request did not complete.';
+}
+
+/**
  * Replace the caller's own password.
  *
  * ROUTED THROUGH AN EDGE FUNCTION ON PURPOSE. `supabase.auth.updateUser`

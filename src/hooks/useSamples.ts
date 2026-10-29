@@ -15,7 +15,7 @@
 import { useCallback } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { supabase, edgeErrorMessage } from '@/lib/supabase';
 import { STAGES, type Stage } from '@/forms/types';
 import { getField, getSchema } from '@/forms/registry';
 import { plantLocalDate } from '@/lib/time';
@@ -743,7 +743,7 @@ export async function fetchSampleList(
 
   const from = page * pageSize;
   const { data, error, count } = await query.range(from, from + pageSize - 1);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(await edgeErrorMessage(error, 'the service'));
 
   return {
     rows: ((data ?? []) as SampleDbRow[]).map(toSampleRow),
@@ -822,7 +822,7 @@ export async function fetchSamplesForExport(
       .from(TABLES.measurements)
       .select(MEASUREMENT_COLUMNS)
       .in('sample_uuid', ids);
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(await edgeErrorMessage(error, 'the service'));
     for (const raw of (data ?? []) as MeasurementDbRow[]) {
       const m = toMeasurementRow(raw);
       const list = measurementsBySample.get(m.sample_uuid);
@@ -852,7 +852,7 @@ export function useMaterialOptions() {
         .select('material_code')
         .not('material_code', 'is', null)
         .limit(1000);
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(await edgeErrorMessage(error, 'the service'));
       const seen = new Set<string>();
       for (const row of (data ?? []) as { material_code: string | null }[]) {
         if (row.material_code) seen.add(row.material_code);
@@ -888,7 +888,7 @@ async function fetchDelegations(userId: string): Promise<readonly Delegation[]> 
     .from(TABLES.delegations)
     .select('permission,granted_by,effective_from,effective_to')
     .eq('user_id', userId);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(await edgeErrorMessage(error, 'the service'));
 
   const known = new Set<string>(PERMISSIONS);
   return ((data ?? []) as DelegationRow[])

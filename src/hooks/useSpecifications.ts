@@ -10,7 +10,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { supabase, edgeErrorMessage } from '@/lib/supabase';
 import type { Stage } from '@/forms/types';
 import { assessableFields, getSchema } from '@/forms/registry';
 import { isUnitConfirmed } from '@/lib/assessment';
@@ -146,7 +146,7 @@ export async function fetchSpecifications(): Promise<SpecificationSet> {
     .order('workbook_entry_no', { ascending: true, nullsFirst: false })
     .order('parameter_key', { ascending: true })
     .order('version', { ascending: false });
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(await edgeErrorMessage(error, 'the service'));
 
   const dbRows = (data ?? []) as SpecificationVersionDbRow[];
 
@@ -294,7 +294,7 @@ export function useSpecificationAction() {
         body: { ...rest, idempotencyKey: key },
         headers: { 'Idempotency-Key': key },
       });
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(await edgeErrorMessage(error, FUNCTIONS.specificationAction));
       const result = data as SpecificationActionResult | null;
       if (!result) throw new Error('The server returned no result. Nothing was changed.');
       if (!result.ok) throw new Error(result.message);

@@ -10,7 +10,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { supabase, edgeErrorMessage } from '@/lib/supabase';
 import type { Stage } from '@/forms/types';
 import { DASHBOARD_ORDER } from '@/forms/registry';
 import { expectedHeaders, type HeaderMismatch } from '@/forms/sheetMapping';
@@ -228,7 +228,7 @@ export function useAdminDelegations() {
           'id,user_id,permission,granted_by,effective_from,effective_to,reason,revoked_at,revoke_reason',
         )
         .order('effective_from', { ascending: false });
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(await edgeErrorMessage(error, 'the service'));
       const rows = (data ?? []) as DelegationRow[];
 
       // `user_delegations` stores uuids and nothing else, so the holder's email
@@ -511,7 +511,7 @@ export function useAdminAction() {
         body: adminActionBody(input, key, credential),
         headers: { 'Idempotency-Key': key },
       });
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(await edgeErrorMessage(error, FUNCTIONS.adminAction));
       const result = data as AdminActionResult | null;
       if (!result) throw new Error('The server returned no result. Nothing was changed.');
       if (!result.ok) throw new Error(result.message);
@@ -840,7 +840,7 @@ export function useSyncHealth() {
         )
         .order('updated_at', { ascending: false })
         .limit(200);
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(await edgeErrorMessage(error, 'the service'));
 
       const rows = (data ?? []) as SyncOutboxRow[];
 
@@ -944,7 +944,7 @@ export function useAuditDeadLetters() {
         )
         .order('received_at', { ascending: false })
         .limit(200);
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(await edgeErrorMessage(error, 'the service'));
 
       const rows = (data ?? []) as AuditDeadLetterRow[];
       const held = rows.filter((r) => r.state === 'held');
@@ -990,7 +990,7 @@ export function useSyncRetry() {
         body: { action: 'retry', jobId: input.jobId, idempotencyKey: key },
         headers: { 'Idempotency-Key': key },
       });
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(await edgeErrorMessage(error, FUNCTIONS.syncAction));
       const result = data as AdminActionResult | null;
       if (!result) throw new Error('The server returned no result. The job was not retried.');
       if (!result.ok) throw new Error(result.message);
@@ -1039,7 +1039,7 @@ export function useSchemaVerification() {
       const { data, error } = await db.functions.invoke(FUNCTIONS.schemaVerify, {
         body: { action: 'verify_headers' },
       });
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(await edgeErrorMessage(error, FUNCTIONS.schemaVerify));
       const report = data as SchemaVerificationReport | null;
       if (!report) throw new Error('The verification service returned no result.');
       return report;
@@ -1119,7 +1119,7 @@ export function useAuditEvents(query: AuditQuery, page: number, pageSize = 50) {
 
       const from = page * pageSize;
       const { data, error, count } = await q.range(from, from + pageSize - 1);
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(await edgeErrorMessage(error, 'the service'));
 
       const rows: AuditEventRow[] = ((data ?? []) as AuditEventDbRow[]).map((r) => ({
         id: r.event_uuid,
