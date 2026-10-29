@@ -244,8 +244,12 @@ describe('StageForm — section bands', () => {
         ).length,
       0,
     );
-    expect(columns).toBe(98);
-    expect(systemColumns).toBe(7);
+    // 98 across the original seven tabs plus 35 for `8 DGM`.
+    expect(columns).toBe(133);
+    // Was 7 — one column A per stage. Now 17: eight column As, plus DGM's nine
+    // server-computed columns, which are `system` precisely so they never
+    // render as an operator input.
+    expect(systemColumns).toBe(17);
     expect(notApplicable).toBe(1);
     expect(checked).toBe(columns - systemColumns - notApplicable);
   });

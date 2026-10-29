@@ -90,7 +90,13 @@ export function SampleFilters({
 
       <fieldset className="border-t border-slate-200 pt-3">
         <legend className="px-1 text-sm font-medium text-slate-800">Stage</legend>
-        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+        {/*
+          The one place in the app where a Tailwind class was coupled to the
+          stage count. `lg:grid-cols-7` left the eighth checkbox alone on a
+          second row; `grid-cols-4` divides eight evenly and keeps dividing
+          evenly if a ninth is ever added.
+        */}
+        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-4">
           {DASHBOARD_ORDER.map((schema) => {
             const id = `${ids}-stage-${schema.stage}`;
             const checked = value.stages.includes(schema.stage);

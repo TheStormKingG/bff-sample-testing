@@ -105,12 +105,15 @@ function stageLinks(): HTMLAnchorElement[] {
     .filter((el): el is HTMLAnchorElement => (el.getAttribute('href') ?? '').includes('/stage/'));
 }
 
-describe('the eight tiles', () => {
-  it('offers the seven forms in the plant’s own order, then More', () => {
+describe('the tile grid', () => {
+  it('offers every form in the plant’s own order, then More', () => {
     renderHome(['quality_officer']);
 
     const links = stageLinks();
-    expect(links).toHaveLength(7);
+    // One per dashboard card, derived rather than hardcoded: `stageTiles` is
+    // deliberately not sliced, so a form must never be able to go missing here.
+    expect(links).toHaveLength(DASHBOARD_ORDER.length);
+    expect(links).toHaveLength(8);
     expect(links.map((a) => a.getAttribute('href'))).toEqual(
       DASHBOARD_ORDER.map((schema) => `/stage/${schema.stage}`),
     );
@@ -302,9 +305,9 @@ describe('a role that does not record samples gets a truthful screen', () => {
     expect(screen.getByRole('button', { name: /More/ })).toBeInTheDocument();
   });
 
-  it('POSITIVE CONTROL: the same query finds seven forms for a role that may record', () => {
+  it('POSITIVE CONTROL: the same query finds every form for a role that may record', () => {
     renderHome(['quality_officer'], { mayRecord: true });
-    expect(stageLinks()).toHaveLength(7);
+    expect(stageLinks()).toHaveLength(DASHBOARD_ORDER.length);
     expect(screen.queryByText(/does not record samples/i)).toBeNull();
   });
 });

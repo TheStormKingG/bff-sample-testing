@@ -120,7 +120,7 @@ describe('a measured zero is not the same value as an absent count', () => {
 
   it('reports every stage as insufficient data when the day query did not return', () => {
     const rows = samplesTodayByStage(null, '2026-10-24');
-    expect(rows).toHaveLength(7);
+    expect(rows).toHaveLength(STAGES.length);
     for (const row of rows) {
       expect(row.value.kind).toBe('insufficient_data');
       expect(renderMetric(row.value)).toBe(INSUFFICIENT_DATA_TEXT);
@@ -129,7 +129,7 @@ describe('a measured zero is not the same value as an absent count', () => {
 
   it('reports a genuine zero per stage when the rows were read and none matched', () => {
     const rows = samplesTodayByStage([], '2026-10-24');
-    expect(rows).toHaveLength(7);
+    expect(rows).toHaveLength(STAGES.length);
     for (const row of rows) {
       expect(row.value).toEqual({ kind: 'count', value: 0 });
       expect(renderMetric(row.value)).toBe('0');
@@ -227,12 +227,15 @@ describe('the plant-local day boundary is America/Guyana, not UTC', () => {
 // ---------------------------------------------------------------------------
 
 describe('sampling adherence is withheld where the frequency is unapproved', () => {
-  const UNAPPROVED: readonly Stage[] = ['ground', 'conditioned', 'pellets', 'crumble'];
+  // DGM joins the unapproved four: the lab has not stated a sampling frequency
+  // for it either, so no overdue flag or adherence percentage may be computed
+  // — the figure would be fabricated (FR-020, risk R-08).
+  const UNAPPROVED: readonly Stage[] = ['ground', 'conditioned', 'pellets', 'crumble', 'dgm'];
   const APPROVED: readonly Stage[] = ['raw_materials', 'extruded_soya', 'mash'];
 
-  it('matches the workbook: four of the seven stages have no approved frequency', () => {
+  it('matches the workbook: five of the eight stages have no approved frequency', () => {
     const withheld = withheldAdherenceStages().map((s) => s.stage);
-    expect(withheld).toHaveLength(4);
+    expect(withheld).toHaveLength(5);
     expect([...withheld].sort()).toEqual([...UNAPPROVED].sort());
     expect([...reportableAdherenceStages()].sort()).toEqual([...APPROVED].sort());
     expect(withheld.length + reportableAdherenceStages().length).toBe(STAGES.length);
@@ -349,7 +352,7 @@ describe('every metric declares how it is built', () => {
   it('covers all seven dashboard stages in the day breakdown', () => {
     const rows = samplesTodayByStage([], '2026-10-24');
     expect(rows.map((r) => r.stage)).toEqual(DASHBOARD_ORDER.map((s) => s.stage));
-    expect(rows.map((r) => r.ordinal)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(rows.map((r) => r.ordinal)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   });
 });
 

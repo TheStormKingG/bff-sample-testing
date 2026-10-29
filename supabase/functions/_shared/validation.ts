@@ -30,6 +30,7 @@ import {
 } from '../../../src/forms/registry.ts';
 import { STAGES, type FieldDef, type Stage } from '../../../src/forms/types.ts';
 import { looksLikeFormula, toSheetRow } from '../../../src/forms/sheetMapping.ts';
+import { deriveSystemValues } from '../../../src/forms/derived.ts';
 import type { SampleValues } from '../../../src/forms/sheetMapping.ts';
 
 /**
@@ -104,7 +105,27 @@ export interface ValidateArgs {
 }
 
 export type ValidationResult =
-  | { readonly ok: true; readonly values: SampleValues; readonly row: readonly string[] }
+  | {
+      readonly ok: true;
+      /**
+       * The operator's values, and ONLY the operator's values. Becomes
+       * `p_values`, which `apply_submitted_values` applies one row at a time
+       * through `apply_measurement` — and that function raises for any column
+       * whose type or requiredness is `system`. A computed value merged in
+       * here would turn every DGM registration into an `internal` error.
+       */
+      readonly values: SampleValues;
+      /**
+       * The serialised row, INCLUDING any columns the server computed. This is
+       * the only carrier that reaches both the spreadsheet and the database:
+       * the trigger on the outbox insert reads the computed cells back out of
+       * it (0025_dgm_stage.sql), so the stored value and the spreadsheet cell
+       * are the same string by construction rather than by agreement.
+       */
+      readonly row: readonly string[];
+      /** The computed cells, by field key. Empty for a stage that has none. */
+      readonly derived: Readonly<Record<string, string>>;
+    }
   | { readonly ok: false; readonly issues: readonly ValidationIssue[] };
 
 /** Longest free-text cell accepted. Sheets itself allows 50 000 characters. */
@@ -372,13 +393,42 @@ export function validateStagePayload(args: ValidateArgs): ValidationResult {
 
   if (issues.length > 0) return { ok: false, issues };
 
-  // 4. Final gate: the row must actually serialise. `toSheetRow` owns column
+  // 4. Columns the server computes rather than the operator measuring them.
+  //    Runs AFTER every operator value has been validated — the arithmetic is
+  //    only meaningful over values that passed — and BEFORE serialisation,
+  //    because `toSheetRow` is the only thing that turns values into the row
+  //    and there is no later opportunity.
+  //
+  //    Merged into the values used for the ROW ONLY. `clean` is returned
+  //    untouched and becomes `p_values`; see the note on ValidationResult.
+  let derived: Record<string, string>;
+  try {
+    derived = deriveSystemValues(args.stage, clean);
+  } catch (error) {
+    // A computation that refuses is a statement about the numbers, not an
+    // internal fault, so it is reported like any other validation problem and
+    // nothing commits.
+    return {
+      ok: false,
+      issues: [
+        {
+          field: '_payload',
+          code: 'serialisation_failed',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      ],
+    };
+  }
+
+  // 5. Final gate: the row must actually serialise. `toSheetRow` owns column
   //    order, width, enum-label translation and the formula refusal.
   let row: readonly string[];
   try {
     // The placeholder keeps column A's width honest without claiming an
     // identifier: the real id replaces it at enqueue time, after allocation.
-    row = toSheetRow(args.stage, '', clean as SampleValues);
+    const forRow =
+      Object.keys(derived).length === 0 ? clean : { ...clean, ...derived };
+    row = toSheetRow(args.stage, '', forRow as SampleValues);
   } catch (error) {
     return {
       ok: false,
@@ -392,7 +442,7 @@ export function validateStagePayload(args: ValidateArgs): ValidationResult {
     };
   }
 
-  return { ok: true, values: clean as SampleValues, row };
+  return { ok: true, values: clean as SampleValues, row, derived };
 }
 
 /**

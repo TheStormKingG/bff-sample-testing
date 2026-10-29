@@ -308,9 +308,15 @@ export async function seedApprovedSession(page: Page, options: MockSessionOption
 // ---------------------------------------------------------------------------
 
 /**
- * Master Prompt §2: exactly these seven primary cards, in exactly this order.
- * `stage` is the route segment (src/App.tsx mounts `stage/:stage`); `title` is
- * the schema title from src/forms/registry.ts.
+ * Master Prompt §2 fixes the first seven primary cards, in exactly this order;
+ * DGM is eighth, added 2026-10-29. `stage` is the route segment (src/App.tsx
+ * mounts `stage/:stage`); `title` is the schema title from
+ * src/forms/registry.ts.
+ *
+ * This is a hand-maintained duplicate of `DASHBOARD_ORDER` — Playwright does
+ * not import application source — so nothing makes it follow the registry.
+ * `dashboard.spec.ts` compares the rendered cards against it, which catches a
+ * drift in either direction but only when the e2e suite runs.
  */
 export const DASHBOARD_STAGES = [
   { stage: 'raw_materials', title: 'Raw Materials' },
@@ -320,6 +326,7 @@ export const DASHBOARD_STAGES = [
   { stage: 'extruded_soya', title: 'Extruded Soya' },
   { stage: 'crumble', title: 'Crumble' },
   { stage: 'mash', title: 'Mash' },
+  { stage: 'dgm', title: 'DGM' },
 ] as const;
 
 export const DASHBOARD_CARDS = DASHBOARD_STAGES.map((entry) => entry.title);

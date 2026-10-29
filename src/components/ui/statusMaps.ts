@@ -30,6 +30,7 @@ import {
   Thermometer,
   Truck,
   Wheat,
+  Layers,
   type LucideIcon,
 } from 'lucide-react';
 import type { AssessmentResult } from '@/lib/assessment';
@@ -109,7 +110,7 @@ export const ASSESSMENT_ICON: Record<AssessmentResult, LucideIcon> = {
 };
 
 /**
- * One icon per process stage, for the seven dashboard cards. Chosen to be
+ * One icon per process stage, for the eight dashboard cards. Chosen to be
  * distinguishable at a glance by someone who reads the number and the picture
  * before the words (Master Prompt section 2).
  */
@@ -121,6 +122,8 @@ export const STAGE_ICON: Record<Stage, LucideIcon> = {
   extruded_soya: Flame,
   crumble: Grip,
   mash: Wheat,
+  // A stack of sieves, which is literally what the DGM test is.
+  dgm: Layers,
 };
 
 /**

@@ -2,10 +2,21 @@
  * Registry structural contract tests.
  *
  * These assert the registry against the headers VERIFIED from the live
- * workbook on 2026-10-24 (docs/workbook-verification.md). The expected
- * strings below are an independent transcription of that read: if someone
- * edits registry.ts and quietly changes a header, these fail. That is the
- * point — the registry must not be able to drift from the workbook silently.
+ * workbook: tabs 1-7 on 2026-10-24 (docs/workbook-verification.md), tab 8 on
+ * 2026-10-29. The expected strings below are an independent transcription of
+ * that read: if someone edits registry.ts and quietly changes a header, these
+ * fail. That is the point — the registry must not be able to drift from the
+ * workbook silently.
+ *
+ * `8 DGM` differs from the other seven in HISTORY, not in kind. Those tabs
+ * existed and were transcribed; the DGM tab was authored into the workbook on
+ * 2026-10-29 and then read back out of it with
+ * `gviz/tq?tqx=out:csv&sheet=8 DGM&range=A4:AI4`, and the values below are that
+ * read-back. The read-back was not a formality: it caught cell AA4 arriving as
+ * `DGM (¬µm)`, because the clipboard carried UTF-8 bytes that Sheets decoded as
+ * Mac Roman. The micro sign in `DGM (µm)` below is U+00B5, the same codepoint
+ * the workbook uses in `Average particle size (µm)` on tabs 2, 6 and 7, and
+ * `diffHeaders` compares these strings exactly.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -87,11 +98,29 @@ const VERIFIED_HEADERS: Record<Stage, { tab: string; headers: string[] }> = {
       'Tested by (QO)', 'Comments',
     ],
   },
+  dgm: {
+    tab: '8 DGM',
+    headers: [
+      'Sample ID', 'Date', 'Time', 'Feed type', 'Batch no.', 'Sampled by',
+      'Mill RPM', 'Mill Hz or position', 'Grind time', 'Sieve series',
+      'ABNT 5 empty sieve (g)', 'ABNT 5 sieve + sample (g)',
+      'ABNT 10 empty sieve (g)', 'ABNT 10 sieve + sample (g)',
+      'ABNT 16 empty sieve (g)', 'ABNT 16 sieve + sample (g)',
+      'ABNT 30 empty sieve (g)', 'ABNT 30 sieve + sample (g)',
+      'ABNT 50 empty sieve (g)', 'ABNT 50 sieve + sample (g)',
+      'ABNT 400 empty sieve (g)', 'ABNT 400 sieve + sample (g)',
+      'Pan empty (g)', 'Pan + sample (g)',
+      'Total retained (g)', 'Fineness module (MF)', 'DGM (µm)',
+      'UI coarse (%)', 'UI average (%)', 'UI fine (%)',
+      'DPG legacy index', 'Geometric standard deviation', 'GSD basis',
+      'Tested by (QO)', 'Comments',
+    ],
+  },
 };
 
 describe('registry: workbook contract', () => {
-  it('covers exactly the seven operational stages', () => {
-    expect(STAGES).toHaveLength(7);
+  it('covers exactly the eight operational stages', () => {
+    expect(STAGES).toHaveLength(8);
     expect(Object.keys(STAGE_SCHEMAS).sort()).toEqual([...STAGES].sort());
   });
 
@@ -120,9 +149,18 @@ describe('registry: workbook contract', () => {
     expect(columnLetterToIndex(s.lastColumn)).toBe(s.columnCount - 1);
   });
 
-  it('total verified columns across the seven tabs is 98', () => {
+  it('total verified columns across the eight tabs is 133', () => {
+    // 98 across the original seven, plus 35 for `8 DGM`. Stated as the sum of
+    // its parts rather than as one number, so a change to either side names
+    // which side moved.
+    const originalSeven = STAGES.filter((s) => s !== 'dgm').reduce(
+      (n, s) => n + STAGE_SCHEMAS[s].columnCount,
+      0,
+    );
+    expect(originalSeven).toBe(98);
+    expect(STAGE_SCHEMAS.dgm.columnCount).toBe(35);
     const total = STAGES.reduce((n, s) => n + STAGE_SCHEMAS[s].columnCount, 0);
-    expect(total).toBe(98);
+    expect(total).toBe(133);
   });
 
   it.each(STAGES)('%s: field keys are unique', (stage) => {
@@ -163,13 +201,21 @@ describe('registry: workbook contract', () => {
 });
 
 describe('registry: dashboard', () => {
-  it('presents exactly seven cards in the order fixed by the PRD', () => {
-    expect(DASHBOARD_ORDER).toHaveLength(7);
+  it('presents exactly eight cards in the order fixed by the PRD, then DGM', () => {
+    expect(DASHBOARD_ORDER).toHaveLength(8);
     expect(DASHBOARD_ORDER.map((s) => s.title)).toEqual([
       'Raw Materials', 'Ground', 'Conditioned', 'Pellets',
-      'Extruded Soya', 'Crumble', 'Mash',
+      'Extruded Soya', 'Crumble', 'Mash', 'DGM',
     ]);
-    expect(DASHBOARD_ORDER.map((s) => s.ordinal)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(DASHBOARD_ORDER.map((s) => s.ordinal)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  it('lists every stage exactly once — DASHBOARD_ORDER is not type-checked', () => {
+    // `DASHBOARD_ORDER` is a plain array, not a `Record<Stage, …>`, so a stage
+    // added to STAGE_SCHEMAS and forgotten here compiles and then vanishes from
+    // the dashboard and the phone home screen with no error. This is the only
+    // thing that notices.
+    expect([...DASHBOARD_ORDER].map((s) => s.stage).sort()).toEqual([...STAGES].sort());
   });
 });
 
@@ -199,10 +245,30 @@ describe('registry: sample ID prefixes', () => {
     expect(() => resolvePrefix('ground', { sampling_point: null })).toThrow();
   });
 
-  it('enumerates all eight issuable prefixes', () => {
+  it('enumerates all nine issuable prefixes', () => {
     expect([...ALL_PREFIXES].sort()).toEqual(
-      ['AC', 'AM', 'AP', 'BC', 'CR', 'ES', 'MS', 'RM'],
+      ['AC', 'AM', 'AP', 'BC', 'CR', 'DG', 'ES', 'MS', 'RM'],
     );
+  });
+
+  it('declares a prefix for every stage that has one, and no orphans', () => {
+    // `StageSchema.prefix` is `string | null`, NOT `SamplePrefix`, so a stage
+    // can name a prefix that ALL_PREFIXES omits — it compiles, and then fails
+    // at runtime inside identifier allocation, which is the worst place to
+    // find out. 'DG' reached this list only because this comparison exists.
+    const declared = [...STAGES]
+      .map((s) => STAGE_SCHEMAS[s].prefix)
+      .filter((p): p is string => p !== null);
+    for (const prefix of declared) {
+      expect(ALL_PREFIXES, `stage prefix ${prefix} is not issuable`).toContain(prefix);
+    }
+    // Ground is the one stage with no fixed prefix: it issues AM or BC from
+    // the structured sampling point, so those two are issuable without being
+    // declared on any schema.
+    const orphans = ALL_PREFIXES.filter(
+      (p) => !declared.includes(p) && p !== 'AM' && p !== 'BC',
+    );
+    expect(orphans, 'issuable prefixes no stage can mint').toEqual([]);
   });
 });
 

@@ -281,6 +281,7 @@ const SOURCE_REFERENCE_FIELD: Readonly<Record<Stage, 'lot_no' | 'batch_no' | 'ru
   extruded_soya: 'run_no',
   crumble: 'batch_no',
   mash: 'batch_no',
+  dgm: 'batch_no',
 };
 
 /**

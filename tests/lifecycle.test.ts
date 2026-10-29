@@ -470,7 +470,7 @@ describe('entered precision survives validation and mapping', () => {
 });
 
 describe('every stage composes without throwing', () => {
-  it('a minimal registration payload maps to a correctly-sized row on all seven tabs', () => {
+  it('a minimal registration payload maps to a correctly-sized row on every tab', () => {
     const instant = fromPlantParts('2026-10-24', '12:00').toISOString();
     let checked = 0;
 
@@ -506,7 +506,10 @@ describe('every stage composes without throwing', () => {
       checked++;
     }
 
-    // Asserted coverage, not implied by the loop.
-    expect(checked).toBe(7);
+    // Asserted coverage, not implied by the loop. Stated both ways on purpose:
+    // the first fails if a stage stops composing, the second if a stage is
+    // removed from the registry and the first silently follows it down.
+    expect(checked).toBe(Object.keys(STAGE_SCHEMAS).length);
+    expect(checked).toBe(8);
   });
 });

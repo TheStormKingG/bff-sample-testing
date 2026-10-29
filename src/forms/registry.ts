@@ -21,6 +21,11 @@ import {
   type StageSchema,
   YES_NO_OPTIONS,
 } from './types.ts';
+// The sieve series and its apertures live with the arithmetic that consumes
+// them, so the registry reads them rather than restating them. `dgm.ts` has no
+// imports of its own, which is what keeps it safe for the Edge Function
+// toolchain too (scripts/check-shared-module-imports.mjs).
+import { DEFAULT_SIEVE_PRESET, SIEVE_PRESETS } from '../lib/dgm.ts';
 
 const MATERIAL_OPTIONS = [
   { value: 'corn', label: 'Corn' },
@@ -1074,6 +1079,296 @@ const mash: StageSchema = {
   ],
 };
 
+// ---------------------------------------------------------------------------
+// F08 — 8 DGM, A:AI (35 columns), prefix DG
+//
+// Granulometry: a seven-sieve stack weighed on crumbled product. Unlike the
+// other seven tabs this one was AUTHORED rather than transcribed — the tab did
+// not exist in the workbook until 2026-10-29 — so the direction of verification
+// is the same but the history is not: the header strings below were typed into
+// the live workbook by hand, then READ BACK out of it and copied here. That
+// read-back caught a real defect (the micro sign arrived as `¬µ`, because the
+// clipboard carried UTF-8 bytes that Sheets decoded as Mac Roman), which is the
+// whole reason the step exists.
+//
+// THREE THINGS THAT LOOK LIKE CHOICES AND ARE NOT:
+//
+//  1. The sieve masses are `registration`, not `testing`. There is no
+//     results-entry screen in this application — `StageFormPage` hardcodes
+//     `phase="registration"` — so a `testing` field can be left blank forever
+//     with nothing to prompt for it. A DGM test is one bench event anyway: the
+//     weighing IS the test, so everything is captured in one submit.
+//
+//  2. The nine derived columns are `type: 'system'`, exactly like column A.
+//     They have to be: `apply_measurement` raises
+//     "Column % is assigned by the server and cannot be submitted" for any
+//     field whose type OR requiredness is `system`, so a computed value can
+//     never be a `sample_measurements` row. They are serialised into the sheet
+//     from values the Edge Function injects after validation, and stored in
+//     `sample_derived_results`. `validateStagePayload` refuses a client-supplied
+//     value for any of them with `server_assigned`, so an operator cannot forge
+//     a fineness module.
+//
+//  3. Nothing here carries a `parameterKey`. With 0 of 34 workbook limits
+//     approved, a parameter key buys no assessment and `release_blockers`
+//     already treats `not_assessable` as a blocker. Adding one would imply an
+//     acceptance limit exists (PRD FR-009, UAT-05) when none does.
+// ---------------------------------------------------------------------------
+
+/**
+ * The 14 sieve mass columns, K..X, generated from the preset so the ABNT
+ * labels and the apertures cannot drift from the arithmetic that consumes
+ * them. `src/lib/dgm.ts` is the single definition of the series; this reads it.
+ *
+ * The pan is named "Pan" rather than by its ABNT designation, because the
+ * workbook's own conversion table puts ABNT 400 at 37 µm and marks it as the
+ * pan, while the DGM sheet uses 38 µm for ABNT 400 and 37 µm for `Fundo` —
+ * possibly the pan counted twice. Until the lab settles that, calling the last
+ * position "Pan" says what is physically there without asserting a mesh.
+ */
+const sieveMassFields = (): FieldDef[] => {
+  const tareLetters = ['K', 'M', 'O', 'Q', 'S', 'U', 'W'];
+  const grossLetters = ['L', 'N', 'P', 'R', 'T', 'V', 'X'];
+  return DEFAULT_SIEVE_PRESET.positions.flatMap((position, i): FieldDef[] => {
+    const n = i + 1;
+    const name = position.isPan ? 'Pan' : `ABNT ${position.abnt}`;
+    const tareHeader = position.isPan ? 'Pan empty (g)' : `${name} empty sieve (g)`;
+    const grossHeader = position.isPan ? 'Pan + sample (g)' : `${name} sieve + sample (g)`;
+    const aperture = `Aperture ${position.apertureMicrons} µm.`;
+    const common = {
+      type: 'number',
+      section: 'test_results',
+      required: 'registration',
+      unit: 'g',
+      unitConfirmed: true,
+      min: 0,
+      // A sieve plus a full sample is a few hundred grams. Beyond two
+      // kilograms is a mis-keyed decimal point, which the operator confirms
+      // rather than the system refusing — it is a typo guard, never a limit.
+      implausibleAbove: 2000,
+      decimals: 2,
+    } as const;
+    return [
+      {
+        ...common,
+        key: `sieve${n}_tare_g`,
+        columnLetter: tareLetters[i]!,
+        sheetHeader: tareHeader,
+        label: position.isPan ? 'Pan empty' : `${name} empty sieve`,
+        help: `${aperture} Weigh the sieve before any sample is added.`,
+      },
+      {
+        ...common,
+        key: `sieve${n}_gross_g`,
+        columnLetter: grossLetters[i]!,
+        sheetHeader: grossHeader,
+        label: position.isPan ? 'Pan + sample' : `${name} sieve + sample`,
+        help: `${aperture} Weigh the same sieve again with whatever stayed on it.`,
+      },
+    ];
+  });
+};
+
+/** The nine server-computed columns, Y..AG. */
+const derivedField = (
+  key: string,
+  columnLetter: string,
+  sheetHeader: string,
+  label: string,
+  help: string,
+): FieldDef => ({
+  key,
+  columnLetter,
+  sheetHeader,
+  label,
+  // `system`, like column A: computed by the server, refused from a client,
+  // and never a sample_measurements row. See the block comment above.
+  type: 'system',
+  section: 'test_results',
+  required: 'system',
+  help,
+});
+
+const dgm: StageSchema = {
+  stage: 'dgm',
+  ordinal: 8,
+  title: 'DGM',
+  sheetTab: '8 DGM',
+  lastColumn: 'AI',
+  columnCount: 35,
+  prefix: 'DG',
+  description: 'Particle size by sieve analysis',
+  instruction:
+    'Run the sieve test on crumbled product. Weigh each empty sieve, then weigh it again with the sample retained on it.',
+  frequency: 'To set',
+  frequencyApproved: false,
+  fields: [
+    ...idDateTime(),
+    {
+      key: 'feed_type',
+      columnLetter: 'D',
+      sheetHeader: 'Feed type',
+      label: 'Feed type',
+      type: 'text',
+      section: 'sample_details',
+      required: 'registration',
+    },
+    {
+      key: 'batch_no',
+      columnLetter: 'E',
+      sheetHeader: 'Batch no.',
+      label: 'Batch no.',
+      type: 'text',
+      section: 'sample_details',
+      required: 'registration',
+    },
+    {
+      key: 'sampled_by',
+      columnLetter: 'F',
+      sheetHeader: 'Sampled by',
+      label: 'Sampled by',
+      type: 'text',
+      section: 'sample_details',
+      required: 'registration',
+    },
+    {
+      key: 'mill_rpm',
+      columnLetter: 'G',
+      sheetHeader: 'Mill RPM',
+      label: 'Mill RPM',
+      type: 'number',
+      section: 'settings',
+      required: 'optional',
+      min: 0,
+      implausibleAbove: 10000,
+      decimals: 0,
+      help: 'The mill speed when the product was made, if it is known.',
+    },
+    {
+      key: 'mill_hz_position',
+      columnLetter: 'H',
+      sheetHeader: 'Mill Hz or position',
+      label: 'Mill Hz or position',
+      type: 'text',
+      section: 'settings',
+      required: 'optional',
+      help: 'The source sheet records either a frequency or a position setting here.',
+    },
+    {
+      key: 'grind_time',
+      columnLetter: 'I',
+      sheetHeader: 'Grind time',
+      label: 'Grind time',
+      type: 'text',
+      section: 'settings',
+      required: 'optional',
+    },
+    {
+      key: 'sieve_series',
+      columnLetter: 'J',
+      sheetHeader: 'Sieve series',
+      label: 'Sieve series',
+      type: 'select',
+      section: 'settings',
+      required: 'registration',
+      // Derived from the arithmetic module rather than re-listed, so a preset
+      // can never exist in one file and not the other. Individual apertures
+      // are deliberately NOT editable: Kj is assigned by POSITION in the
+      // stack and 104.14 is calibrated to this exact series, so a changed
+      // aperture would move no number while silently changing what the number
+      // means. Changing the stack is adding a preset, which is a code change.
+      options: SIEVE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label })),
+      help: 'The stack of sieves used. The apertures are fixed by the series and are shown on each weight below.',
+    },
+    ...sieveMassFields(),
+    derivedField(
+      'total_retained_g',
+      'Y',
+      'Total retained (g)',
+      'Total retained',
+      'The sum of what stayed on every sieve. Worked out by the system.',
+    ),
+    derivedField(
+      'fineness_module',
+      'Z',
+      'Fineness module (MF)',
+      'Fineness module (MF)',
+      'How coarse the grind is overall. Worked out by the system from the weights.',
+    ),
+    derivedField(
+      'dgm_um',
+      'AA',
+      'DGM (µm)',
+      'DGM',
+      'Average geometric diameter in micrometres. Worked out by the system.',
+    ),
+    derivedField(
+      'ui_coarse_pct',
+      'AB',
+      'UI coarse (%)',
+      'UI coarse',
+      'Share of the sample on the two coarsest sieves. Worked out by the system.',
+    ),
+    derivedField(
+      'ui_average_pct',
+      'AC',
+      'UI average (%)',
+      'UI average',
+      'Share of the sample on the three middle sieves. Worked out by the system.',
+    ),
+    derivedField(
+      'ui_fine_pct',
+      'AD',
+      'UI fine (%)',
+      'UI fine',
+      'Share of the sample on the finest sieve and the pan. Worked out by the system.',
+    ),
+    derivedField(
+      'dpg_legacy_index',
+      'AE',
+      'DPG legacy index',
+      'DPG legacy index',
+      'The spreadsheet’s own DPG figure, reproduced exactly so old records still compare. It is an index, not a standard deviation: it carries units and it doubles if you weigh twice as much sample, so it can only be compared between samples of equal mass.',
+    ),
+    derivedField(
+      'gsd',
+      'AF',
+      'Geometric standard deviation',
+      'Geometric standard deviation',
+      'How even the grind is, as a proper dimensionless figure. Unlike the DPG index this does not change with how much sample was weighed.',
+    ),
+    derivedField(
+      'gsd_basis',
+      'AG',
+      'GSD basis',
+      'GSD basis',
+      'Which convention produced the figure beside it. Recorded because the coarsest sieve has nothing above it and the pan has nothing below it, so both bins need a stated rule that a number cannot carry by itself.',
+    ),
+    {
+      key: 'tested_by_qo',
+      columnLetter: 'AH',
+      sheetHeader: 'Tested by (QO)',
+      label: 'Tested by (QO)',
+      type: 'text',
+      section: 'follow_up',
+      // `registration`, not `testing` as on the other seven tabs: everything
+      // on this form is captured in one submit, so a `testing` requiredness
+      // would never be prompted for. See note 1 above.
+      required: 'registration',
+      help: 'The Quality Officer who actually carried out the test. If that is not you, an attestation is recorded.',
+    },
+    {
+      key: 'comments',
+      columnLetter: 'AI',
+      sheetHeader: 'Comments',
+      label: 'Comments',
+      type: 'textarea',
+      section: 'follow_up',
+      required: 'optional',
+    },
+  ],
+};
+
 export const STAGE_SCHEMAS: Readonly<Record<Stage, StageSchema>> = {
   raw_materials: rawMaterials,
   ground,
@@ -1082,9 +1377,18 @@ export const STAGE_SCHEMAS: Readonly<Record<Stage, StageSchema>> = {
   extruded_soya: extrudedSoya,
   crumble,
   mash,
+  dgm,
 };
 
-/** The seven dashboard cards, in the order fixed by Master Prompt §2. */
+/**
+ * The eight dashboard cards. Stages 1-7 are in the order fixed by Master
+ * Prompt §2; DGM is eighth, matching its workbook tab.
+ *
+ * NOT compile-checked against `Stage` — this is a plain array, so a stage
+ * added to `STAGE_SCHEMAS` and forgotten here disappears from the dashboard
+ * and the phone home screen with no error. `tests/registry.test.ts` compares
+ * the two.
+ */
 export const DASHBOARD_ORDER: readonly StageSchema[] = [
   rawMaterials,
   ground,
@@ -1093,6 +1397,7 @@ export const DASHBOARD_ORDER: readonly StageSchema[] = [
   extrudedSoya,
   crumble,
   mash,
+  dgm,
 ];
 
 export function getSchema(stage: Stage): StageSchema {
@@ -1133,8 +1438,18 @@ export function resolvePrefix(
   );
 }
 
-/** Every prefix the system can issue. Used by the DB counter constraint. */
-export const ALL_PREFIXES = ['RM', 'AM', 'BC', 'AC', 'AP', 'ES', 'CR', 'MS'] as const;
+/**
+ * Every prefix the system can issue. Used by the DB counter constraint.
+ *
+ * NOT derived from `STAGE_SCHEMAS` and not type-checked against it:
+ * `StageSchema.prefix` is a plain `string | null`, so declaring a stage with a
+ * prefix that is missing here compiles cleanly and then fails at runtime
+ * inside identifier allocation. `tests/registry.test.ts` compares the two.
+ *
+ * 'DG' and not 'DGM': `sample_prefixes_shape` is
+ * `check (prefix ~ '^[A-Z]{2}$')` — exactly two letters.
+ */
+export const ALL_PREFIXES = ['RM', 'AM', 'BC', 'AC', 'AP', 'ES', 'CR', 'MS', 'DG'] as const;
 export type SamplePrefix = (typeof ALL_PREFIXES)[number];
 
 /**

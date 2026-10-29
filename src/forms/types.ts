@@ -16,6 +16,12 @@ export const STAGES = [
   'extruded_soya',
   'crumble',
   'mash',
+  // Eighth, and last in the workbook. `dgm` is granulometry — a sieve stack
+  // weighed on crumbled product. Its order here is the tab order and the
+  // dashboard order, and the array POSITION is relied on by nothing: the
+  // ordinal is declared per stage. Adding a member here is a compile error in
+  // every exhaustive `Record<Stage, …>`, which is the intended early warning.
+  'dgm',
 ] as const;
 
 export type Stage = (typeof STAGES)[number];
@@ -141,7 +147,12 @@ export interface FieldDef {
 
 export interface StageSchema {
   readonly stage: Stage;
-  /** Dashboard ordinal, 1-7. Fixed by Master Prompt §2 and PRD §3.1. */
+  /**
+   * Dashboard ordinal, 1-8. Stages 1-7 are fixed by Master Prompt §2 and
+   * PRD §3.1; 8 is DGM, added later. Mirrored by
+   * `stage_definitions.ordinal`, whose CHECK constraint bounds the range —
+   * so this number is not free-form, and widening it is a migration.
+   */
   readonly ordinal: number;
   /** Short dashboard label. */
   readonly title: string;
@@ -164,8 +175,9 @@ export interface StageSchema {
   /** Sampling frequency as stated in the workbook `Read me` tab. */
   readonly frequency: string;
   /**
-   * False when the workbook states the frequency as "To set". Four of seven
-   * stages are unset, so no overdue flag or sampling-adherence KPI may be
+   * False when the workbook states the frequency as "To set". Five of eight
+   * stages are unset — the original four plus DGM, whose frequency the lab
+   * has not stated — so no overdue flag or sampling-adherence KPI may be
    * computed for them (FR-020, risk R-08).
    */
   readonly frequencyApproved: boolean;

@@ -147,13 +147,17 @@ describe('toSheetRow: zero is not blank (Master Prompt §10, PRD §6.1)', () => 
     // The coverage claim is asserted, not implied by the loop: if a schema change
     // drops a numeric column out of the sweep, this fails instead of passing quietly.
     //
-    // 30 is the count of registry fields with type 'number'. It is deliberately
+    // 45 is the count of registry fields with type 'number'. It is deliberately
     // NOT the 34 entries on the workbook `Limits` tab — those are two different
     // sets and conflating them is easy: `Mill screen size (mm)` is a select, and
     // several limit entries describe equipment settings with no numeric field of
     // their own. Breakdown: raw 4, ground 4, conditioned 4, pellets 2,
-    // extruded soya 8, crumble 5, mash 3.
-    expect(checked).toBe(30);
+    // extruded soya 8, crumble 5, mash 3, DGM 15.
+    //
+    // DGM's 15 are the seven tare masses, the seven gross masses and `mill_rpm`.
+    // Its nine DERIVED columns are `type: 'system'` and so are correctly absent
+    // from this sweep: `toSheetRow` never reads a client value for them.
+    expect(checked).toBe(45);
   });
 });
 

@@ -93,8 +93,9 @@ async function fetchDashboardCounts(plantDate: string): Promise<DashboardCounts>
     }
   }
 
-  // Written out rather than built from STAGES so that adding an eighth stage
-  // is a compile error here instead of a silently missing card figure.
+  // Written out rather than built from STAGES so that adding a stage is a
+  // compile error here instead of a silently missing card figure. It worked:
+  // adding `dgm` broke this line before it broke anything a user would see.
   const todayByStage: Record<Stage, number> = {
     raw_materials: 0,
     ground: 0,
@@ -103,10 +104,11 @@ async function fetchDashboardCounts(plantDate: string): Promise<DashboardCounts>
     extruded_soya: 0,
     crumble: 0,
     mash: 0,
+    dgm: 0,
   };
   for (const row of z.array(stageRowSchema).parse(today.data ?? [])) {
     // A stage value the registry does not know is ignored rather than counted
-    // under a guessed heading: the seven tabs are a fixed contract.
+    // under a guessed heading: the tab set is a fixed contract.
     const stage = STAGES.find((s) => s === row.stage);
     if (stage !== undefined) todayByStage[stage] += 1;
   }

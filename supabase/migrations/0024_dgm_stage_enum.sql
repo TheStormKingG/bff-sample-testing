@@ -1,0 +1,51 @@
+-- ===========================================================================
+-- 0024 — add `dgm` to public.sample_stage. Nothing else.
+--
+-- THIS FILE CONTAINS ONE STATEMENT, AND THAT IS THE POINT.
+--
+-- PostgreSQL permits `alter type ... add value` inside a transaction, but the
+-- new label cannot be USED in the transaction that adds it. Every migration
+-- here runs in its own transaction (scripts/apply-remote-migrations.py), so
+-- the stage definition, the prefix, the 35 column rows and everything else
+-- that mentions 'dgm' live in 0025. Merging the two files would fail at apply
+-- time with "unsafe use of new value of enum type".
+--
+-- ===========================================================================
+-- READ THIS BEFORE APPLYING IT. THE ORDER IS NOT A PREFERENCE.
+-- ===========================================================================
+-- `rpc_clear_schema_drift` (0022:124-134) counts the tabs a verification run
+-- must have cleared straight off the enum:
+--
+--     select count(*) into v_expected
+--     from unnest(enum_range(null::public.sample_stage)) as e(v);
+--     ...
+--     if cardinality(v_stages) <> v_expected then
+--       raise exception 'BFF_PARTIAL_VERIFICATION: ...'
+--
+-- and its own comment says why: "Counted against the enum, so a new stage
+-- raises the bar without an edit here."
+--
+-- So THE MOMENT THIS MIGRATION APPLIES, lifting a schema-drift latch requires
+-- EIGHT tabs to verify clean. If a latch is set while either the `8 DGM` tab
+-- is absent from the workbook or the deployed code still knows seven stages,
+-- the Sheets writer is fenced for EVERY stage — raw materials included — and
+-- `rpc_clear_schema_drift` cannot clear it, because a seven-tab verification
+-- run will never satisfy an eight-tab bar. There is no supported way back:
+-- PostgreSQL has no `drop value`, so the enum label cannot be removed.
+--
+-- The two preconditions, both of which must hold BEFORE this file is applied:
+--
+--   1. The workbook contains a tab named exactly `8 DGM` whose row 4 matches
+--      `STAGE_SCHEMAS.dgm` character for character. Authored and read back on
+--      2026-10-29; `tests/registry.test.ts` holds that read-back.
+--
+--   2. The deployed Edge Functions carry a registry that KNOWS about `dgm`.
+--      `verifyWorkbook` iterates `STAGES` from the shared registry, so code
+--      that predates this change verifies seven tabs and can never clear a
+--      latch once the database expects eight. Deploy first, migrate second.
+--
+-- Condition 2 is the one that is easy to get backwards, because every other
+-- change in this system is safe in the opposite order.
+-- ===========================================================================
+
+alter type public.sample_stage add value if not exists 'dgm';

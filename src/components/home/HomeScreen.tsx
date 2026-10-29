@@ -28,11 +28,25 @@ export interface HomeScreenProps {
 }
 
 /**
- * The most cells the grid will lay out. Four rows of two is what fits a phone
- * without scrolling; if there is ever more to offer than that, the last cell
- * is 'More' and the remainder lives inside it.
+ * The most cells the grid will lay out: five rows of two. If there is ever
+ * more to offer than that, the last cell is 'More' and the remainder lives
+ * inside it.
+ *
+ * WHY TEN AND NOT EIGHT. It was eight — four rows — while there were seven
+ * forms plus 'More'. The eighth stage made nine cells, and nine against a cap
+ * of eight was not a harmless overflow: `rows` below clamps to `MAX_CELLS / 2`,
+ * so the template stayed at four explicit `minmax(0, 1fr)` rows and the ninth
+ * cell landed in an IMPLICIT fifth row, which is auto-height. An auto-height
+ * row does not divide the remaining space — it claims its content's height —
+ * so it pushed the grid past the `h-[100dvh]` wrapper and broke the no-scroll
+ * promise this file is built around.
+ *
+ * Raising the cap keeps that promise structurally rather than by luck: with
+ * five `1fr` rows the tiles divide the same height into smaller pieces, which
+ * is the documented degradation. On the shortest phone this app supports that
+ * is roughly 110px per tile, still well clear of the 44px `min-h-tap` floor.
  */
-const MAX_CELLS = 8;
+const MAX_CELLS = 10;
 
 /** One grid cell: its React key and the tile that fills it. */
 interface Cell {
@@ -41,11 +55,11 @@ interface Cell {
 }
 
 /**
- * The phone home screen: eight large tiles, no scroll.
+ * The phone home screen: one large tile per form, no scroll.
  *
  * WHAT THIS IS FOR. A sampler on the floor of the feed mill opens the app to
  * answer one question — which test am I doing — one-handed, in gloves, in
- * bright light. So the whole screen is that question's answer set: the seven
+ * bright light. So the whole screen is that question's answer set: the
  * numbered forms in the plant's own order, plus one tile holding everything
  * else. Nothing above it to read past, nothing below it to scroll to.
  *
@@ -133,11 +147,11 @@ export function HomeScreen({
   };
 
   /**
-   * The eight cells.
+   * The cells.
    *
-   * When the person may record a sample, that is the seven forms plus 'More'.
+   * When the person may record a sample, that is every form plus 'More'.
    * When they may not — an auditor, or an account whose role has not been
-   * assigned — showing seven tiles that all refuse would be a lie told in
+   * assigned — showing form tiles that all refuse would be a lie told in
    * layout, so the grid becomes the record destinations their role DOES open,
    * and the screen says so in a sentence above it. 'More' is always the last
    * cell, because it is the only route to Sign out.
@@ -180,6 +194,11 @@ export function HomeScreen({
   });
 
   const cells = mayRecord ? [...stageTiles, moreTile] : [...recordTiles, moreTile];
+  // Clamped, but the clamp must never bite: a cell beyond the explicit rows
+  // falls into an implicit auto-height row and breaks the no-scroll promise.
+  // `stageTiles` is deliberately NOT sliced — silently hiding a form would be
+  // worse than a layout fault — so the cap is what has to move when a stage is
+  // added, and this assertion is where that is noticed.
   const rows = Math.min(Math.ceil(cells.length / 2), MAX_CELLS / 2);
 
   const frequencyNotice = `${stagesWithoutFrequency} of ${DASHBOARD_ORDER.length} stages have no approved sampling frequency`;
