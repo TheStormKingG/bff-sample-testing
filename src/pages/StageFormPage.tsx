@@ -311,6 +311,7 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
         // Two separate facts. The ledger has the sample; the spreadsheet row is
         // queued. Only one value may ever be upgraded to "confirmed".
         sheetSync={isSheetConfirmed(result.sheetSync) ? 'confirmed' : 'pending'}
+        derived={result.derived}
         onEnterResults={
           can('sample.enter_results')
             ? () => navigate(`/samples/${result.sampleUuid}`)

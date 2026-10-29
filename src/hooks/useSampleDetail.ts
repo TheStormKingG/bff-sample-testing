@@ -110,6 +110,13 @@ export interface SampleDetail {
   readonly release: ReleaseEvaluation;
   readonly approvedRuleCount: number;
   readonly referenceRuleCount: number;
+  /**
+   * Server-computed columns, by registry field key, exactly as stored. Empty
+   * for the stages that have none. Deliberately NOT folded into
+   * `measurements`: those carry a `recorded_by`, and these were recorded by
+   * nobody.
+   */
+  readonly derived: Readonly<Record<string, string>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -389,7 +396,7 @@ export async function fetchSampleDetail(sampleUuid: string): Promise<SampleDetai
   const sample = sampleDbRow === null ? null : toSampleRow(sampleDbRow);
   if (!sample) throw new Error('That sample could not be found, or you are not permitted to see it.');
 
-  const [measurementRes, specRes, holdRes, eventRes, linkRes] = await Promise.all([
+  const [measurementRes, specRes, holdRes, eventRes, linkRes, derivedRes] = await Promise.all([
     db
       .from(TABLES.measurements)
       .select(
@@ -419,6 +426,10 @@ export async function fetchSampleDetail(sampleUuid: string): Promise<SampleDetai
       .from(TABLES.links)
       .select('id,link_type,from_sample,to_sample,relationship,match_basis,exception_reason')
       .or(`from_sample.eq.${sampleUuid},to_sample.eq.${sampleUuid}`),
+    db
+      .from(TABLES.derivedResults)
+      .select('result_key,display_text,numeric_value,computed_at')
+      .eq('sample_uuid', sampleUuid),
   ]);
 
   if (measurementRes.error) throw new Error(measurementRes.error.message);
@@ -426,6 +437,23 @@ export async function fetchSampleDetail(sampleUuid: string): Promise<SampleDetai
   if (holdRes.error) throw new Error(holdRes.error.message);
   if (eventRes.error) throw new Error(eventRes.error.message);
   if (linkRes.error) throw new Error(linkRes.error.message);
+
+  /**
+   * Values the server computed, which are NOT measurements and are not in
+   * `sample_measurements` — `apply_measurement` refuses any column the server
+   * assigns, so they could not be there even if that were wanted. Read
+   * separately and kept separate all the way to the screen, so a calculated
+   * figure is never shown as a reading somebody took.
+   *
+   * A stage with no computed columns simply returns no rows.
+   */
+  const derived: Record<string, string> = {};
+  for (const row of (derivedRes.data ?? []) as Array<{
+    result_key: string;
+    display_text: string;
+  }>) {
+    derived[row.result_key] = row.display_text;
+  }
 
   const measurementRows = ((measurementRes.data ?? []) as MeasurementDbRow[]).map((row) =>
     toMeasurementRow(sample.stage, row),
@@ -544,6 +572,7 @@ export async function fetchSampleDetail(sampleUuid: string): Promise<SampleDetai
     release,
     approvedRuleCount,
     referenceRuleCount,
+    derived,
   };
 }
 

@@ -38,6 +38,7 @@ import {
 } from '@/components/records/common';
 import { HoldBanner } from '@/components/records/HoldBanner';
 import { MeasurementTable } from '@/components/records/MeasurementTable';
+import { DerivedResultsTable } from '@/components/form/DerivedResultsTable';
 import { LinkedSamples } from '@/components/records/LinkedSamples';
 import { AuditTimeline } from '@/components/records/AuditTimeline';
 import { LabelDialog } from '@/components/records/LabelDialog';
@@ -333,6 +334,19 @@ export default function SampleDetailPage() {
         >
           <MeasurementTable views={data.allFields} />
         </Card>
+
+        {/*
+          Its own card, below the measurements and never inside them. The
+          numbers here were produced by arithmetic, the ones above by somebody
+          with a balance, and `sample_derived_results` has no `recorded_by`
+          precisely so the two can never be confused in the record. The screen
+          keeps that distinction rather than undoing it.
+        */}
+        {Object.keys(data.derived).length > 0 && (
+          <Card title="Calculated results">
+            <DerivedResultsTable stage={data.sample.stage} derived={data.derived} />
+          </Card>
+        )}
 
         <Card title="Actions">
           <div className="flex flex-col gap-3">

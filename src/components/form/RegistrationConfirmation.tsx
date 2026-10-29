@@ -6,6 +6,7 @@ import type { Stage } from '@/forms/types';
 import { formatPlantDateTimeLabelled } from '@/lib/time';
 import { CAPTURE_STATE_LABELS, type CaptureState } from '@/lib/workflow';
 import { SHEET_SYNC_LABELS, type SheetSyncState } from './saveState';
+import { DerivedResultsTable } from './DerivedResultsTable';
 
 export interface RegistrationConfirmationProps {
   readonly stage: Stage;
@@ -15,6 +16,13 @@ export interface RegistrationConfirmationProps {
   readonly registeredAt: Date | string;
   readonly captureState: CaptureState;
   readonly sheetSync?: SheetSyncState;
+  /**
+   * Values the server worked out, by registry field key. Shown immediately
+   * because for a sieve test the calculated figures ARE the result the
+   * operator came for, and there is nowhere else they would see them without
+   * navigating away from the screen that tells them to write the ID on the bag.
+   */
+  readonly derived?: Readonly<Record<string, string>>;
   /** Continue to results entry, when the actor may enter them. */
   readonly onEnterResults?: () => void;
   readonly onRegisterAnother?: () => void;
@@ -45,6 +53,7 @@ export function RegistrationConfirmation({
   registeredAt,
   captureState,
   sheetSync = 'pending',
+  derived,
   onEnterResults,
   onRegisterAnother,
   onDone,
@@ -149,6 +158,10 @@ export function RegistrationConfirmation({
             ) : null}
           </p>
         </div>
+
+        {derived !== undefined && Object.keys(derived).length > 0 && (
+          <DerivedResultsTable stage={stage} derived={derived} className="mt-5" />
+        )}
 
         <div className="mt-5 flex flex-wrap gap-2">
           {onEnterResults !== undefined ? (

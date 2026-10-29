@@ -225,6 +225,12 @@ async function handler(ctx: RequestContext): Promise<Response> {
         // the false green that build rule 6 forbids.
         sheetSync: syncStatusFor({ outboxState: 'pending' }),
         outboxEventId: result.outbox_event_id,
+        // The columns the server computed, so the confirmation screen can show
+        // the operator their results without a second request. These are the
+        // SAME strings that went into the projected row and that the outbox
+        // trigger stored, not a recomputation — a screen that recomputed could
+        // disagree with the record it is confirming.
+        derived: validation.derived,
       };
     },
   });

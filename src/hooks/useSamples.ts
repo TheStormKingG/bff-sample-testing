@@ -63,6 +63,7 @@ export const TABLES = {
   userRoles: 'user_roles',
   delegations: 'user_delegations',
   syncOutbox: 'sheet_sync_outbox',
+  derivedResults: 'sample_derived_results',
   auditDeadLetters: 'audit_event_dead_letters',
 } as const;
 

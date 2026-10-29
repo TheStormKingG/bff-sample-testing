@@ -109,6 +109,12 @@ export interface RegisterSampleResult {
   };
   readonly sheetSync: SheetSyncStatus;
   readonly outboxEventId: string | null;
+  /**
+   * Columns the server computed, by registry field key. Absent for the seven
+   * stages that have none, and `{}` rather than missing is also normal — a
+   * payload that did not carry what the computation needed derives nothing.
+   */
+  readonly derived?: Readonly<Record<string, string>>;
 }
 
 /**
