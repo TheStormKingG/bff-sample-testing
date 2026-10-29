@@ -10,7 +10,8 @@
  * approved session; it is NOT evidence that such a session could only have
  * been obtained legitimately. See e2e/README.md.
  *
- * Covers Master Prompt §2: exactly seven primary cards, in a fixed order,
+ * Covers Master Prompt §2: one primary card per testing form, in a fixed
+ * order — seven when it was written, eight since DGM was added,
  * large enough to hit, with secondary navigation kept out of that set.
  *
  * The cards are located by the route they link to (`#/stage/<id>`) rather than
@@ -36,10 +37,14 @@ import {
 } from './fixtures/app';
 
 /**
- * The seven cards, or a failure naming every control that WAS on screen.
+ * Every stage card, or a failure naming every control that WAS on screen.
  * Also the positive control for this file: each spec below asserts something
  * about the cards, and an empty page would satisfy several of those assertions
  * vacuously.
+ *
+ * The count comes from `DASHBOARD_STAGES` rather than a literal, so adding a
+ * form moves one list and not five assertions. The literal that remains is in
+ * that fixture, where it is the thing being asserted.
  */
 async function dashboardCards(page: Page): Promise<{ cards: NamedBox[]; boxes: NamedBox[]; inventory: string }> {
   const boxes = await clickableBoxes(page);
@@ -47,8 +52,9 @@ async function dashboardCards(page: Page): Promise<{ cards: NamedBox[]; boxes: N
   const cards = stageLinks(boxes);
   expect(
     cards.length,
-    `expected seven links to #/stage/<id>. Controls on screen: ${inventory}`,
-  ).toBe(7);
+    `expected ${DASHBOARD_STAGES.length} links to #/stage/<id>. ` +
+      `Controls on screen: ${inventory}`,
+  ).toBe(DASHBOARD_STAGES.length);
   return { cards, boxes, inventory };
 }
 
@@ -56,7 +62,7 @@ test.beforeEach(async ({ page }) => {
   await seedApprovedSession(page, { role: 'quality_officer', status: 'active' });
 });
 
-test('the seven stage cards render in the order fixed by the build spec', async ({ page }) => {
+test('the stage cards render in the order fixed by the build spec', async ({ page }) => {
   await page.goto(appUrl());
   // Wait for the first card rather than for a timer: the gate renders a
   // "Checking your access" screen until the profile query resolves.
@@ -94,7 +100,7 @@ test('each stage card is at least a 44px tap target', async ({ page }) => {
   }
 });
 
-test('secondary navigation is present but is not an eighth stage card', async ({ page }) => {
+test('secondary navigation is present but is not a stage card', async ({ page }) => {
   await page.goto(appUrl());
   await expect(page.locator('a[href$="#/stage/raw_materials"]')).toBeVisible();
   const { cards, boxes, inventory } = await dashboardCards(page);
@@ -106,7 +112,7 @@ test('secondary navigation is present but is not an eighth stage card', async ({
   for (const route of SECONDARY_NAV_ROUTES) {
     expect(
       cardTargets.has(route),
-      `"${route}" is reachable from one of the seven primary cards, so the dashboard offers a records ` +
+      `"${route}" is reachable from one of the primary cards, so the dashboard offers a records ` +
         `screen as if it were a testing form. Controls on screen: ${inventory}`,
     ).toBe(false);
   }
@@ -126,7 +132,7 @@ test('secondary navigation is present but is not an eighth stage card', async ({
   // This deliberately matches the card's HEADING, not its flattened
   // accessible name. The name includes the card's own count sentence —
   // "...0 samples collected today for Raw Materials" — so a whole-word scan
-  // for the secondary label "Samples" matched all seven cards and failed a
+  // for the secondary label "Samples" matched every stage card and failed a
   // correct dashboard. The mislabelling this is meant to catch is a stage
   // card whose heading reads "Samples" or "Holds", and a heading comparison
   // catches that without the incidental text.
@@ -152,7 +158,7 @@ for (const viewport of VIEWPORTS) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.goto(appUrl());
     await expect(page.locator('a[href$="#/stage/raw_materials"]')).toBeVisible();
-    await dashboardCards(page); // positive control: the seven cards really rendered
+    await dashboardCards(page); // positive control: the cards really rendered
 
     const { scrollWidth, clientWidth } = await hasHorizontalScroll(page);
     // 1px for sub-pixel layout rounding; more than that is a real element

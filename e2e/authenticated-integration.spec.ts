@@ -184,7 +184,7 @@ test.describe('real Supabase project', () => {
     const cards = stageLinks(boxes);
     expect(
       cards.map(stageOf),
-      `an approved user did not get the seven stage cards. Controls on screen: ${boxes
+      `an approved user did not get every stage card. Controls on screen: ${boxes
         .map((box) => box.name)
         .join(' | ')}`,
     ).toEqual(DASHBOARD_STAGES.map((entry) => entry.stage));

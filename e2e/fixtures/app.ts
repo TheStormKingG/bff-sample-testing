@@ -435,7 +435,7 @@ export async function clickableBoxes(page: Page): Promise<NamedBox[]> {
   return [...boxes].sort((a, b) => (Math.abs(a.y - b.y) <= tolerance ? a.x - b.x : a.y - b.y));
 }
 
-/** The seven stage-form cards, identified by the route they link to. */
+/** The stage-form cards, identified by the route they link to. */
 export function stageLinks(boxes: readonly NamedBox[]): NamedBox[] {
   return boxes.filter((box) => /#\/stage\/[a-z_]+$/.test(box.href));
 }
