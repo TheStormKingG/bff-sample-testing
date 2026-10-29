@@ -417,11 +417,25 @@ describe('StageForm — empty submission (FR-008, NFR-004)', () => {
     expect(summary).toHaveTextContent(/nothing has been saved yet/i);
 
     for (const field of expectedMissing) {
+      // `button`, not `link`. This assertion used to say `link`, which pinned
+      // a defect as correct: the entries were anchors with a bare `#id` href,
+      // and App.tsx states that "nothing in the app may link using a bare
+      // `#id` fragment anchor, because that is a route change" — this app
+      // routes with HashRouter, so the fragment is the address. A
+      // `preventDefault()` masked it for a plain tap and not for a
+      // long-press, middle-click or cmd-click, each of which navigated to a
+      // nonexistent route and discarded the half-filled form.
       expect(
-        within(summary).getByRole('link', { name: labelPattern(field.label) }),
+        within(summary).getByRole('button', { name: labelPattern(field.label) }),
         `"${field.label}" is missing from the error summary`,
       ).toBeInTheDocument();
     }
+
+    // And the rule itself, so this cannot regress to an anchor silently.
+    expect(
+      within(summary).queryAllByRole('link'),
+      'the summary must not use fragment anchors — HashRouter reads them as routes',
+    ).toHaveLength(0);
 
     // Focus moved to the summary, so a screen-reader user is not left on a
     // button that appeared to do nothing.

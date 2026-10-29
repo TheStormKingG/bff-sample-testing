@@ -50,7 +50,7 @@
  * mount, and a reset-on-prop effect would fight the operator's keystrokes.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useForm, useWatch, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 
@@ -78,6 +78,38 @@ import { SaveStateBanner } from './SaveStateBanner';
 import { StickyFormFooter } from './StickyFormFooter';
 import type { FormActionAvailability, SaveState, SheetSyncState } from './saveState';
 
+/** One per-field complaint from the server, as it was sent. */
+export interface ServerIssue {
+  /** A registry field key. The server uses the same names this form does. */
+  readonly field: string;
+  readonly message: string;
+}
+
+/**
+ * The server's last refusal, kept as STRUCTURE rather than as a sentence.
+ *
+ * The page used to flatten this into one string —
+ * `issues.map((i) => `${i.field}: ${i.message}`).join('; ')` — and print it in
+ * the "Not saved" strip. An operator then read, in a paragraph:
+ *
+ *     (quantity_received_t: Quantity received must be a number.;
+ *      moisture_pct: Moisture must be a number.; ...)
+ *
+ * which names columns in a database rather than the boxes on the screen, puts
+ * them in no particular order, marks none of the fields, and leaves the
+ * section headers still reading "8 fields" instead of "4 to fix". Every one of
+ * those field keys is a key this form already renders, so all of it could be
+ * pointed at the right box. Keeping the structure is what allows that.
+ *
+ * `submitted` is the operator's own text as it was sent. It is what makes a
+ * routed error know when it has been ANSWERED: the complaint is about a
+ * specific value, so it stands exactly as long as that value is unchanged.
+ */
+export interface ServerRefusal {
+  readonly issues: readonly ServerIssue[];
+  readonly submitted: StageFormValues;
+}
+
 /** What a completed, validated submission hands back to its page. */
 export interface StageFormSubmission {
   readonly phase: FormPhase;
@@ -104,6 +136,17 @@ export interface StageFormProps {
   readonly saveState: SaveState;
   /** The server's own words when a save failed. Never an exception trace. */
   readonly errorMessage?: string | null;
+  /** The server's per-field complaints, to be shown ON the fields. */
+  readonly refusal?: ServerRefusal | null;
+  /**
+   * Monotonic count of save attempts, supplied by the page.
+   *
+   * The notice has to be brought back on screen on every attempt, and no
+   * other value on this path changes on every attempt — an identical second
+   * refusal produces identical state, which React correctly treats as nothing
+   * having happened.
+   */
+  readonly saveAttempt?: number;
   readonly sheetSync?: SheetSyncState | null;
   /** Why no action is on offer, when none is. */
   readonly noActionReason?: string | null;
@@ -136,6 +179,8 @@ export function StageForm({
   actions,
   saveState,
   errorMessage = null,
+  refusal = null,
+  saveAttempt = 0,
   sheetSync = null,
   noActionReason = null,
   onSubmit,
@@ -250,13 +295,94 @@ export function StageForm({
   const [pending, setPending] = useState<StageFormSubmission | null>(null);
   const [findings, setFindings] = useState<readonly ImplausibleFinding[]>([]);
 
+  const noticeRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Bring the failure notice onto the screen.
+   *
+   * SCROLL IS EXPLICIT HERE, NEVER A SIDE EFFECT OF FOCUS. `focus()` scrolls
+   * in most browsers, which is why this looked like it worked and why the
+   * report reads as intermittent — but for a `tabindex="-1"` heading the
+   * amount, the alignment and whether it happens at all are the browser's
+   * choice, and the report came from iOS Safari, which this repo has no way
+   * to measure. So `ErrorSummary` is asked NOT to scroll when it takes focus,
+   * and the scroll happens here, where the alignment is ours.
+   *
+   * `block: 'start'`, chosen rather than defaulted. A twelve-error summary is
+   * taller than a phone viewport, so `'center'` would push the count — the
+   * one line saying how much is wrong — off the top; and `'nearest'` can
+   * leave the notice behind the `sticky bottom-0` action bar.
+   *
+   * NO `behavior`. Omitting it resolves to the computed `scroll-behavior`,
+   * which `index.css` already forces to `auto` under `prefers-reduced-motion`.
+   * Passing `'smooth'` would OVERRIDE that CSS and animate for somebody who
+   * asked for no animation.
+   */
+  const revealNotice = useCallback(() => {
+    noticeRef.current?.scrollIntoView({ block: 'start' });
+  }, []);
+
   const errors = formState.errors;
+
+  /**
+   * The server's complaints that still stand, keyed by field.
+   *
+   * WHY THESE ARE NOT PUT INTO react-hook-form VIA `setError`. That was the
+   * obvious design and it is wrong here for one concrete reason: `saveDraft`
+   * calls `clearErrors()` unconditionally as its first statement. An operator
+   * who gets a server refusal and then taps "Save draft" would have every
+   * routed error silently wiped — the fields would go quiet while still being
+   * exactly as unacceptable to the server. Holding them here keeps the
+   * server's verdict independent of anything the client decides to clear.
+   *
+   * WHEN ONE STOPS STANDING. The complaint is about a VALUE, so it stands
+   * exactly as long as that value is unchanged. Comparing against the text
+   * that was submitted — rather than clearing on any keystroke — means an
+   * operator who edits a field and then types the same thing back still sees
+   * the error, which is correct: the server has not been asked again.
+   *
+   * An issue naming a field this form is not currently showing is NOT dropped
+   * — it falls through to `unroutedIssues` below and is shown in the banner.
+   * Silently discarding it would hide a real refusal.
+   */
+  const serverErrors = useMemo<Readonly<Record<string, string>>>(() => {
+    if (refusal === null) return {};
+    const live: Record<string, string> = {};
+    for (const issue of refusal.issues) {
+      if (!applicable.some((field) => field.key === issue.field)) continue;
+      const sent = refusal.submitted[issue.field] ?? '';
+      const now = values[issue.field] ?? '';
+      if (sent !== now) continue;
+      live[issue.field] = issue.message;
+    }
+    return live;
+  }, [applicable, refusal, values]);
+
+  /** Refusals with no field on this form to land on. The banner shows these. */
+  const unroutedIssues = useMemo<readonly ServerIssue[]>(() => {
+    if (refusal === null) return [];
+    return refusal.issues.filter(
+      (issue) => !applicable.some((field) => field.key === issue.field),
+    );
+  }, [applicable, refusal]);
+
+  /**
+   * The message for a field: the client's own verdict first.
+   *
+   * Client validation ran against what is in the box NOW; a server issue is
+   * about what was sent. When both have something to say the fresher one is
+   * the client's.
+   */
+  const errorFor = useCallback(
+    (key: string): string | undefined => messageOf(errors[key]) ?? serverErrors[key],
+    [errors, serverErrors],
+  );
 
   /** One summary entry per field with an error, in the order they are read. */
   const summarised = useMemo<readonly SummarisedError[]>(
     () =>
       applicable.flatMap((field) => {
-        const message = messageOf(errors[field.key]);
+        const message = messageOf(errors[field.key]) ?? serverErrors[field.key];
         if (message === undefined) return [];
         return [
           {
@@ -267,7 +393,7 @@ export function StageForm({
           },
         ];
       }),
-    [applicable, errors, prefix],
+    [applicable, errors, prefix, serverErrors],
   );
 
   const errorCountIn = useCallback(
@@ -341,6 +467,51 @@ export function StageForm({
   const submit = handleSubmit(onValid);
 
   /**
+   * TRIGGER ONE — client validation refused the form.
+   *
+   * Keyed on the ATTEMPT (`submitCount`), never on the error count. The count
+   * was the original defect: it is the RESULT of an attempt, not the attempt,
+   * so it only changes on the first failure (0 -> N) and the operator's second
+   * tap of Register produces no change for React to see and nothing on screen.
+   *
+   * `!isSubmitSuccessful` is load-bearing and not defensive. `submitCount`
+   * also increments on a SUCCESSFUL submit, and a successful submit carrying
+   * an implausible value opens `ImplausibleValueDialog` — which is entitled to
+   * focus. Without this guard, answering a typo guard would yank the operator
+   * back to the top of the form.
+   *
+   * An effect rather than `handleSubmit`'s `onInvalid` hook, and this was
+   * measured rather than preferred: `onInvalid` does fire once per attempt,
+   * but react-hook-form awaits it BEFORE publishing the errors to form state,
+   * so on the first failure the notice has not rendered yet and there is
+   * nothing to scroll to. The effect runs after the commit.
+   */
+  useEffect(() => {
+    if (formState.submitCount === 0) return;
+    if (formState.isSubmitSuccessful) return;
+    if (summarised.length === 0) return;
+    revealNotice();
+    // The ATTEMPT is the trigger. `summarised` is read when the effect runs,
+    // not watched — adding it here would turn "once per attempt" back into
+    // "once per change in the result", which is the bug being fixed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formState.submitCount]);
+
+  /**
+   * TRIGGER TWO — the server refused, or the save could not be sent.
+   *
+   * Keyed on `saveAttempt` as well as `saveState` because `saveState` alone
+   * cannot see a repeat. The key-generation failure path sets its message and
+   * returns without ever calling the server, so `saveState` never leaves
+   * `failed`; a second identical failure changes no state at all. The counter
+   * is the only value that moves on every try.
+   */
+  useEffect(() => {
+    if (saveState !== 'failed') return;
+    revealNotice();
+  }, [saveState, saveAttempt, revealNotice]);
+
+  /**
    * Save draft (FR-005).
    *
    * A draft is allowed to be incomplete, so the registration-phase
@@ -373,18 +544,42 @@ export function StageForm({
          introducing a second one for a screen reader to announce. */
       aria-label={`${schema.ordinal}. ${schema.title} sample`}
     >
-      <ErrorSummary errors={summarised} onNavigate={revealField} />
+      {/*
+        ONE NOTICE REGION, so bringing "the failure notice" on screen is never
+        a question of which one. Both can be present at once: a server refusal
+        leaves `saveState === 'failed'`, and the operator then resubmitting a
+        still-incomplete form adds the summary above it. Scrolling to the top
+        of the region shows whichever comes first, with no branch to get wrong.
 
-      {saveState !== 'editing' ? (
-        <div className="mb-4">
-          <SaveStateBanner
-            state={saveState}
-            sheetSync={sheetSync}
-            errorMessage={errorMessage}
-            onRetry={onRetry}
-          />
-        </div>
-      ) : null}
+        The wrapper carries no role and no margin of its own — `ErrorSummary`
+        already carries `mb-4` — so it is layout-neutral and introduces no
+        second live region.
+
+        `scroll-mt-4` for a smaller reason than it might seem: nothing in this
+        app is sticky at the TOP (only the action bar, at the bottom), so there
+        is no header to clear. A notice flush against the viewport edge simply
+        reads as clipped.
+      */}
+      <div ref={noticeRef} className="scroll-mt-4">
+        <ErrorSummary
+          errors={summarised}
+          attempt={formState.submitCount}
+          onNavigate={revealField}
+        />
+
+        {saveState !== 'editing' ? (
+          <div className="mb-4">
+            <SaveStateBanner
+              state={saveState}
+              sheetSync={sheetSync}
+              errorMessage={errorMessage}
+              unroutedIssues={unroutedIssues}
+              routedCount={Object.keys(serverErrors).length}
+              onRetry={onRetry}
+            />
+          </div>
+        ) : null}
+      </div>
 
       {sections.map((section) => {
         const sectionFields = applicable.filter((field) => field.section === section);
@@ -403,7 +598,7 @@ export function StageForm({
                 field={field}
                 idPrefix={prefix}
                 required={required.has(field.key)}
-                error={messageOf(errors[field.key])}
+                error={errorFor(field.key)}
                 control={register(field.key)}
                 disabled={busy}
                 currentValue={values[field.key] ?? ''}

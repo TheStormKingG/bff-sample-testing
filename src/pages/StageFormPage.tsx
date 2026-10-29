@@ -37,7 +37,11 @@ import { STAGES, type Stage } from '@/forms/types';
 import { defaultStageValues, hydrateStageValues } from '@/forms/defaults';
 import type { StageFormValues } from '@/forms/zodSchema';
 
-import { StageForm, type StageFormSubmission } from '@/components/form/StageForm';
+import {
+  StageForm,
+  type ServerRefusal,
+  type StageFormSubmission,
+} from '@/components/form/StageForm';
 import { InstructionStrip } from '@/components/form/InstructionStrip';
 import { RegistrationConfirmation } from '@/components/form/RegistrationConfirmation';
 import { availableActions, type FormActionAvailability, type SaveState } from '@/components/form/saveState';
@@ -98,6 +102,12 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
   const [formInstance, setFormInstance] = useState(0);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
+  /** Monotonic count of save attempts. See `send` for why nothing else works. */
+  const [saveAttempt, setSaveAttempt] = useState(0);
+  /** The server's last refusal, as structure rather than as a sentence. */
+  const [refusal, setRefusal] = useState<ServerRefusal | null>(null);
+  /** The text that was submitted, so a refusal can tell when it is answered. */
+  const submittedText = useRef<StageFormValues>({});
 
   useEffect(() => {
     if (!draft.loaded || initialValues !== null) return;
@@ -124,6 +134,27 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
 
   const send = useCallback(
     (submission: StageFormSubmission) => {
+      /**
+       * Count the ATTEMPT, before anything that can fail.
+       *
+       * Nothing else on this page moves on every try. A second refusal with
+       * the same words produces a byte-identical `errorMessage` (it is built
+       * deterministically below), and the key-failure path can call
+       * `setKeyError` with the same string twice — which React treats as no
+       * change at all: no re-render, no effect, nothing on screen. So the
+       * operator taps Register, the same refusal comes back, and the page is
+       * indistinguishable from one that ignored the tap.
+       *
+       * Incremented here rather than after the `newIdempotencyKey()` try, so
+       * the key-failure path — which returns before `register()` is ever
+       * called — counts as an attempt too.
+       */
+      setSaveAttempt((n) => n + 1);
+      // The operator has resubmitted, so last refusal's field errors are now
+      // about a payload the server has not seen. The new response replaces
+      // them; until it lands there is nothing to show.
+      setRefusal(null);
+
       const fingerprint = JSON.stringify({
         values: submission.values,
         confirmed: submission.confirmedImplausible,
@@ -153,6 +184,9 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
 
       setKeyError(null);
       setDraftNotice(null);
+      // Kept so a refusal can be compared against the text that produced it,
+      // which is how a routed field error knows when it has been answered.
+      submittedText.current = submission.rawValues;
       registration.register(input);
     },
     [registration, stage],
@@ -161,6 +195,8 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
   const retry = useCallback(() => {
     const pending = inFlight.current;
     if (pending === null) return;
+    setSaveAttempt((n) => n + 1);
+    setRefusal(null);
     // Same key, same payload: the server either completes the original
     // registration or replays it. It cannot produce a second sample.
     registration.register(pending.input);
@@ -238,14 +274,26 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
       ? 'failed'
       : 'editing';
 
+  /**
+   * The server's refusal, handed to the form AS STRUCTURE.
+   *
+   * This used to be flattened into `errorMessage` and printed as a paragraph
+   * of `column_name: message` pairs. The structure was already here — the
+   * hook parses it — and throwing it away was the only reason a server
+   * refusal left every field unmarked while a client-side one marked them all.
+   */
+  useEffect(() => {
+    if (registerError === null) return;
+    if (registerError.issues.length === 0) return;
+    setRefusal({ issues: registerError.issues, submitted: submittedText.current });
+  }, [registerError]);
+
   const errorMessage = useMemo<string | null>(() => {
     if (keyError !== null) return keyError;
     if (registerError === null) return null;
-    if (registerError.issues.length === 0) return registerError.message;
-    const detail = registerError.issues
-      .map((issue) => `${issue.field}: ${issue.message}`)
-      .join('; ');
-    return `${registerError.message} (${detail})`;
+    // The per-field detail is NOT appended any more. It goes to the fields,
+    // and anything that could not be routed is listed by the banner itself.
+    return registerError.message;
   }, [keyError, registerError]);
 
   // Only a failure that did not reach the server may be resent. A duplicate or
@@ -346,6 +394,8 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
           actions={actions}
           saveState={saveState}
           errorMessage={errorMessage}
+          refusal={refusal}
+          saveAttempt={saveAttempt}
           noActionReason={noActionReason}
           onSubmit={send}
           onSaveDraft={saveDraft}

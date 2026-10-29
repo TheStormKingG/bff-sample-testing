@@ -29,6 +29,7 @@ export function SelectField({
         id={ids.input}
         disabled={disabled}
         aria-invalid={error !== undefined}
+        aria-required={required}
         aria-describedby={describedBy(field, ids, error !== undefined)}
         className={inputClass(error !== undefined)}
       >

@@ -7,6 +7,15 @@ export interface SaveStateBannerProps {
   readonly sheetSync?: SheetSyncState | null;
   /** The server's own message, when it failed. */
   readonly errorMessage?: string | null;
+  /**
+   * Per-field complaints that could NOT be shown on a field, because the
+   * field is not on this form. These are the only ones that still have to be
+   * printed here, and they are printed one per line with the server's own
+   * wording rather than joined into a paragraph.
+   */
+  readonly unroutedIssues?: readonly { readonly field: string; readonly message: string }[];
+  /** How many complaints were shown on the fields themselves. */
+  readonly routedCount?: number;
   readonly onRetry?: () => void;
 }
 
@@ -32,6 +41,8 @@ export function SaveStateBanner({
   state,
   sheetSync = null,
   errorMessage = null,
+  unroutedIssues = [],
+  routedCount = 0,
   onRetry,
 }: SaveStateBannerProps): JSX.Element | null {
   if (state === 'editing') return null;
@@ -82,6 +93,35 @@ export function SaveStateBanner({
           ? errorMessage
           : 'Check the connection and try again. Nothing has been recorded yet.'}
       </p>
+
+      {/*
+        WHERE THE COLUMN NAMES USED TO GO.
+        The page used to flatten every per-field complaint into this strip as
+        one paragraph of `column_name: message` pairs. An operator is not a
+        programmer and `quantity_received_t` is not a thing on their screen,
+        so that paragraph named nothing they could act on while the boxes it
+        was about sat unmarked. Those complaints are now shown ON their fields.
+
+        What is left here is the remainder: a complaint about something this
+        form is not showing. It cannot be pointed at a box, so it is printed —
+        but one per line, and never silently dropped, because a refusal nobody
+        can see is worse than an ugly one.
+      */}
+      {routedCount > 0 ? (
+        <p className="mt-2 text-sm font-semibold text-red-900">
+          {routedCount === 1
+            ? '1 entry is marked below. Correct it and save again.'
+            : `${routedCount} entries are marked below. Correct them and save again.`}
+        </p>
+      ) : null}
+
+      {unroutedIssues.length > 0 ? (
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-red-900">
+          {unroutedIssues.map((issue) => (
+            <li key={issue.field}>{issue.message}</li>
+          ))}
+        </ul>
+      ) : null}
       {onRetry !== undefined ? (
         <button
           type="button"

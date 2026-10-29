@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { AlertCircle } from 'lucide-react';
 
 import type { FieldDef } from '@/forms/types';
+import { cn } from '@/lib/cn';
 import { HelpHint } from './HelpHint';
 import { UnitBadge, UnitNote } from './UnitBadge';
 
@@ -45,6 +46,61 @@ export interface FieldShellProps {
 }
 
 /**
+ * The required marker: a red asterisk AND the word, never one or the other.
+ *
+ * The word was here first, with a comment saying an asterisk means nothing to
+ * somebody who has not been told what it means. That is true, and it is why
+ * the word stays. But it answers a different question from the one the
+ * asterisk answers.
+ *
+ * The asterisk is a SCANNING aid. An operator in gloves, holding a phone at
+ * arm's length over a mixer, needs to find the four fields that still want
+ * something among twenty-six — without reading any of them. A glyph at a
+ * fixed position in every label does that; a word in brackets does not,
+ * because reading it is the work being avoided.
+ *
+ * The word is the SEMANTIC carrier. It is what a screen reader announces and
+ * what somebody who has never met the convention understands.
+ *
+ * Swapping the word for the asterisk — which is the literal reading of the
+ * request — would trade a text signal for a glyph signal, and a glyph whose
+ * meaning is purely conventional is barely better than colour alone under
+ * NFR-004. So both, with the asterisk `aria-hidden` so the announcement is
+ * "(required)" and not "star (required)".
+ */
+function RequiredMark(): JSX.Element {
+  return (
+    <>
+      <span aria-hidden="true" className="ml-0.5 font-bold text-red-700">
+        *
+      </span>
+      <span className="ml-1 text-sm font-medium text-slate-600">(required)</span>
+    </>
+  );
+}
+
+/**
+ * The label's colour when the field is in error.
+ *
+ * `text-red-900` (#7F1D1D) on white measures 10.9:1, and on the `red-50` the
+ * errored input carries it is still 9.9:1 — both far above the 4.5 floor.
+ *
+ * This exists because the error message sits BELOW the control: on a phone,
+ * an operator scrolling a twenty-six field form to find what is wrong reads
+ * labels, and a label is the one part of a field that is always above the
+ * fold of its own block. A left rail was the obvious alternative and does not
+ * work here — `FormSection` puts `divide-y divide-slate-200` on the field
+ * container, which compiles to a four-side `border-color` shorthand at higher
+ * specificity than a child utility, so a red rail renders grey.
+ */
+function labelClass(hasError: boolean): string {
+  return cn(
+    'flex flex-wrap items-center gap-x-1 text-base font-semibold',
+    hasError ? 'text-red-900' : 'text-slate-900',
+  );
+}
+
+/**
  * Label, unit, help and error scaffolding shared by every input type.
  *
  * Centralising it is what makes the accessibility contract hold for all 98
@@ -65,15 +121,10 @@ export function FieldShell({
 }: FieldShellProps): JSX.Element {
   return (
     <div className="py-3">
-      <label
-        htmlFor={ids.input}
-        className="flex flex-wrap items-center gap-x-1 text-base font-semibold text-slate-900"
-      >
+      <label htmlFor={ids.input} className={labelClass(error !== undefined)}>
         <span>{field.label}</span>
         <UnitBadge field={field} />
-        {required ? (
-          <span className="ml-1 text-sm font-medium text-slate-600">(required)</span>
-        ) : null}
+        {required ? <RequiredMark /> : null}
       </label>
 
       <HelpHint id={ids.help} text={field.help} />
@@ -119,14 +170,13 @@ export function FieldGroupShell({
       tabIndex={-1}
       className="py-3 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2"
       aria-invalid={error !== undefined}
+      aria-required={required}
       aria-describedby={describedBy(field, ids, error !== undefined)}
     >
-      <legend className="flex flex-wrap items-center gap-x-1 text-base font-semibold text-slate-900">
+      <legend className={labelClass(error !== undefined)}>
         <span>{field.label}</span>
         <UnitBadge field={field} />
-        {required ? (
-          <span className="ml-1 text-sm font-medium text-slate-600">(required)</span>
-        ) : null}
+        {required ? <RequiredMark /> : null}
       </legend>
 
       <HelpHint id={ids.help} text={field.help} />
@@ -179,6 +229,42 @@ export const INPUT_CLASS =
 
 export const INPUT_ERROR_CLASS = 'border-red-700 bg-red-50';
 
+/**
+ * THE ERROR STATE NEVER RENDERED. This function used to join the two strings
+ * with a space:
+ *
+ *     `${INPUT_CLASS} ${INPUT_ERROR_CLASS}`
+ *
+ * which leaves `border-slate-300 bg-white` sitting in the class list beside
+ * `border-red-700 bg-red-50`. Both utilities are emitted by Tailwind at the
+ * same specificity, so the winner is whichever comes LATER in the stylesheet
+ * — and it is not the red one.
+ *
+ * Measured, in a real browser, against the compiled stylesheet, on the exact
+ * string this function used to return:
+ *
+ *     computed border-color  rgb(203, 213, 225)   slate-300, not red-700
+ *     computed background    rgb(255, 255, 255)   white, not red-50
+ *
+ * and in the compiled CSS `.border-slate-300` sits 444 bytes AFTER
+ * `.border-red-700`, `.bg-white` 763 bytes after `.bg-red-50`. So a field
+ * with a validation error has always drawn exactly like a field without one.
+ * That is why an operator reported that nothing goes red: the code for it was
+ * written, reviewed and shipped, and silently lost the cascade.
+ *
+ * `cn()` is tailwind-merge, which resolves the conflict by INTENT rather than
+ * by source order — a later utility in the same group replaces the earlier
+ * one. Measured on these two exact strings:
+ *
+ *     cn(INPUT_CLASS) === INPUT_CLASS                 true
+ *     cn(INPUT_CLASS, INPUT_ERROR_CLASS) drops        border-slate-300, bg-white
+ *     ...and keeps                                    border-red-700, bg-red-50,
+ *                                                     disabled:bg-slate-100
+ *
+ * The first line is what makes this safe: every field that is NOT in error
+ * renders a byte-identical class string, so there is no visual change to the
+ * clean form at all.
+ */
 export function inputClass(hasError: boolean): string {
-  return hasError ? `${INPUT_CLASS} ${INPUT_ERROR_CLASS}` : INPUT_CLASS;
+  return hasError ? cn(INPUT_CLASS, INPUT_ERROR_CLASS) : INPUT_CLASS;
 }

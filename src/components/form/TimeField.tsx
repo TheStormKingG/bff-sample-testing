@@ -25,6 +25,7 @@ export function TimeField({
         type="time"
         disabled={disabled}
         aria-invalid={error !== undefined}
+        aria-required={required}
         aria-describedby={describedBy(field, ids, error !== undefined)}
         className={inputClass(error !== undefined)}
       />
