@@ -78,14 +78,37 @@ export type StageZodSchema = z.ZodType<StageSubmitValues, z.ZodTypeDef, unknown>
 const FREEFORM_TEXT_KEYS: ReadonlySet<string> = new Set(['comments', 'action_taken']);
 
 /**
- * A plain decimal as a plant operator types it: `12`, `12.5`, `.5`, `12.`, `-3`.
+ * A plain decimal as a plant operator types it: `12`, `12.5`, `-3`, `0.0`.
  *
  * Exponent notation (`1e5`) is refused. It is a valid JS number but nobody
  * enters it on a plant keypad, so its only realistic origin is a mis-keyed
  * value, and accepting it would let a typo become a four-order-of-magnitude
  * quality record.
+ *
+ * THIS GRAMMAR IS THE SERVER'S, CHARACTER FOR CHARACTER. `validateNumber` in
+ * `supabase/functions/_shared/validation.ts` tests `/^-?\d+(\.\d+)?$/`, and
+ * the server is the authority on what a measurement is.
+ *
+ * It used to be wider here — `/^-?(?:\d+(?:\.\d*)?|\.\d+)$/` — which accepted
+ * four forms the server refuses:
+ *
+ *     .5     12.     -.5     5.
+ *
+ * That divergence was harmless only while the client sent a parsed object,
+ * because the server rejected the whole payload anyway. The moment the
+ * operator's text became what travels, it turned into a live defect of
+ * exactly the shape this file has just been fixed for: a value the form
+ * accepts without complaint, refused by the server as "must be a number" —
+ * the one message an operator cannot act on, because the box plainly
+ * contains a number.
+ *
+ * Narrowing rather than widening the server is deliberate. `.5` is a
+ * legitimate thing to want to type, and it is now refused HERE, beside the
+ * field, with "Enter numbers only, for example 12.5" — rather than after a
+ * round trip. The two grammars are held together by
+ * `tests/formToServerContract.test.tsx`.
  */
-const DECIMAL_TEXT = /^-?(?:\d+(?:\.\d*)?|\.\d+)$/;
+const DECIMAL_TEXT = /^-?\d+(\.\d+)?$/;
 const DATE_TEXT = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_TEXT = /^([01]\d|2[0-3]):[0-5]\d$/;
 

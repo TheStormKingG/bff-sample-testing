@@ -56,7 +56,11 @@ import userEvent from '@testing-library/user-event';
 import { STAGE_SCHEMAS } from '@/forms/registry';
 import { STAGES, type FieldDef, type Stage } from '@/forms/types';
 import { emptyStageValues } from '@/forms/defaults';
-import { editableFields, type StageFormValues } from '@/forms/zodSchema';
+import {
+  editableFields,
+  parseStageValues,
+  type StageFormValues,
+} from '@/forms/zodSchema';
 import { StageForm, type StageFormSubmission } from '@/components/form/StageForm';
 import type { FormActionAvailability } from '@/components/form/saveState';
 
@@ -219,6 +223,106 @@ describe('the operator\'s entered precision survives the whole journey', () => {
     // And the Sheets row the server built carries the same text.
     expect(verdict.row.join('\u0001')).toContain('12.50');
   }, 20_000);
+});
+
+describe('the two sides accept the same numbers', () => {
+  /**
+   * A NAME contract is checked by comparing two literals. A SHAPE contract
+   * cannot be: the client's commitment is a type and the server's is a set of
+   * runtime `typeof` branches, so there is nothing to compare textually. What
+   * has to hold is CONTAINMENT — every text the form accepts, the server
+   * accepts — and the only way to establish it is to run both sides over the
+   * same enumerated domain.
+   *
+   * This found a second live defect. The client's grammar was
+   * `/^-?(?:\d+(?:\.\d*)?|\.\d+)$/` and the server's is `/^-?\d+(\.\d+)?$/`,
+   * so `.5`, `12.`, `-.5` and `5.` passed the form and were refused by the
+   * server — invisible while the client sent an object, and a live
+   * "must be a number" the moment the text became what travels.
+   */
+  const DOMAIN = [
+    '12', '12.5', '12.50', '0', '0.0', '-3', '-3.25', '000.5', '1000000',
+    '.5', '12.', '-.5', '5.', '', ' ', '12 ', ' 12', '1e5', '0x10', '12abc',
+    'abc', '-', '.', '--3', '12.5.6', '+12', 'Infinity', 'NaN', '１２',
+  ];
+
+  const stage: Stage = 'raw_materials';
+  const measurement = STAGE_SCHEMAS[stage].fields.find((f) => f.type === 'number');
+
+  it('accepts no text the server would refuse', () => {
+    expect(measurement).toBeDefined();
+    if (measurement === undefined) return;
+
+    const divergent: string[] = [];
+    for (const text of DOMAIN) {
+      const parsed = parseStageValues(stage, 'draft', {
+        ...emptyStageValues(stage),
+        [measurement.key]: text,
+      });
+      if (!parsed.ok) continue; // the form refused it; nothing reaches the server
+      // A blank box is "not measured", so the form legitimately omits the
+      // key. The server then raises `required`, which is a requiredness
+      // question and not a disagreement about what a number looks like.
+      // Only a value the form actually PRODUCED can diverge.
+      if (parsed.values[measurement.key] === undefined) continue;
+
+      const verdict = validateStagePayload({
+        stage,
+        // 'registration', not 'draft': the server has no draft phase at all
+        // (ValidationPhase is registration | testing | review), because a
+        // draft never leaves the device. The client parse above uses 'draft'
+        // so requiredness does not mask the grammar question being asked.
+        phase: 'registration',
+        values: parsed.values as Readonly<Record<string, unknown>>,
+      });
+      if (verdict.ok) continue;
+
+      /**
+       * `implausible_unconfirmed` is NOT a divergence. It is the soft typo
+       * guard, and it is a QUESTION rather than a refusal: the form answers
+       * it through `ImplausibleValueDialog` and resubmits with the key in
+       * `confirmedImplausible`. Counting it here would report a designed
+       * conversation as a broken contract.
+       *
+       * It is excluded by NAME, not by ignoring every failure, so a genuine
+       * refusal of a form-accepted value still fails this test. Verified
+       * against the live domain: `1000000` tonnes is the only member that
+       * reaches it, and it reaches it for that reason.
+       */
+      const refusedThisField = verdict.issues.some(
+        (issue) => issue.field === measurement.key && issue.code !== 'implausible_unconfirmed',
+      );
+      if (refusedThisField) {
+        divergent.push(
+          `${JSON.stringify(text)} — the form accepted it and the server ` +
+            `refused it, so the operator sees a box with a number in it and ` +
+            `the message "${measurement.label} must be a number."`,
+        );
+      }
+    }
+
+    expect(divergent).toEqual([]);
+  });
+
+  it('VACUITY CHECK: the domain actually exercises both outcomes', () => {
+    // If the form refused everything, or accepted everything, the check above
+    // would pass while comparing nothing.
+    expect(measurement).toBeDefined();
+    if (measurement === undefined) return;
+
+    let accepted = 0;
+    let refused = 0;
+    for (const text of DOMAIN) {
+      const parsed = parseStageValues(stage, 'draft', {
+        ...emptyStageValues(stage),
+        [measurement.key]: text,
+      });
+      if (parsed.ok && parsed.values[measurement.key] !== undefined) accepted += 1;
+      else refused += 1;
+    }
+    expect(accepted, 'the form refused the entire domain').toBeGreaterThanOrEqual(6);
+    expect(refused, 'the form accepted the entire domain').toBeGreaterThanOrEqual(6);
+  });
 });
 
 describe('the gate itself is sound', () => {
