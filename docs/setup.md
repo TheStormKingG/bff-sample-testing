@@ -341,7 +341,25 @@ After a repository rename, update the Site URL and the redirect list in the same
 
 ## 7. Sync worker scheduling and error notification
 
-1. **Schedule the worker.** Nothing schedules it today (D-18). Two options:
+> **A registration now nudges the worker by itself.** `register-sample` fires a
+> best-effort POST to `sheets-sync-worker` after the row is queued, so in the
+> ordinary case a sample reaches the workbook in seconds instead of waiting for
+> whatever runs next. It needs `SYNC_SCHEDULER_SECRET` to be set on the
+> project; without it the nudge is refused in the function and logged as
+> `sync_kick_not_configured`, naming the missing keys. Check the admin health
+> screen to see whether it is set.
+>
+> **THE NUDGE IS NOT A SCHEDULER, AND STEP 1 IS STILL REQUIRED.** It fires when
+> a registration happens. The outbox's own retry policy schedules work for
+> instants in the FUTURE — a transient failure becomes `retry_scheduled` with a
+> `next_retry_at` that the claim query will not return until that moment — and
+> nothing edge-triggered fires then. So the last sample of a shift, if its
+> first attempt fails transiently, waits for the next registration, which may
+> be the next morning. A `dead_letter` event is never retried automatically at
+> all. The periodic runner below remains the mechanism of record.
+
+1. **Schedule the worker.** Still required (D-18); the nudge above shortens the
+   common case but does not drain future-dated retries. Two options:
    - **`pg_cron` + `pg_net` inside Supabase** — one moving part, and the schedule lives
      in a migration so it is reviewable:
 

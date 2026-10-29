@@ -30,6 +30,8 @@ import { parseStage, validateStagePayload, prefixFor } from '../_shared/validati
 import { RPC, type RegisterSampleResult } from '../_shared/rpc.ts';
 import { syncStatusFor } from '../_shared/syncStatus.ts';
 import { recordAudit } from '../_shared/adapters/authorize.ts';
+import { resolveWaitUntil } from '../_shared/syncKick.ts';
+import { kickSyncWorker } from '../_shared/adapters/syncKickAdapter.ts';
 
 interface LinkInput {
   readonly kind: string;
@@ -169,6 +171,41 @@ async function handler(ctx: RequestContext): Promise<Response> {
         after: { sample_id: result.sample_id, stage, revision: result.revision },
         appVersion,
       });
+
+      /**
+       * NUDGE THE SYNC WORKER. Best effort, after the fact, never awaited.
+       *
+       * The row is queued at this point and nothing in this codebase drains
+       * the queue — `docs/setup.md` section 7 records that gap as D-18 — so
+       * without this the operator watches "Google Sheets sync pending" until
+       * somebody invokes the worker by hand.
+       *
+       * `resolveWaitUntil` is feature-detected rather than assumed, because
+       * `EdgeRuntime` appears nowhere else in this codebase and a bare
+       * reference would throw a ReferenceError on a path where the sample is
+       * ALREADY COMMITTED — telling the operator their save failed when it
+       * did not.
+       *
+       * When the runtime offers no post-response hook the kick is not
+       * dispatched AT ALL, rather than started and killed mid-flight: a fetch
+       * torn down halfway can leave the worker's 60-second lease leaked, and
+       * a leaked lease blocks every other runner. Not kicking is strictly
+       * better than kicking unsafely.
+       *
+       * THIS IS NOT A SCHEDULER. A transient failure re-queues the event for
+       * an instant in the future, and nothing edge-triggered fires then. The
+       * periodic runner is still required; see the README section this commit
+       * adds.
+       */
+      const waitUntil = resolveWaitUntil(globalThis as unknown as Record<string, unknown>);
+      if (waitUntil !== null) {
+        waitUntil(
+          kickSyncWorker({
+            correlationId: ctx.correlationId,
+            outboxEventId: result.outbox_event_id ?? null,
+          }),
+        );
+      }
 
       return {
         sampleUuid: result.sample_uuid,
