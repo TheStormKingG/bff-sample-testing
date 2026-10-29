@@ -95,7 +95,7 @@ export default function SamplesPage() {
     <div className="mx-auto max-w-7xl px-4 py-6">
       <PageHeader
         title="Samples"
-        description="Search every sample from all seven forms. Dates are the Guyana day the sample was taken."
+        description="Search every sample from every form. Dates are the Guyana day the sample was taken."
         actions={
           canExport ? (
             <Button variant="secondary" onClick={() => void runExport()} disabled={exporting}>

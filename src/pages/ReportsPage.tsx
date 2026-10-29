@@ -164,6 +164,11 @@ export default function ReportsPage() {
   }, [operations.data]);
 
   const withheld = withheldAdherenceStages();
+  // Derived, never typed. Both numbers below used to be written out as
+  // words — "four stages", "the other four" — and the eighth stage made
+  // them wrong without breaking anything. tests/stageCountProse.test.ts
+  // now refuses a stage count that is not read from the registry.
+  const stated = DASHBOARD_ORDER.length - withheld.length;
 
   async function runExport(plantDate: string) {
     setExporting(true);
@@ -339,7 +344,7 @@ export default function ReportsPage() {
             <div className="flex flex-col gap-4">
               <div
                 role="region"
-                aria-label="Why four stages have no adherence figure"
+                aria-label={`Why ${withheld.length} of ${DASHBOARD_ORDER.length} stages have no adherence figure`}
                 className="rounded-md border-2 border-amber-400 bg-amber-50 p-4"
               >
                 <p className="flex items-center gap-2 text-base font-bold text-amber-900">
@@ -380,11 +385,13 @@ export default function ReportsPage() {
               <p className="flex items-start gap-2 text-sm text-slate-700">
                 <Info aria-hidden className="mt-0.5 h-4 w-4 flex-shrink-0" />
                 <span>
-                  The three stages with a stated frequency read{' '}
+                  The {stated} stage{stated === 1 ? '' : 's'} with a stated frequency read
+                  {stated === 1 ? 's' : ''}{' '}
                   <strong>{INSUFFICIENT_DATA_TEXT}</strong> rather than a percentage, because the
                   denominator — how many loads arrived, runs were made or production runs were
                   started — is not recorded anywhere in the system yet. That is a missing
-                  measurement and could be fixed by recording it. The other four read{' '}
+                  measurement and could be fixed by recording it. The other {withheld.length} read
+                  {withheld.length === 1 ? 's' : ''}{' '}
                   <strong>{NOT_PRODUCED_TEXT}</strong>, which no amount of extra data would
                   change: the target itself has not been approved.
                 </span>

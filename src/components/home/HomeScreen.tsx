@@ -259,9 +259,12 @@ export function HomeScreen({
 
       {/*
         The known gap, kept on screen.
-        Four of the seven stages record their sampling frequency as "To set"
-        in the live workbook, so no due or overdue claim may be made for them
-        (FR-020, risk R-08). Dropping the warning to win grid height would
+        Some stages record their sampling frequency as "To set" in the live
+        workbook, so no due or overdue claim may be made for them (FR-020,
+        risk R-08). The number is deliberately not written in this comment:
+        it read "four of the seven" until DGM arrived, and a tally in prose
+        goes stale the moment a stage is added. `stagesWithoutFrequency`
+        below is the only count, and it is derived. Dropping the warning to win grid height would
         have hidden a real finding, so it is summarised here instead — and
         made actionable, since Approved limits is the screen that fixes it.
       */}

@@ -246,7 +246,7 @@ export function DashboardPage() {
         <p className="mt-1 text-base text-slate-600">
           {mayRecord
             ? 'Choose the test you are doing.'
-            : 'The seven sample testing logs used in the feed factory.'}
+            : 'The sample testing logs used in the feed factory.'}
         </p>
         <p className="mt-1 text-sm text-slate-600">
           Counts are for samples collected on{' '}
@@ -294,10 +294,13 @@ export function DashboardPage() {
                       />
                     </span>
                     {!schema.frequencyApproved && (
-                      // Verified in the live workbook: four of the seven
-                      // stages record their sampling frequency as "To set", so
-                      // no due or overdue claim may be made for them
-                      // (FR-020, risk R-08).
+                      // Verified in the live workbook: some stages record
+                      // their sampling frequency as "To set", so no due or
+                      // overdue claim may be made for them (FR-020, risk R-08).
+                      // The tally is NOT written here. It used to read "four of
+                      // the seven" and was silently falsified the day DGM
+                      // became the eighth stage; the rendered count is derived
+                      // from the registry instead, so it cannot go stale.
                       <span className="block text-xs text-amber-800">
                         Sampling frequency not yet set
                       </span>

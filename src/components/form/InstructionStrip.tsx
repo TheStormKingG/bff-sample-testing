@@ -44,8 +44,10 @@ export function InstructionStrip({ schema }: InstructionStripProps): JSX.Element
      * a phone it starts closed — but the SUMMARY still carries the frequency, including
      * the warning when no frequency has been approved. That is the point: the
      * prose can wait behind a tap, the unapproved-frequency warning cannot,
-     * because four of the seven stages have no approved frequency and hiding
-     * that would be hiding a known gap (FR-020, risk R-08).
+     * because stages without an approved frequency exist and hiding that
+     * would be hiding a known gap (FR-020, risk R-08). No tally here: the
+     * sentence used to say "four of the seven" and the eighth stage made it
+     * wrong without breaking anything, which is how such a claim fails.
      */
     <details
       open={wide}
