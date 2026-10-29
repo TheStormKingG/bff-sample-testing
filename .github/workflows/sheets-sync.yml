@@ -16,42 +16,36 @@
 # optimisation on top of it.
 #
 # ===========================================================================
-# IT IS DISABLED UNTIL YOU TURN IT ON. TWO STEPS.
+# ENABLED. THE SECRETS IT NEEDS ARE SET.
 # ===========================================================================
-# 1. Add two repository secrets (Settings → Secrets and variables → Actions):
+# 1. Repository secrets (Settings → Secrets and variables → Actions):
 #
 #      SUPABASE_FUNCTIONS_URL   https://<project-ref>.supabase.co
+#      SUPABASE_ANON_KEY        the project's anon/publishable key
 #      SYNC_SCHEDULER_SECRET    the same value set on the Supabase project
-#      SUPABASE_SERVICE_ROLE_KEY  the project's service-role key
 #
-#    All three are needed. The worker sits behind the platform gateway's
-#    default `verify_jwt` (supabase/config.toml has no `[functions.*]` block),
-#    so a request needs BOTH a bearer token the gateway accepts and the
-#    scheduler secret the handler checks. A request carrying only the secret is
-#    refused above the code that would have honoured it.
+#    TWO CREDENTIALS, AND NEITHER IS A POWERFUL ONE. The worker sits behind
+#    the platform gateway's default `verify_jwt` (supabase/config.toml has no
+#    `[functions.*]` block), so a request needs a bearer token the GATEWAY
+#    accepts as well as the scheduler secret the HANDLER checks.
 #
-#    WORTH CONSIDERING BEFORE YOU ADD THE THIRD SECRET. A service-role key in
-#    repository secrets is a powerful credential in a place where anyone able
-#    to push a workflow can read it. You can avoid storing it here entirely by
-#    adding to `supabase/config.toml`:
+#    The bearer token is the ANON key — the same key that ships inside the
+#    public frontend bundle, so storing it here adds no exposure. It gets the
+#    request past the gateway and confers nothing: every route behind it is
+#    still gated by RLS and by the function's own authorisation.
 #
-#        [functions.sheets-sync-worker]
-#        verify_jwt = false
+#    The SERVICE-ROLE key is deliberately NOT used. It bypasses RLS entirely,
+#    and this repository is public. The scheduler secret is the real gate, and
+#    it is purpose-built for exactly this one capability.
 #
-#    That turns off the GATEWAY's check for this one function, leaving the
-#    worker's own constant-time scheduler-secret comparison as the only gate —
-#    which is the design it was written for, and which has no
-#    "allow when unconfigured" branch. The worker is then reachable with the
-#    scheduler secret alone, and SUPABASE_SERVICE_ROLE_KEY can be dropped from
-#    both this file and your repository secrets. It is a deliberate change to
-#    an authorisation boundary, so it is offered rather than made.
+#    Verified against the live project before this file was enabled:
+#      anon bearer + correct secret -> 200, "invokedBy":"scheduler"
+#      anon bearer + wrong secret   -> 401, unauthenticated
 #
-# 2. Delete the `if: false` line below.
-#
-# Until then this file documents the intended wiring and runs nothing. It is
-# shipped disabled on purpose: a scheduled job that posts to a production
-# function every minute is a standing outward-facing action, and turning it on
-# is the owner's decision, not a side effect of merging a branch.
+# 2. The job runs on the schedule below. Turning it off again is one line:
+#    add `if: false` under `runs-on`, or disable the workflow in the Actions
+#    tab. A scheduled job posting to a production function is a standing
+#    outward-facing action, so it was enabled only on the owner's say-so.
 #
 # ===========================================================================
 # WHAT A RUN MEANS
@@ -92,8 +86,6 @@ permissions:
 
 jobs:
   drain:
-    # DELETE THIS LINE TO ENABLE. See the header.
-    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -101,7 +93,7 @@ jobs:
         env:
           FUNCTIONS_URL: ${{ secrets.SUPABASE_FUNCTIONS_URL }}
           SCHEDULER_SECRET: ${{ secrets.SYNC_SCHEDULER_SECRET }}
-          SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           set -euo pipefail
 
@@ -110,7 +102,7 @@ jobs:
           missing=""
           [ -n "${FUNCTIONS_URL:-}" ]    || missing="$missing SUPABASE_FUNCTIONS_URL"
           [ -n "${SCHEDULER_SECRET:-}" ] || missing="$missing SYNC_SCHEDULER_SECRET"
-          [ -n "${SERVICE_ROLE_KEY:-}" ] || missing="$missing SUPABASE_SERVICE_ROLE_KEY"
+          [ -n "${ANON_KEY:-}" ]         || missing="$missing SUPABASE_ANON_KEY"
           if [ -n "$missing" ]; then
             echo "Not configured. Missing repository secret(s):$missing" >&2
             exit 1
@@ -121,7 +113,7 @@ jobs:
           body="$(mktemp)"
           status="$(curl -sS -o "$body" -w '%{http_code}' \
             -X POST "${FUNCTIONS_URL%/}/functions/v1/sheets-sync-worker" \
-            -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
+            -H "Authorization: Bearer ${ANON_KEY}" \
             -H "x-sync-scheduler-secret: ${SCHEDULER_SECRET}" \
             -H 'Content-Type: application/json' \
             -d '{}')"
