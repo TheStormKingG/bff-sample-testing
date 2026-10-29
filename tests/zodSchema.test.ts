@@ -163,10 +163,10 @@ describe('zero is a value, blank is not a value (PRD §6.1)', () => {
             `${stage}.${field.key} rejected 0: ${JSON.stringify(result.errors)}`,
           );
         }
-        expect(result.values[field.key], `${stage}.${field.key}`).toEqual({
-          value: 0,
-          enteredText: '0',
-        });
+        // The operator's own text. A measurement crosses to the server as
+        // the characters that were typed, and the server parses it and
+        // rebuilds the { value, enteredText } pair — see numberFieldSchema.
+        expect(result.values[field.key], `${stage}.${field.key}`).toBe('0');
       }
     }
   });
@@ -271,7 +271,7 @@ describe('implausibleAbove is a soft guard, never a validation failure', () => {
       aflatoxin_ppb: '5000',
     }));
     if (!result.ok) throw new Error(`soft guard rejected the value: ${JSON.stringify(result.errors)}`);
-    expect(result.values['aflatoxin_ppb']).toEqual({ value: 5000, enteredText: '5000' });
+    expect(result.values['aflatoxin_ppb']).toBe('5000');
   });
 
   it('never produces an error message mentioning the soft guard for any field', () => {
@@ -463,15 +463,18 @@ describe('formula injection: identity fields refuse it, narrative fields allow i
   });
 });
 
-describe('entered precision survives as enteredText', () => {
+describe('entered precision survives, from the keystroke to the sheet cell', () => {
   it('keeps a trailing zero', () => {
     const result = parseStageValues('raw_materials', 'testing', rawTesting({
       moisture_pct: '12.50',
       aflatoxin_ppb: '3.00',
     }));
     if (!result.ok) throw new Error(`expected valid: ${JSON.stringify(result.errors)}`);
-    expect(result.values['moisture_pct']).toEqual({ value: 12.5, enteredText: '12.50' });
-    expect(result.values['aflatoxin_ppb']).toEqual({ value: 3, enteredText: '3.00' });
+    // The payload carries the characters, not a parsed pair: 12.5 and 12.50
+    // are the same number and a different record, so the text is the thing
+    // that must travel.
+    expect(result.values['moisture_pct']).toBe('12.50');
+    expect(result.values['aflatoxin_ppb']).toBe('3.00');
   });
 
   it('carries the entered text through to the sheet cell unchanged', () => {
@@ -489,7 +492,7 @@ describe('entered precision survives as enteredText', () => {
       moisture_pct: '0.0',
     });
     if (!a.ok) throw new Error('expected valid');
-    expect(a.values['moisture_pct']).toEqual({ value: 0, enteredText: '0.0' });
+    expect(a.values['moisture_pct']).toBe('0.0');
   });
 
   it('trims surrounding whitespace without altering the digits', () => {
@@ -498,7 +501,7 @@ describe('entered precision survives as enteredText', () => {
       moisture_pct: '  12.50  ',
     });
     if (!result.ok) throw new Error('expected valid');
-    expect(result.values['moisture_pct']).toEqual({ value: 12.5, enteredText: '12.50' });
+    expect(result.values['moisture_pct']).toBe('12.50');
   });
 
   it('survives a hydrate round trip, so reopening a record shows what was typed', () => {

@@ -23,8 +23,13 @@
  *
  * Form state holds the operator's RAW TEXT for every control, so `12.50` keeps
  * its trailing zero — that zero states the instrument's resolution and is part
- * of the record. The schema emits `{ value, enteredText }` for measurements,
- * which is the shape `toSheetRow` already preserves verbatim.
+ * of the record. A measurement therefore crosses to the server AS THAT TEXT:
+ * this file decides whether the text is acceptable, and the server parses it
+ * and rebuilds the `{ value, enteredText }` pair itself, because on this
+ * system the server is the authority on validation and must not be handed
+ * arithmetic it did not do. See `numberFieldSchema` for the full reasoning,
+ * and `tests/formToServerContract.test.tsx` for the gate that holds the two
+ * sides together.
  */
 
 import { z } from 'zod';
@@ -165,7 +170,10 @@ type FieldSchema = z.ZodType<MeasurementValue | undefined, z.ZodTypeDef, unknown
 
 function numberFieldSchema(field: FieldDef, required: boolean): FieldSchema {
   const { min, max } = hardBounds(field);
-  return z.unknown().transform((raw, ctx): MeasurementEntry | undefined => {
+  // `string | undefined`: the operator's own text, or absent when the box is
+  // blank. The parsed number is computed below and used for every check in
+  // this function, but it is NOT what travels — see the return statement.
+  return z.unknown().transform((raw, ctx): string | undefined => {
     // A non-finite number arriving as an actual number — not as text — is
     // rejected rather than normalized away. Letting NaN fall through to the
     // empty-string branch would file garbage as "not measured", conflating a
@@ -223,8 +231,40 @@ function numberFieldSchema(field: FieldDef, required: boolean): FieldSchema {
     // treating it as a validation failure would make it an unapproved
     // operational limit, which PRD §6.1 reserves to the process owner.
 
-    // 0 reaches here unchanged: it is a real measured value, not a blank.
-    return { value, enteredText: text };
+    /**
+     * THE OPERATOR'S OWN TEXT GOES ON THE WIRE, NOT A PARSED PAIR.
+     *
+     * This used to return `{ value, enteredText: text }`, and that object is
+     * why every numeric field on all seven forms was refused by the server.
+     * `validateNumber` in `supabase/functions/_shared/validation.ts` accepts
+     * `number` or `string` and nothing else; an object fell through to its
+     * else-branch and came back as "Moisture must be a number." for a box
+     * containing 12. A required field then failed its required check too,
+     * which is why Quantity received produced two complaints at once.
+     *
+     * The server is the side that was right, and it says so in its own code:
+     * it RECONSTRUCTS the pair from a string —
+     * `typeof raw === 'string' ? { value, enteredText: raw.trim() } : value`
+     * — because on this system the server re-validates everything and is the
+     * authority on what a number is (Master Prompt §1). Sending it a value
+     * the CLIENT has already parsed asks it to trust arithmetic it did not
+     * do, and leaves open a payload where `value` and `enteredText` disagree.
+     *
+     * Nothing is lost by sending the text. `value` above is still computed,
+     * and still gates every refusal in this function — the bounds checks, the
+     * finite check, the format check all run here exactly as before. What
+     * changes is only what travels: the server parses the same text again and
+     * rebuilds the pair itself.
+     *
+     * ENTERED PRECISION SURVIVES, which is the one thing this must not break.
+     * `text` is the operator's literal keystrokes, so `12.50` crosses as
+     * "12.50" and the server's `enteredText` is that same string, which
+     * `toSheetRow` writes verbatim into the cell. A trailing zero states the
+     * instrument's resolution and is part of the quality record (PRD §6.1).
+     *
+     * 0 reaches here unchanged: it is a real measured value, not a blank.
+     */
+    return text;
   });
 }
 
