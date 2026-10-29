@@ -1,0 +1,147 @@
+# The periodic drain for the Google Sheets outbox.
+#
+# ===========================================================================
+# WHY THIS EXISTS, AND WHY THE NUDGE DOES NOT REPLACE IT
+# ===========================================================================
+# `register-sample` nudges `sheets-sync-worker` as soon as a row is queued,
+# which makes the ordinary case fast. It is not a scheduler and cannot be one:
+# the outbox's retry policy schedules work for instants in the FUTURE — a
+# transient failure becomes `retry_scheduled` with a `next_retry_at` the claim
+# query will not return until that moment — and nothing edge-triggered fires
+# then.
+#
+# So without this workflow, the last sample of a shift whose first attempt
+# fails transiently waits for the next registration, which may be the next
+# morning. This is the mechanism of record; the nudge is a latency
+# optimisation on top of it.
+#
+# ===========================================================================
+# IT IS DISABLED UNTIL YOU TURN IT ON. TWO STEPS.
+# ===========================================================================
+# 1. Add two repository secrets (Settings → Secrets and variables → Actions):
+#
+#      SUPABASE_FUNCTIONS_URL   https://<project-ref>.supabase.co
+#      SYNC_SCHEDULER_SECRET    the same value set on the Supabase project
+#      SUPABASE_SERVICE_ROLE_KEY  the project's service-role key
+#
+#    All three are needed. The worker sits behind the platform gateway's
+#    default `verify_jwt` (supabase/config.toml has no `[functions.*]` block),
+#    so a request needs BOTH a bearer token the gateway accepts and the
+#    scheduler secret the handler checks. A request carrying only the secret is
+#    refused above the code that would have honoured it.
+#
+#    WORTH CONSIDERING BEFORE YOU ADD THE THIRD SECRET. A service-role key in
+#    repository secrets is a powerful credential in a place where anyone able
+#    to push a workflow can read it. You can avoid storing it here entirely by
+#    adding to `supabase/config.toml`:
+#
+#        [functions.sheets-sync-worker]
+#        verify_jwt = false
+#
+#    That turns off the GATEWAY's check for this one function, leaving the
+#    worker's own constant-time scheduler-secret comparison as the only gate —
+#    which is the design it was written for, and which has no
+#    "allow when unconfigured" branch. The worker is then reachable with the
+#    scheduler secret alone, and SUPABASE_SERVICE_ROLE_KEY can be dropped from
+#    both this file and your repository secrets. It is a deliberate change to
+#    an authorisation boundary, so it is offered rather than made.
+#
+# 2. Delete the `if: false` line below.
+#
+# Until then this file documents the intended wiring and runs nothing. It is
+# shipped disabled on purpose: a scheduled job that posts to a production
+# function every minute is a standing outward-facing action, and turning it on
+# is the owner's decision, not a side effect of merging a branch.
+#
+# ===========================================================================
+# WHAT A RUN MEANS
+# ===========================================================================
+#   2xx  the worker ran a pass. It may have had nothing to do; that is normal.
+#   409  another runner holds the workbook's single-writer lease. This is the
+#        guarantee working, NOT a failure — the step treats it as success, so
+#        an overlapping nudge does not turn the schedule red.
+#   500  configuration is missing on the project (SHEETS_SPREADSHEET_ID or
+#        GOOGLE_SERVICE_ACCOUNT_JSON). Real, and an administrator must act.
+#   401  the gateway refused the bearer token, i.e. the secrets above are wrong.
+#
+# A red run here means the spreadsheet is falling behind the ledger. The
+# ledger is unaffected either way: a sample is recorded in Postgres at
+# registration, and the sheet is a downstream projection.
+
+name: Sheets sync drain
+
+on:
+  schedule:
+    # Every five minutes. The outbox's backoff ceiling is five minutes and its
+    # dead-letter threshold is six attempts, so a five-minute cadence retries a
+    # transient failure about as fast as the policy allows without spending
+    # invocations on an empty queue. A one-minute cadence is also reasonable;
+    # it mostly buys a faster first retry.
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+# Only one drain at a time. Overlapping runs are safe — the lease serialises
+# them and the loser gets a 409 — but queueing them wastes invocations for no
+# gain, since the winner drains the same queue.
+concurrency:
+  group: sheets-sync-drain
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  drain:
+    # DELETE THIS LINE TO ENABLE. See the header.
+    if: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Post to the sync worker
+        env:
+          FUNCTIONS_URL: ${{ secrets.SUPABASE_FUNCTIONS_URL }}
+          SCHEDULER_SECRET: ${{ secrets.SYNC_SCHEDULER_SECRET }}
+          SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+
+          # Fail loudly on a missing secret rather than posting an
+          # unauthenticated request and reading the refusal as a sync problem.
+          missing=""
+          [ -n "${FUNCTIONS_URL:-}" ]    || missing="$missing SUPABASE_FUNCTIONS_URL"
+          [ -n "${SCHEDULER_SECRET:-}" ] || missing="$missing SYNC_SCHEDULER_SECRET"
+          [ -n "${SERVICE_ROLE_KEY:-}" ] || missing="$missing SUPABASE_SERVICE_ROLE_KEY"
+          if [ -n "$missing" ]; then
+            echo "Not configured. Missing repository secret(s):$missing" >&2
+            exit 1
+          fi
+
+          # `-sS` keeps the body quiet but lets errors through. The body is
+          # captured so a refusal can be shown without printing any header.
+          body="$(mktemp)"
+          status="$(curl -sS -o "$body" -w '%{http_code}' \
+            -X POST "${FUNCTIONS_URL%/}/functions/v1/sheets-sync-worker" \
+            -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
+            -H "x-sync-scheduler-secret: ${SCHEDULER_SECRET}" \
+            -H 'Content-Type: application/json' \
+            -d '{}')"
+
+          echo "worker responded $status"
+
+          case "$status" in
+            2??)
+              # The worker's own summary. It contains no secret.
+              head -c 2000 "$body" || true
+              echo
+              ;;
+            409|423)
+              echo "Another runner holds the workbook lease. That is the single-writer"
+              echo "guarantee working, not a failure. Nothing to do."
+              ;;
+            *)
+              echo "The worker refused this drain:" >&2
+              head -c 2000 "$body" >&2 || true
+              echo >&2
+              exit 1
+              ;;
+          esac
