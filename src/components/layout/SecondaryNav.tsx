@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/cn';
-import { SECONDARY_NAV } from '@/components/layout/navItems';
+import { HOME_NAV_ITEM, SECONDARY_NAV } from '@/components/layout/navItems';
 import { useAccess } from '@/components/layout/accessContext';
 
 export interface SecondaryNavProps {
@@ -15,7 +15,13 @@ export interface SecondaryNavProps {
 /**
  * Record navigation — searching, queues, reports, administration.
  *
- * Kept deliberately unlike the seven dashboard cards: its own `<nav>`
+ * THE BAR CARRIES HOME; THE PANEL DOES NOT. The bar is the only chrome on a
+ * record screen, and until it had a Home entry the single way back to the
+ * forms was the wordmark in the header -- a real `<Link>`, but one that reads
+ * as a logo, so nobody found it. The panel renders on the dashboard itself,
+ * where the same entry would link to the page being read.
+ *
+ * Kept deliberately unlike the numbered dashboard cards: its own `<nav>`
  * landmark with its own accessible name, a heading that says "Records and
  * administration", small text, no numbering and no process icon treatment. A
  * plant operator scanning the dashboard sees seven numbered things to do and a
@@ -26,12 +32,38 @@ export function SecondaryNav({ variant = 'bar', className }: SecondaryNavProps) 
   const { can } = useAccess();
   const items = SECONDARY_NAV.filter((item) => can(item.permission));
 
-  if (items.length === 0) return null;
-
+  // The bar renders even with NO secondary items, because it carries Home and
+  // Home is the exit. A reader who holds none of these permissions can still
+  // reach a record screen by URL and be met by "You do not have access to this
+  // screen"; returning null there would leave that page with no way out but
+  // the browser's back button. The panel is different — it is decoration on a
+  // dashboard that already has every tile — so an empty one is simply absent.
   if (variant === 'bar') {
     return (
       <nav aria-label="Records and administration" className={cn('bg-slate-50', className)}>
         <ul className="mx-auto flex max-w-6xl flex-wrap gap-1 px-2 py-1.5 sm:px-4">
+          <li key={HOME_NAV_ITEM.to}>
+            {/*
+              `end` so this is active ONLY on '/'. Without it every route
+              matches the '/' prefix and Home would render as the current
+              page on every screen in the application.
+            */}
+            <NavLink
+              to={HOME_NAV_ITEM.to}
+              end
+              className={({ isActive }) =>
+                cn(
+                  'inline-flex min-h-tap items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium',
+                  isActive
+                    ? 'bg-white text-bff-800 shadow-sm ring-1 ring-bff-200'
+                    : 'text-slate-700 hover:bg-white hover:text-bff-800',
+                )
+              }
+            >
+              <HOME_NAV_ITEM.icon aria-hidden="true" className="h-4 w-4" />
+              {HOME_NAV_ITEM.label}
+            </NavLink>
+          </li>
           {items.map((item) => (
             <li key={item.to}>
               <NavLink
@@ -54,6 +86,8 @@ export function SecondaryNav({ variant = 'bar', className }: SecondaryNavProps) 
       </nav>
     );
   }
+
+  if (items.length === 0) return null;
 
   return (
     <nav aria-labelledby="records-nav-heading" className={className}>

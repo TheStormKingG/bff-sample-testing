@@ -2,6 +2,7 @@ import {
   ClipboardList,
   Eye,
   Hourglass,
+  LayoutGrid,
   ListChecks,
   BarChart3,
   ShieldAlert,
@@ -13,8 +14,8 @@ import type { Permission } from '@/lib/roles';
 /**
  * The secondary, record-oriented destinations.
  *
- * These are NOT testing forms. The dashboard's seven numbered cards are the
- * only way into a form, and Master Prompt section 2 is explicit that these
+ * These are NOT testing forms. The dashboard's numbered cards are the only
+ * way into a form, and Master Prompt section 2 is explicit that these
  * entries "are not additional testing-form buttons" — hence the separate
  * table, the separate landmark and the different visual weight.
  *
@@ -29,6 +30,30 @@ export interface NavItem {
   readonly icon: LucideIcon;
   readonly permission: Permission;
 }
+
+/**
+ * The way back to the testing forms.
+ *
+ * Held apart from `SECONDARY_NAV` for two reasons, and both matter.
+ *
+ * It is not a secondary destination -- it is the way out of them -- so it has
+ * no `permission`: every signed-in person may see the dashboard, and gating it
+ * would strand whoever failed the check on a screen with no exit.
+ *
+ * And `SECONDARY_NAV` also renders the panel AT THE BOTTOM OF THE DASHBOARD.
+ * An entry in that array appears there too, where "Home" would be a link to
+ * the page you are already reading. Only the bar gets this one.
+ *
+ * Labelled "Home" rather than "Forms": Master Prompt section 2 forbids
+ * anything in this navigation reading as an additional testing form, and the
+ * one word that cannot be mistaken for one is the word the operator used.
+ */
+export const HOME_NAV_ITEM = {
+  to: '/',
+  label: 'Home',
+  description: 'The testing forms',
+  icon: LayoutGrid,
+} as const;
 
 export const SECONDARY_NAV: readonly NavItem[] = [
   {
