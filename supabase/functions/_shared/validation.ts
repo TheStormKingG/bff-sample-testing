@@ -30,7 +30,7 @@ import {
 } from '../../../src/forms/registry.ts';
 import { STAGES, type FieldDef, type Stage } from '../../../src/forms/types.ts';
 import { looksLikeFormula, toSheetRow } from '../../../src/forms/sheetMapping.ts';
-import { deriveSystemValues } from '../../../src/forms/derived.ts';
+import { deriveSystemValues, hasDerivedColumns } from '../../../src/forms/derived.ts';
 import type { SampleValues } from '../../../src/forms/sheetMapping.ts';
 
 /**
@@ -62,6 +62,7 @@ export type ValidationCode =
   | 'bad_time'
   | 'serialisation_failed'
   | 'server_assigned'
+  | 'derivation_incomplete'
   // Account and credential codes, added for the administrator-managed
   // password sign-in (migration 0019). See the password policy at the foot of
   // this file for what each one means and why it is refused.
@@ -415,6 +416,43 @@ export function validateStagePayload(args: ValidateArgs): ValidationResult {
           field: '_payload',
           code: 'serialisation_failed',
           message: error instanceof Error ? error.message : String(error),
+        },
+      ],
+    };
+  }
+
+  //    A stage that HAS computed columns and produced NONE of them is not an
+  //    empty result; it is a payload that did not carry the inputs, and it
+  //    must never be allowed to serialise.
+  //
+  //    THE DATA-LOSS PATH THIS CLOSES. `deriveDgm` returns `{}` when a mass
+  //    key is absent, on the reasoning that requiredness has already run so
+  //    the only way to arrive incomplete is a phase that does not require the
+  //    masses. That phase exists: `fieldsRequiredAt` matches `required ===
+  //    phase` EXACTLY, not cumulatively, and every DGM field is
+  //    `required: 'registration'` — so at phase 'testing', which
+  //    `update-results` validates at, NOTHING is required and `{}` is a valid
+  //    payload. The row then serialises with Y..AG all blank, reaches
+  //    `enqueue_sheet_sync_event`, and `tg_record_derived_results` reads each
+  //    blank cell as "the computation had no answer" and DELETES the stored
+  //    result. Every calculated figure for that sample would be destroyed by
+  //    a call that supplied no figures at all, and the spreadsheet row would
+  //    be overwritten with blanks.
+  //
+  //    The trigger's blank-is-absence rule is right and stays: a genuine
+  //    all-zero weighing really does blank seven of the nine cells. What was
+  //    missing is that only a payload carrying the inputs may say so.
+  if (hasDerivedColumns(args.stage) && Object.keys(derived).length === 0) {
+    return {
+      ok: false,
+      issues: [
+        {
+          field: '_payload',
+          code: 'derivation_incomplete',
+          message:
+            `A ${STAGE_SCHEMAS[args.stage].title} record is calculated from values this ` +
+            `payload does not carry, so there is nothing to compute. Submitting it would ` +
+            `erase the figures already recorded for this sample rather than update them.`,
         },
       ],
     };

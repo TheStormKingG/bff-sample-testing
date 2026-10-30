@@ -437,6 +437,24 @@ export async function fetchSampleDetail(sampleUuid: string): Promise<SampleDetai
   if (holdRes.error) throw new Error(holdRes.error.message);
   if (eventRes.error) throw new Error(eventRes.error.message);
   if (linkRes.error) throw new Error(linkRes.error.message);
+  // The sixth read, which was the only one of the six left unchecked.
+  //
+  // Unchecked, a failed read is indistinguishable from "no rows": supabase-js
+  // returns {data: null, error} without throwing, `derivedRes.data ?? []`
+  // iterates zero times, and SampleDetailPage drops the whole "Calculated
+  // results" card because it gates on the map being non-empty. The page then
+  // renders 200 OK, showing fourteen sieve masses and nothing where the DGM,
+  // fineness module, uniformity index and GSD belong — a granulometry test
+  // that appears to have produced no results, minutes after the operator saw
+  // those same figures on the confirmation screen.
+  //
+  // DerivedResultsTable was written to print "Not calculated" per row rather
+  // than imply absence, but the card's gate removes it before that wording
+  // can apply. And for DGM an empty map cannot legitimately occur: even a
+  // sample with nothing retained stores total_retained_g and
+  // dpg_legacy_index. So the one state the gate reads as "nothing to show" is
+  // reachable only by this failure, which is the state it was hiding.
+  if (derivedRes.error) throw new Error(derivedRes.error.message);
 
   /**
    * Values the server computed, which are NOT measurements and are not in

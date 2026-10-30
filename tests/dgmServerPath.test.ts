@@ -107,6 +107,17 @@ describe('a complete DGM registration', () => {
     // The GSD's digits are pinned in dgmMaths.test.ts against a hand
     // computation; here it only has to be the right NUMBER in the right CELL.
     expect(Number(cellAt(row, 'AF')), 'AF GSD').toBeCloseTo(1.6722, 3);
+    // ...but a tolerance cannot gate a FORMAT. ±5e-4 is wider than the
+    // rounding step at three decimals, so it silently accepted anything from
+    // `gsd: 3` to `gsd: 6` in the DECIMALS table — and at 3 the stored string,
+    // which this project states IS the record, loses half the precision of an
+    // audited figure. Every other computed cell is pinned as an exact string
+    // and so gates its own format; this one needs the contract stated apart
+    // from the value.
+    expect(
+      cellAt(row, 'AF'),
+      'the GSD must be written to exactly six decimals, like the DECIMALS table says',
+    ).toMatch(/^\d+\.\d{6}$/);
     expect(cellAt(row, 'AG'), 'AG GSD basis').toBe('series-ratio-top-bound/pan-excluded');
   });
 
@@ -215,8 +226,27 @@ describe('a sample on which nothing was retained', () => {
     expect(cellAt(row, 'Z'), 'Z fineness module').toBe('');
     expect(cellAt(row, 'AA'), 'AA DGM µm').toBe('');
     expect(cellAt(row, 'AB'), 'AB UI coarse').toBe('');
+    expect(cellAt(row, 'AC'), 'AC UI average').toBe('');
+    expect(cellAt(row, 'AD'), 'AD UI fine').toBe('');
     expect(cellAt(row, 'AF'), 'AF GSD').toBe('');
     expect(cellAt(row, 'AG'), 'AG GSD basis').toBe('');
+  });
+
+  it('but DOES write the legacy index, which is defined even here', () => {
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // AE was the one derived column this block never checked, and it is the
+    // only one that behaves differently: the legacy index is a STDEV over
+    // retained GRAMS, never a quotient, so it does not become 0/0 when the
+    // total does. The standard deviation of seven zeros is zero.
+    //
+    // Asserting it matters in both directions. Blanking it would throw away a
+    // figure the source workbook produces — the archive this stage exists to
+    // stay comparable with — and leaving it unasserted let the UI fixture in
+    // derivedResultsTable.test.tsx describe an all-zero sample as having one
+    // stored value when it has two.
+    expect(cellAt(result.row, 'AE'), 'AE DPG legacy index').toBe('0.000000');
+    expect(cellAt(result.row, 'AE')).not.toBe('');
   });
 
   it('still records the total, which really was measured and really is zero', () => {
@@ -288,5 +318,53 @@ describe('the registry and the computation agree on which columns exist', () => 
       .map((f) => f.key)
       .sort();
     expect(Object.keys(derived).sort()).toEqual(declared);
+  });
+});
+
+describe('a payload that carries none of the inputs cannot erase the results', () => {
+  /**
+   * The destructive path, and why it was reachable.
+   *
+   * `fieldsRequiredAt` matches `required === phase` EXACTLY, not cumulatively,
+   * and every DGM field is `required: 'registration'`. So at phase 'testing' —
+   * the phase `supabase/functions/update-results/index.ts` validates at —
+   * nothing is required, and `{}` validated as a perfectly good payload.
+   * `deriveDgm` then returned `{}` (no masses to work from), the row
+   * serialised with Y..AG all blank, and `tg_record_derived_results` read each
+   * blank cell as "the computation had no answer" and DELETED the stored
+   * result. A call supplying no figures would have destroyed every figure.
+   */
+  it('refuses an empty DGM payload at the testing phase', () => {
+    const result = validateStagePayload({ stage: 'dgm', phase: 'testing', values: {} });
+    expect(result.ok, 'an empty DGM payload still validated').toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((i) => i.code)).toContain('derivation_incomplete');
+  });
+
+  it('refuses a partial one too — thirteen masses is not twelve plus a guess', () => {
+    const partial = payload();
+    delete partial['sieve7_gross_g'];
+    const result = validateStagePayload({ stage: 'dgm', phase: 'testing', values: partial });
+    expect(result.ok).toBe(false);
+  });
+
+  it('CONTROL: the other seven stages are untouched by the guard', () => {
+    // They declare no computed columns, so `hasDerivedColumns` is false and
+    // the new refusal can never fire for them. Without this, the guard could
+    // have broken every results update in the system and this file would not
+    // have noticed.
+    for (const stage of STAGES) {
+      if (stage === 'dgm') continue;
+      const result = validateStagePayload({ stage, phase: 'testing', values: {} });
+      const codes = result.ok ? [] : result.issues.map((i) => i.code);
+      expect(codes, `${stage} was refused by the DGM guard`).not.toContain(
+        'derivation_incomplete',
+      );
+    }
+  });
+
+  it('CONTROL: a complete registration is still accepted', () => {
+    expect(validateStagePayload({ stage: 'dgm', phase: 'registration', values: payload() }).ok)
+      .toBe(true);
   });
 });

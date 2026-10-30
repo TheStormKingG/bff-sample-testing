@@ -526,3 +526,93 @@ describe('refusals', () => {
     expect(() => computeDgm(bad, DEFAULT_SIEVE_PRESET)).toThrow(/finite|number/i);
   });
 });
+
+/**
+ * The two rules that `gsd_basis` names, gated as rules.
+ *
+ * `GSD_BASIS` is the string 'series-ratio-top-bound/pan-excluded', stored in
+ * column AG with every sample so an archived result can be read back under the
+ * convention that produced it. It makes two promises, and until now a reader
+ * had only the constant's own text that either was kept: the pan-loaded
+ * fixture asserted the truncation FLAG and that the GSD was non-null, never a
+ * value, and the test named for the top-bound rule asserted `gsdBasis` itself
+ * — the exported constant, which cannot move when the rule it names changes.
+ *
+ * Deleting the pan `continue` moved a real sample's GSD by 105% with the suite
+ * green; replacing the extrapolated top bound with the bare aperture moved
+ * another by 9%. Both left column AG asserting the discarded convention to an
+ * auditor.
+ *
+ * These are written as PROPERTIES, not pinned numbers. There is no workbook
+ * oracle for the GSD, so an expected value could only be this code's own
+ * output; a property is what the basis string actually claims, and it is
+ * derivable by hand.
+ */
+describe('the basis string is kept, not merely asserted', () => {
+  /** The worked example, with `pan` grams added to position 7 and nothing else. */
+  function withPan(pan: number) {
+    return WORKED_EXAMPLE.readings.map((r, i) =>
+      i === 6 ? { tareGrams: r.tareGrams, grossGrams: r.tareGrams + pan } : r,
+    );
+  }
+
+  it('PAN-EXCLUDED: loading the pan cannot move the GSD at all', () => {
+    // The rule the basis string names. If the pan ever joins the moments this
+    // fails immediately, for every pan mass, without anyone having to know
+    // what the right number would be.
+    const dry = computeDgm(withPan(0), DEFAULT_SIEVE_PRESET);
+    for (const pan of [1, 25, 500]) {
+      const loaded = computeDgm(withPan(pan), DEFAULT_SIEVE_PRESET);
+      expect(
+        loaded.geometricStandardDeviation ?? NaN,
+        `${pan} g in the pan moved a pan-excluded GSD`,
+      ).toBeCloseTo(dry.geometricStandardDeviation ?? NaN, 12);
+      expect(loaded.geometricMeanDiameterMicrons ?? NaN).toBeCloseTo(
+        dry.geometricMeanDiameterMicrons ?? NaN,
+        9,
+      );
+    }
+  });
+
+  it('CONTROL: that pan mass is real, and the record does report it', () => {
+    // Guards the test above from passing because the mass never arrived: the
+    // excluded pan must still change the total, the fineness module and the
+    // truncation flag. Only the GSD is allowed to ignore it.
+    const dry = computeDgm(withPan(0), DEFAULT_SIEVE_PRESET);
+    const loaded = computeDgm(withPan(25), DEFAULT_SIEVE_PRESET);
+    expect(loaded.totalRetainedGrams).toBe(dry.totalRetainedGrams + 25);
+    expect(loaded.finenessModule).not.toBeCloseTo(dry.finenessModule ?? NaN, 6);
+    expect(loaded.gsdTruncatedByPanMass).toBe(true);
+    expect(dry.gsdTruncatedByPanMass).toBe(false);
+  });
+
+  it('TOP-BOUND: the coarsest bin is bounded by the series ratio, not by its own aperture', () => {
+    // Equal mass on the two coarsest sieves and nothing else, which is the
+    // smallest fixture that produces a GSD at all — one loaded bin returns
+    // null by design, because a deviation over a single bin is zero by
+    // construction and says nothing about uniformity.
+    //
+    // BY HAND. Sieve 1 is 4000 µm, sieve 2 is 2000 µm, so the series ratio is
+    // 2 and the bins are [4000, 8000) and [2000, 4000). Their geometric
+    // midpoints are 4000√2 and 2000√2, and with equal weights the geometric
+    // mean of the two is sqrt(4000√2 × 2000√2) = sqrt(16 000 000) = EXACTLY
+    // 4000 µm. The round number is the point: it falls out of the series
+    // continuation and nothing else.
+    //
+    // Collapse the top bin to [4000, 4000] — the mutation that survived — and
+    // the answer becomes sqrt(4000 × 2000√2) = 3363.59 µm.
+    const topTwo = WORKED_EXAMPLE.readings.map((r, i) =>
+      i === 0 || i === 1
+        ? { tareGrams: r.tareGrams, grossGrams: r.tareGrams + 100 }
+        : { tareGrams: r.tareGrams, grossGrams: r.tareGrams },
+    );
+    const result = computeDgm(topTwo, DEFAULT_SIEVE_PRESET);
+    expect(result.geometricMeanDiameterMicrons ?? NaN).toBeCloseTo(4000, 6);
+    // Named separately so a failure says which rule broke rather than only
+    // that a tolerance was missed.
+    expect(
+      result.geometricMeanDiameterMicrons ?? NaN,
+      'the top bin was bounded by its own aperture instead of the series ratio',
+    ).not.toBeCloseTo(Math.sqrt(4000 * 2000 * Math.SQRT2), 1);
+  });
+});

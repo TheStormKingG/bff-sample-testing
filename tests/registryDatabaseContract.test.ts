@@ -392,3 +392,109 @@ describe('POSITIVE CONTROL: the comparison can actually fail', () => {
     expect(seededStages.has('a_stage_nobody_seeded')).toBe(false);
   });
 });
+
+/**
+ * Every stage reaches the registration projection.
+ *
+ * ===========================================================================
+ * THE DEFECT THIS WOULD HAVE CAUGHT
+ * ===========================================================================
+ * `rpc_register_sample` denormalises two columns onto `samples` for the search
+ * screen — `sample_label` (feed type) and `test_label` (batch number) — each
+ * filled by a `case p_stage` written when there were seven stages. Adding an
+ * eighth left both CASEs untouched, and a CASE with no matching WHEN and no
+ * ELSE is NULL, so every DGM registration stored NULL in both: a blank
+ * subtitle in the Samples list and a batch number the search box cannot match.
+ *
+ * Nothing mechanical noticed. The checks above compare the DECLARATIVE tables
+ * — `stage_definitions`, `stage_fields`, `sample_prefixes` — and this
+ * projection is procedural, a CASE buried in a 130-line function in a
+ * migration that predates the stage. Two human-style review lenses found it
+ * independently; no test did.
+ *
+ * So the contract is now read out of the function text. A stage that declares
+ * a feed-type field must have an arm filling `sample_label`, and every stage
+ * must have an arm filling `test_label`.
+ */
+function latestRegisterSampleBody(): string {
+  // Anchored on the DEFINITION, not on the name. The name also appears in a
+  // `drop function`, a `revoke all on function` and a `grant execute on
+  // function` — 0026 carries all three — so searching for the bare name finds
+  // the trailing grant and reads no body at all. The first version of this
+  // helper did exactly that and the suite stopped collecting, which is the
+  // cheap way to learn it.
+  const defs = [...SQL.matchAll(/create (?:or replace )?function public\.rpc_register_sample\(/g)];
+  const last = defs[defs.length - 1];
+  if (last === undefined) throw new Error('rpc_register_sample is not defined in any migration');
+  const start = last.index;
+  const end = SQL.indexOf('\n$$;', start);
+  if (end === -1) throw new Error('rpc_register_sample has no terminating $$;');
+  return SQL.slice(start, end);
+}
+
+/**
+ * The stage labels in each `case p_stage` block, in source order.
+ *
+ * Only `case p_stage` — the `case when p_stage = 'raw_materials'` forms that
+ * fill the material and supplier columns are single-stage by construction and
+ * cannot go stale when a stage is added.
+ */
+function stageCaseArms(body: string): string[][] {
+  const blocks: string[][] = [];
+  let at = body.indexOf('case p_stage');
+  while (at !== -1) {
+    const end = body.indexOf('end', at);
+    const arms = [...body.slice(at, end).matchAll(/when\s+'([a-z_]+)'/g)]
+      .map((m) => m[1])
+      .filter((s): s is string => s !== undefined);
+    blocks.push(arms);
+    at = body.indexOf('case p_stage', end);
+  }
+  return blocks;
+}
+
+describe('the registration projection covers every stage', () => {
+  const body = latestRegisterSampleBody();
+  const blocks = stageCaseArms(body);
+
+  it('INSTRUMENT: finds exactly the two stage-dispatched projections', () => {
+    // Without this the assertions below could pass by reading nothing, which
+    // is how the declarative checks missed this defect in the first place.
+    expect(blocks).toHaveLength(2);
+    for (const arms of blocks) expect(arms.length).toBeGreaterThan(4);
+  });
+
+  /** Keys the two projections are fed from, per the function body. */
+  const LABEL_KEYS = new Set(['feed_type', 'material_or_feed_type']);
+  const TEST_KEYS = new Set(['batch_no', 'batch_or_bin_no', 'run_no', 'delivery_or_lot_no']);
+
+  const declares = (stage: Stage, keys: Set<string>): boolean =>
+    STAGE_SCHEMAS[stage].fields.some((f) => keys.has(f.key));
+
+  it('fills sample_label for every stage that has a feed type', () => {
+    const want = STAGES.filter((s) => declares(s, LABEL_KEYS)).sort();
+    const got = [...(blocks[0] ?? [])].sort();
+    expect(
+      got,
+      'a stage declaring a feed type with no arm here stores NULL and shows a blank subtitle',
+    ).toEqual(want);
+  });
+
+  it('fills test_label for every stage, because every stage has a batch, lot or run number', () => {
+    const want = STAGES.filter((s) => declares(s, TEST_KEYS)).sort();
+    const got = [...(blocks[1] ?? [])].sort();
+    expect(want, 'every stage should declare one of these').toHaveLength(STAGES.length);
+    expect(
+      got,
+      'a stage with no arm here cannot be found by the search box, which queries this column',
+    ).toEqual(want);
+  });
+
+  it('POSITIVE CONTROL: dropping an arm is detected', () => {
+    const withoutDgm = stageCaseArms(
+      body.replace("when 'dgm'           then p_values ->> 'batch_no'\n", ''),
+    );
+    expect(withoutDgm[1]).not.toContain('dgm');
+    expect(blocks[1]).toContain('dgm');
+  });
+});

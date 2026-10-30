@@ -23,18 +23,41 @@ import { render, screen, within } from '@testing-library/react';
 import { DerivedResultsTable } from '@/components/form/DerivedResultsTable';
 import { STAGE_SCHEMAS } from '@/forms/registry';
 import { STAGES } from '@/forms/types';
+import { deriveSystemValues } from '@/forms/derived';
 
-const COMPUTED = {
-  total_retained_g: '202.00',
-  fineness_module: '3.821782',
-  dgm_um: '1472.6131',
-  ui_coarse_pct: '22.7723',
-  ui_average_pct: '77.2277',
-  ui_fine_pct: '0.0000',
-  dpg_legacy_index: '4.520676',
-  gsd: '1.672224',
-  gsd_basis: 'series-ratio-top-bound/pan-excluded',
-};
+/**
+ * The props are the SERVER'S OUTPUT, not a plausible imitation of it.
+ *
+ * These fixtures used to be typed by hand, and both were wrong in ways no
+ * assertion could see. One carried a GSD of `1.672224`, a number the code has
+ * never produced — close enough to the real `1.672121` to read as genuine,
+ * and quoted out of this file as if it were a computed result. The other
+ * described an all-zero sample as having exactly one stored value, so the
+ * suite certified a screen the system cannot render while the screen it does
+ * render went untested.
+ *
+ * So the fixture is now derived. `deriveSystemValues` is the same function
+ * the Edge Function calls, and `asStored` then applies the rule that
+ * `tg_record_derived_results` (0025) applies to its output: a blank cell
+ * DELETES the row rather than storing a zero, so a blank key is simply
+ * absent by the time a screen reads it.
+ */
+function asStored(masses: ReadonlyArray<readonly [number, number]>): Record<string, string> {
+  const values: Record<string, unknown> = { sieve_series: 'abnt-standard-7' };
+  masses.forEach(([tare, gross], i) => {
+    values[`sieve${i + 1}_tare_g`] = String(tare);
+    values[`sieve${i + 1}_gross_g`] = String(gross);
+  });
+  const derived = deriveSystemValues('dgm', values);
+  return Object.fromEntries(Object.entries(derived).filter(([, cell]) => cell.trim() !== ''));
+}
+
+/** The workbook's worked example: 202 g of "BF". */
+const WORKED: ReadonlyArray<readonly [number, number]> = [
+  [370, 370], [398, 444], [388, 472], [368, 430], [362, 372], [330, 330], [330, 330],
+];
+
+const COMPUTED = asStored(WORKED);
 
 describe('a complete set of calculated results', () => {
   it('shows every computed column the registry declares', () => {
@@ -77,39 +100,95 @@ describe('a complete set of calculated results', () => {
 
   it('passes no judgement on any value', () => {
     const { container } = render(<DerivedResultsTable stage="dgm" derived={COMPUTED} />);
-    const text = container.textContent ?? '';
-    // THE ASSERTION THAT MATTERS MOST IN THIS FILE.
+
+    // THE ASSERTION THAT MATTERS MOST IN THIS FILE — and it was written from
+    // an imagined violation rather than from this codebase's own vocabulary.
+    // It forbade three CSS classes while the project renders adverse state in
+    // amber far more often than in anything it listed, so the nearest-to-hand
+    // way to put a verdict on this table was precisely the way the gate could
+    // not see. A `bg-amber-50 text-amber-900` wrapper survived it untouched.
+    //
+    // So the colour rule is now a FAMILY denylist, not a class list: no
+    // judgement-bearing hue may appear anywhere in this subtree, however the
+    // utility is spelled and whatever shade is chosen.
+    const JUDGEMENT_HUES = /\b(?:bg|text|border|ring|from|to|via)-(red|green|amber|yellow|orange|emerald|rose|lime)-\d{2,3}\b/;
+    const coloured = [...container.querySelectorAll('*')]
+      .map((el) => el.getAttribute('class') ?? '')
+      .filter((cls) => JUDGEMENT_HUES.test(cls));
+    expect(coloured, 'a judgement-bearing colour reached the calculated results').toEqual([]);
+
+    // And the words. `textContent` cannot see an accessible name, so the
+    // sweep reads the attributes too — a verdict in an aria-label is a
+    // verdict, and it is the one a sighted reviewer never finds.
+    const spoken = [...container.querySelectorAll('*')]
+      .flatMap((el) => [el.getAttribute('aria-label'), el.getAttribute('title')])
+      .filter((v): v is string => v !== null);
+    const text = [container.textContent ?? '', ...spoken].join(' ').toLowerCase();
     for (const word of [
       'pass',
       'fail',
       'within limit',
       'outside limit',
-      'conform',
-      'acceptable',
+      'within spec',
+      'outside spec',
       'out of spec',
+      'conform',
+      'compliant',
+      'acceptable',
+      'rejected',
+      'approved',
+      'satisfactory',
     ]) {
-      expect(text.toLowerCase(), `the table used the word "${word}"`).not.toContain(word);
+      expect(text, `the table used the word "${word}"`).not.toContain(word);
     }
-    // And no status colour, which would say it without words.
-    expect(container.querySelectorAll('.bg-green-50, .bg-red-50, .text-green-900')).toHaveLength(
-      0,
-    );
   });
 });
 
 describe('a sample on which nothing was retained', () => {
-  // Every ratio is 0/0. The server writes a blank cell; the trigger in 0025
-  // then stores no row at all, so the key is simply absent here.
-  const UNDEFINED_RESULTS = {
-    total_retained_g: '0.00',
-    gsd_basis: '',
-  };
+  /**
+   * Every gross mass equals its tare, so every share is a 0/0.
+   *
+   * NOT every figure, though — and that is the whole point of this block.
+   * Two survive, for two different reasons, and the screen has to tell them
+   * apart from each other AND from the six that did not:
+   *
+   *   total_retained_g  "0.00"      a MEASUREMENT that really is zero
+   *   dpg_legacy_index  "0.000000"  a CALCULATION that really is zero
+   *
+   * The legacy index is STDEV(Eᵢ × Bᵢ / 10000) over retained GRAMS, not over
+   * ratios, so it never divides by the total. The standard deviation of seven
+   * zeros is exactly zero — defined, not undefined — which is why
+   * `dpgLegacyIndex` is typed `number` while every quotient beside it is
+   * `number | null`. Rendering it as "Not calculated" would be as wrong as
+   * rendering the six quotients as "0".
+   */
+  const UNDEFINED_RESULTS = asStored(WORKED.map(([tare]) => [tare, tare] as const));
+
+  it('is the state the server actually produces, not an imagined one', () => {
+    // Pins the shape the rest of this block reasons about. If the derivation
+    // ever starts blanking the legacy index, or stops blanking a quotient,
+    // this fails here rather than silently changing what the tests below mean.
+    expect(Object.keys(UNDEFINED_RESULTS).sort()).toEqual([
+      'dpg_legacy_index',
+      'total_retained_g',
+    ]);
+  });
 
   it('reads "Not calculated", never "Not measured" and never zero', () => {
     render(<DerivedResultsTable stage="dgm" derived={UNDEFINED_RESULTS} />);
-    // Seven of the eight value rows have no answer.
-    expect(screen.getAllByText('Not calculated')).toHaveLength(7);
+    // Six of the eight value rows have no answer; the other two do.
+    expect(screen.getAllByText('Not calculated')).toHaveLength(6);
     expect(screen.queryByText('Not measured')).toBeNull();
+  });
+
+  it('shows the legacy index as the zero it is, not as an absence', () => {
+    render(<DerivedResultsTable stage="dgm" derived={UNDEFINED_RESULTS} />);
+    const label = STAGE_SCHEMAS.dgm.fields.find((f) => f.key === 'dpg_legacy_index')?.label;
+    expect(label).toBeDefined();
+    const row = screen.getByText(label as string).closest('div');
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getByText('0.000000')).toBeInTheDocument();
+    expect(within(row as HTMLElement).queryByText('Not calculated')).toBeNull();
   });
 
   it('still shows the total, which really was measured and really is zero', () => {
