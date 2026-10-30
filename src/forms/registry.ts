@@ -1234,10 +1234,7 @@ const dgm: StageSchema = {
     {
       key: 'mill_rpm',
       columnLetter: 'G',
-      // The header is the workbook's and stays until the sheet is re-headed;
-      // the LABEL is what the operator reads, and the two are allowed to
-      // differ. This column has only ever held one kind of number.
-      sheetHeader: 'Mill RPM',
+      sheetHeader: 'Durability tester RPM',
       label: 'Durability tester RPM',
       type: 'number',
       section: 'settings',
@@ -1256,7 +1253,7 @@ const dgm: StageSchema = {
     {
       key: 'mill_hz_position',
       columnLetter: 'H',
-      sheetHeader: 'Mill Hz or position',
+      sheetHeader: 'Sieve shaker frequency (Hz)',
       label: 'Sieve shaker frequency',
       type: 'number',
       unit: 'Hz',
@@ -1271,8 +1268,8 @@ const dgm: StageSchema = {
     {
       key: 'grind_time',
       columnLetter: 'I',
-      sheetHeader: 'Grind time',
-      // NOT grind time, whatever the column is called. This is how long the
+      sheetHeader: 'Vibration time (min)',
+      // NOT grind time, whatever the column WAS called. This is how long the
       // stack ran in the vibrator, which is a property of the sieve test and
       // not of how the product was made.
       label: 'Vibration time',

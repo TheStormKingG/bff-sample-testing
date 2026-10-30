@@ -102,7 +102,7 @@ const VERIFIED_HEADERS: Record<Stage, { tab: string; headers: string[] }> = {
     tab: '8 DGM',
     headers: [
       'Sample ID', 'Date', 'Time', 'Feed type', 'Batch no.', 'Sampled by',
-      'Mill RPM', 'Mill Hz or position', 'Grind time', 'Sieve series',
+      'Durability tester RPM', 'Sieve shaker frequency (Hz)', 'Vibration time (min)', 'Sieve series',
       'ABNT 5 empty sieve (g)', 'ABNT 5 sieve + sample (g)',
       'ABNT 10 empty sieve (g)', 'ABNT 10 sieve + sample (g)',
       'ABNT 16 empty sieve (g)', 'ABNT 16 sieve + sample (g)',
