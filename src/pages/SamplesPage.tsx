@@ -10,7 +10,7 @@
  */
 
 import { useState } from 'react';
-import { Download, FileSpreadsheet } from 'lucide-react';
+import { Download, ExternalLink, FileSpreadsheet } from 'lucide-react';
 
 import {
   EMPTY_FILTERS,
@@ -32,6 +32,8 @@ import {
   NotPermitted,
   PageHeader,
 } from '@/components/records/common';
+import { buttonSurface } from '@/components/ui/Button';
+import { useWorkbookLink } from '@/hooks/useWorkbookLink';
 import { SampleFilters } from '@/components/records/SampleFilters';
 import { SampleTable } from '@/components/records/SampleTable';
 import { Pagination } from '@/components/records/Pagination';
@@ -55,6 +57,13 @@ export default function SamplesPage() {
   const [exportError, setExportError] = useState<string | null>(null);
 
   const canExport = allows('export.run');
+
+  // The workbook URL is fetched, never compiled in: the spreadsheet id is an
+  // Edge Function secret and the bundle scanner fails the build when it finds
+  // one. Gated on `sample.view` because that is what the endpoint requires;
+  // asking without it would earn a 403 for a button that would not render.
+  const workbook = useWorkbookLink(allows('sample.view'));
+  const workbookUrl = workbook.data?.configured === true ? workbook.data.url : null;
 
   function changeFilters(next: Filters) {
     setFilters(next);
@@ -97,12 +106,35 @@ export default function SamplesPage() {
         title="Samples"
         description="Search every sample from every form. Dates are the Guyana day the sample was taken."
         actions={
-          canExport ? (
-            <Button variant="secondary" onClick={() => void runExport()} disabled={exporting}>
-              <Download aria-hidden className="h-4 w-4" />
-              {exporting ? 'Preparing export…' : 'Export these results (CSV)'}
-            </Button>
-          ) : undefined
+          <>
+            {/*
+              An anchor, not a button that calls window.open: this is
+              navigation, so it keeps the middle click, the context menu and
+              the destination on hover, and a screen reader announces it as the
+              link it is. `buttonSurface` is the real button's own styling, so
+              the two cannot drift apart.
+
+              `rel="noopener"` because the workbook opens in a new tab and the
+              opened document must not get a handle on this one.
+            */}
+            {workbookUrl !== null ? (
+              <a
+                href={workbookUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonSurface('secondary')}
+              >
+                <ExternalLink aria-hidden className="h-4 w-4" />
+                <span>View spreadsheet</span>
+              </a>
+            ) : null}
+            {canExport ? (
+              <Button variant="secondary" onClick={() => void runExport()} disabled={exporting}>
+                <Download aria-hidden className="h-4 w-4" />
+                {exporting ? 'Preparing export…' : 'Export these results (CSV)'}
+              </Button>
+            ) : null}
+          </>
         }
       />
 

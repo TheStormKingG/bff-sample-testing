@@ -330,6 +330,12 @@ describe('the server would accept the key every mutating hook sends', () => {
 const KEYLESS_BY_DESIGN: readonly { readonly file: string; readonly fn: string }[] = [
   { file: 'src/hooks/useAdmin.ts', fn: 'schemaVerify' },
   { file: 'src/lib/supabase.ts', fn: 'CHANGE_OWN_PASSWORD_FUNCTION' },
+  // `workbook-link` is a GET that reads one configured value and writes
+  // nothing — no row, no audit event, no outbox entry. An idempotency key
+  // exists to stop a retried request creating a second something; there is no
+  // something here to create twice, and it does not route through
+  // `runMutation`, so there is no key check to satisfy either.
+  { file: 'src/hooks/useWorkbookLink.ts', fn: 'workbookLink' },
 ];
 
 function sourceFiles(dir: string): readonly string[] {

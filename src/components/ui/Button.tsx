@@ -31,6 +31,28 @@ const SIZES: Record<ButtonSize, string> = {
   lg: 'min-h-[56px] min-w-tap px-6 py-3 text-lg',
 };
 
+/** Everything that is true of every button whatever it is made of. */
+const SURFACE =
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg font-semibold ' +
+  'transition-colors disabled:cursor-not-allowed disabled:opacity-60';
+
+/**
+ * The same surface, for a control that must be an `<a>` rather than a button.
+ *
+ * Navigation is a link. A `<button onClick={window.open}>` loses the middle
+ * click, the context menu, "open in new tab" and the destination on hover, and
+ * a screen reader announces it as a button when it is not one. Exported so
+ * such a link shares ONE definition of the appearance with the real button
+ * instead of a copy that drifts.
+ */
+export function buttonSurface(
+  variant: ButtonVariant = 'secondary',
+  size: ButtonSize = 'md',
+  className?: string,
+): string {
+  return cn(SURFACE, VARIANTS[variant], SIZES[size], className);
+}
+
 /**
  * The one button in the app.
  *
@@ -69,8 +91,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         // the phone form that extra height came straight out of the sticky
         // action bar's share of an 812px screen. Enforced here so every
         // consumer inherits it rather than each remembering.
-        'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg font-semibold',
-        'transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+        SURFACE,
         VARIANTS[variant],
         SIZES[size],
         fullWidth && 'w-full',

@@ -129,6 +129,12 @@ export const FUNCTIONS = {
    * additionally needs `sync.retry`, and the response says which happened.
    */
   schemaVerify: 'schema-verify',
+  /**
+   * Where the operational workbook lives. Returns a URL to a signed-in reader
+   * holding `sample.view`; the spreadsheet id itself never reaches the bundle,
+   * which `scripts/check-bundle-secrets.mjs` enforces by failing the build.
+   */
+  workbookLink: 'workbook-link',
 
   /**
    * The single-purpose endpoints, for callers that want one operation rather
