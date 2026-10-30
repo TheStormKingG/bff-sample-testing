@@ -104,20 +104,28 @@ jobs:
         id: pages
         uses: actions/configure-pages@v5.0.0
 
-      # Vite's `base` must match the path Pages serves from. Prefer what Pages
-      # itself reports (which is '/' for a custom domain and '/<repo>' for a
-      # project site), and fall back to the repository name. Never a hardcoded
-      # slug: that breaks silently when the repository is renamed or forked.
-      - name: Derive the Pages base path
+      # Vite's `base` must match the PUBLIC path the app is served from, which
+      # since the move to bountyfarmltd.com is NOT the path Pages itself serves.
+      #
+      # Pages remains the origin and still publishes at /<repo>/, but every
+      # request arrives through a Cloudflare Worker routed on
+      # bountyfarmltd.com/FeedQualityApp/*, which rewrites that prefix onto the
+      # Pages path. The browser therefore only ever sees /FeedQualityApp/, so
+      # that is what the asset URLs must say. `steps.pages.outputs.base_path`
+      # reports the ORIGIN path and is deliberately not used.
+      #
+      # Read from .github/base-path so this workflow and ci.yml cannot disagree:
+      # the e2e suite runs against the base the deployment uses, and a build
+      # whose base differs from the tested one is the exact failure those specs
+      # exist to catch. tests/basePath.test.ts gates that both read the file.
+      - name: Read the public base path
         run: |
-          base="${{ steps.pages.outputs.base_path }}"
-          if [ -z "$base" ]; then
-            repo="${GITHUB_REPOSITORY#*/}"
-            case "$repo" in
-              *.github.io) base="/" ;;
-              *)           base="/$repo" ;;
-            esac
-          fi
+          base="$(tr -d '[:space:]' < .github/base-path)"
+          if [ -z "$base" ]; then echo "::error::.github/base-path is empty"; exit 1; fi
+          case "$base" in
+            /*) ;;
+            *) echo "::error::base path must start with /: $base"; exit 1 ;;
+          esac
           case "$base" in
             */) ;;
             *) base="$base/" ;;

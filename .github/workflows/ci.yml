@@ -204,14 +204,18 @@ jobs:
 
       # Exercise the subpath the app really ships on. Served from '/', the
       # routing specs would pass while the deployed site 404s — which is the
-      # whole class of bug those specs exist to catch. Derived from the
-      # repository name rather than hardcoded to one slug.
-      - name: Derive the Pages base path
+      # whole class of bug those specs exist to catch.
+      #
+      # Read from .github/base-path, the same file deploy-pages.yml builds
+      # from, so the tested base and the shipped base are one value and not two
+      # that happen to agree today.
+      - name: Read the public base path
         run: |
-          repo="${GITHUB_REPOSITORY#*/}"
-          case "$repo" in
-            *.github.io) base="/" ;;   # a user/organisation site is served from the root
-            *)           base="/$repo/" ;;
+          base="$(tr -d '[:space:]' < .github/base-path)"
+          if [ -z "$base" ]; then echo "::error::.github/base-path is empty"; exit 1; fi
+          case "$base" in
+            */) ;;
+            *) base="$base/" ;;
           esac
           echo "VITE_BASE_PATH=$base" >> "$GITHUB_ENV"
           echo "End-to-end tests will run against base path $base"
