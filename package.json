@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "BFF Sample Testing — digital sample testing and quality records for the Bounty Farm Limited Feed Factory",
+  "description": "BFF Sample Testing \u2014 digital sample testing and quality records for the Bounty Farm Limited Feed Factory",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -27,6 +27,7 @@
     "verify:functions:self-test": "scripts/check-edge-functions.sh --self-test",
     "verify:functions": "scripts/check-edge-functions.sh --all",
     "verify:sql": "scripts/verify-migrations.sh",
+    "verify:dgm-trigger": "scripts/verify-dgm-trigger.sh",
     "verify:rls": "scripts/verify-rls.sh",
     "verify:schema": "python3 scripts/check-frontend-schema.py",
     "verify:uat03": "scripts/verify-uat03-concurrency.sh",
