@@ -169,6 +169,53 @@ function insertedRows(table: string): Array<Record<string, SqlValue>> {
   return rows;
 }
 
+/**
+ * Apply every `update public.<table> set ... where ...` over the inserted rows.
+ *
+ * WHY THIS IS NOT OPTIONAL. `insertedRows` models the seed as its INSERTs, so
+ * a column later changed by an UPDATE was invisible to this whole file: the
+ * registry could be edited, a migration could change the database to match,
+ * and the comparison would go on reading the ORIGINAL seeded value and report
+ * a disagreement that had already been fixed — or, far worse, miss one that
+ * had been introduced. A gate that sees only one of the two ways a row
+ * changes is not a gate.
+ *
+ * FAILS CLOSED. Only the narrow shape actually used is understood:
+ * `set col = literal, ...` with a `where` of `col = literal` joined by `and`.
+ * Anything else — a subquery, an expression, an `or`, a `from` — THROWS,
+ * because silently skipping an UPDATE it could not read would restore exactly
+ * the blindness this function exists to remove.
+ */
+function applyUpdates(table: string, rows: Array<Record<string, SqlValue>>): void {
+  const re = new RegExp(`update\\s+public\\.${table}\\s+set\\s`, 'gi');
+  for (const match of SQL.matchAll(re)) {
+    const end = SQL.indexOf(';', match.index!);
+    if (end === -1) throw new Error(`unterminated update of ${table}`);
+    const statement = SQL.slice(match.index! + match[0].length, end);
+    const [setPart, wherePart] = statement.split(/\swhere\s/i);
+    if (setPart === undefined || wherePart === undefined) {
+      throw new Error(`update of ${table} has no WHERE; refusing to guess its scope`);
+    }
+    if (/\b(from|select|or)\b/i.test(wherePart)) {
+      throw new Error(
+        `update of ${table} uses a WHERE this parser cannot read: ${wherePart.trim()}`,
+      );
+    }
+    const assignment = (text: string): [string, SqlValue] => {
+      const at = text.indexOf('=');
+      if (at === -1) throw new Error(`unreadable assignment in update of ${table}: ${text}`);
+      return [text.slice(0, at).trim(), parseValue(text.slice(at + 1).trim())];
+    };
+    const sets = splitTopLevel(setPart).map(assignment);
+    const conditions = wherePart.split(/\sand\s/i).map(assignment);
+    for (const row of rows) {
+      const matches = conditions.every(([col, want]) => row[col] === want);
+      if (!matches) continue;
+      for (const [col, value] of sets) row[col] = value;
+    }
+  }
+}
+
 /** Enum labels, from the CREATE plus every later ADD VALUE. */
 function stageEnumLabels(): string[] {
   const labels: string[] = [];
@@ -182,6 +229,10 @@ function stageEnumLabels(): string[] {
 }
 
 const STAGE_FIELD_ROWS = insertedRows('stage_fields');
+// The seed is its INSERTs PLUS every later UPDATE. Without this the file
+// compares the registry against a database state that stopped being true the
+// first time a migration corrected a seeded column.
+applyUpdates('stage_fields', STAGE_FIELD_ROWS);
 const STAGE_DEFINITION_ROWS = insertedRows('stage_definitions');
 const PREFIX_ROWS = insertedRows('sample_prefixes');
 
@@ -223,6 +274,22 @@ describe('the instrument works before anything it says is believed', () => {
       (r) => r['stage'] === 'dgm' && r['field_key'] === 'dgm_um',
     );
     expect(micro?.['sheet_header']).toBe('DGM (µm)');
+  });
+});
+
+describe('INSTRUMENT: the update applier is not a no-op', () => {
+  it('reads a column through a later migration that changed it', () => {
+    // 0025 seeded dgm.mill_hz_position as free text; 0027 made it numeric.
+    // If applyUpdates silently did nothing, every comparison in this file
+    // would be against the superseded seed — which still LOOKS like a
+    // thorough check, and is the exact failure mode this file was written to
+    // remove from the project.
+    const row = STAGE_FIELD_ROWS.find(
+      (r) => r['stage'] === 'dgm' && r['field_key'] === 'mill_hz_position',
+    );
+    expect(row, 'the dgm shaker-frequency row is missing entirely').toBeDefined();
+    expect(row?.['field_type'], 'the UPDATE in 0027 was not applied').toBe('number');
+    expect(row?.['unit']).toBe('Hz');
   });
 });
 

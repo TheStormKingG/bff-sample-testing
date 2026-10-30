@@ -7,6 +7,7 @@ import { formatPlantDateTimeLabelled } from '@/lib/time';
 import { CAPTURE_STATE_LABELS, type CaptureState } from '@/lib/workflow';
 import { SHEET_SYNC_LABELS, type SheetSyncState } from './saveState';
 import { DerivedResultsTable } from './DerivedResultsTable';
+import { ParticleSizeChart } from './ParticleSizeChart';
 
 export interface RegistrationConfirmationProps {
   readonly stage: Stage;
@@ -23,6 +24,13 @@ export interface RegistrationConfirmationProps {
    * navigating away from the screen that tells them to write the ID on the bag.
    */
   readonly derived?: Readonly<Record<string, string>>;
+  /**
+   * What the operator submitted. Used ONLY to draw the distribution, which is
+   * recomputed from the masses rather than stored — see `ParticleSizeChart`.
+   * The figures in the table above it are the server's and are never
+   * recomputed here.
+   */
+  readonly submittedValues?: Readonly<Record<string, string>>;
   /** Continue to results entry, when the actor may enter them. */
   readonly onEnterResults?: () => void;
   readonly onRegisterAnother?: () => void;
@@ -54,6 +62,7 @@ export function RegistrationConfirmation({
   captureState,
   sheetSync = 'pending',
   derived,
+  submittedValues,
   onEnterResults,
   onRegisterAnother,
   onDone,
@@ -161,6 +170,10 @@ export function RegistrationConfirmation({
 
         {derived !== undefined && Object.keys(derived).length > 0 && (
           <DerivedResultsTable stage={stage} derived={derived} className="mt-5" />
+        )}
+
+        {submittedValues !== undefined && (
+          <ParticleSizeChart values={submittedValues} className="mt-6" />
         )}
 
         <div className="mt-5 flex flex-wrap gap-2">

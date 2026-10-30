@@ -26,9 +26,10 @@ export function NumberField({
   error,
   control,
   disabled,
+  compact,
 }: FieldInputProps): JSX.Element {
   return (
-    <FieldShell field={field} ids={ids} required={required} error={error}>
+    <FieldShell field={field} ids={ids} required={required} error={error} compact={compact}>
       <input
         {...control}
         id={ids.input}

@@ -25,4 +25,6 @@ export interface FieldInputProps {
    * operator's text through React.
    */
   readonly currentValue: string;
+  /** Render for a grid cell: see `FieldShell`'s `compact`. */
+  readonly compact?: boolean;
 }

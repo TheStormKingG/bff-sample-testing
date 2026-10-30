@@ -18,6 +18,8 @@ export interface FieldRendererProps {
   readonly control: UseFormRegisterReturn;
   readonly disabled: boolean;
   readonly currentValue: string;
+  /** Render for a grid cell: label present but visually hidden. */
+  readonly compact?: boolean;
 }
 
 /**
@@ -37,6 +39,7 @@ export function FieldRenderer({
   control,
   disabled,
   currentValue,
+  compact = false,
 }: FieldRendererProps): JSX.Element | null {
   const props: FieldInputProps = {
     field,
@@ -46,6 +49,7 @@ export function FieldRenderer({
     control,
     disabled,
     currentValue,
+    compact,
   };
 
   switch (field.type) {

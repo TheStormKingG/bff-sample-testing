@@ -47,6 +47,13 @@ export function emptyStageValues(stage: Stage): StageFormValues {
  */
 export function defaultStageValues(stage: Stage, now: Date = new Date()): StageFormValues {
   const values = emptyStageValues(stage);
+  // Registry-declared starting points, before the clock. Only on a NEW form:
+  // `hydrateStageValues` merges a stored record over this, so a value an
+  // operator cleared stays cleared.
+  for (const field of STAGE_SCHEMAS[stage].fields) {
+    if (field.type === 'system') continue;
+    if (field.defaultValue !== undefined) values[field.key] = field.defaultValue;
+  }
   const { date, time } = toPlantParts(now);
   if ('collection_date' in values) values['collection_date'] = date;
   if ('collection_time' in values) values['collection_time'] = time;

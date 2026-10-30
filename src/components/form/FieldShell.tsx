@@ -43,6 +43,19 @@ export interface FieldShellProps {
   readonly error: string | undefined;
   /** The input, select or textarea itself. */
   readonly children: ReactNode;
+  /**
+   * Lay the field out for a table cell: no visible label, no help text, no
+   * vertical padding — the surrounding grid supplies all three in its column
+   * headers and row headings.
+   *
+   * THE LABEL IS STILL RENDERED, as `sr-only`. A grid's column header is not
+   * programmatically associated with the inputs beneath it, so deleting the
+   * `<label>` would leave fourteen boxes a screen-reader user hears as
+   * "edit text" with no way to tell the empty-sieve column from the
+   * sieve-plus-sample one. Hiding it visually costs a sighted operator
+   * nothing and keeps the accessible name exact.
+   */
+  readonly compact?: boolean;
 }
 
 /**
@@ -118,7 +131,32 @@ export function FieldShell({
   required,
   error,
   children,
+  compact = false,
 }: FieldShellProps): JSX.Element {
+  if (compact) {
+    return (
+      <div>
+        {/* Exactly the label, nothing appended: requiredness is already on
+            the input as `aria-required`, and repeating it here would make the
+            accessible name differ from the visible one for no gain. */}
+        <label htmlFor={ids.input} className="sr-only">
+          {field.label}
+        </label>
+        {/* The unit note still has to exist: `describedBy` points at its id
+            for any field whose unit is unconfirmed, and an aria-describedby
+            aiming at a missing element announces nothing at all. */}
+        <UnitNote field={field} id={ids.unitNote} />
+        {children}
+        {error !== undefined ? (
+          <p id={ids.error} className="mt-1 text-xs font-semibold text-red-800">
+            <span className="sr-only">Problem: </span>
+            {error}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className="py-3">
       <label htmlFor={ids.input} className={labelClass(error !== undefined)}>

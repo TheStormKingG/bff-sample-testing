@@ -1234,34 +1234,57 @@ const dgm: StageSchema = {
     {
       key: 'mill_rpm',
       columnLetter: 'G',
+      // The header is the workbook's and stays until the sheet is re-headed;
+      // the LABEL is what the operator reads, and the two are allowed to
+      // differ. This column has only ever held one kind of number.
       sheetHeader: 'Mill RPM',
-      label: 'Mill RPM',
+      label: 'Durability tester RPM',
       type: 'number',
       section: 'settings',
       required: 'optional',
       min: 0,
       implausibleAbove: 10000,
       decimals: 0,
-      help: 'The mill speed when the product was made, if it is known.',
+      // Deliberately NOT made conditional on a separate yes/no column. A
+      // filled RPM already means "the Particle Durability Tester was used"
+      // and a blank one means it was not, so the record answers the question
+      // without a second field that could contradict it.
+      help:
+        'Only when the Particle Durability Tester was used: the drum speed for that run. ' +
+        'Leave blank for an ordinary sieve test.',
     },
     {
       key: 'mill_hz_position',
       columnLetter: 'H',
       sheetHeader: 'Mill Hz or position',
-      label: 'Mill Hz or position',
-      type: 'text',
+      label: 'Sieve shaker frequency',
+      type: 'number',
+      unit: 'Hz',
       section: 'settings',
       required: 'optional',
-      help: 'The source sheet records either a frequency or a position setting here.',
+      min: 0,
+      implausibleAbove: 200,
+      decimals: 0,
+      defaultValue: '8',
+      help: 'The frequency the sieve stack was shaken at. 8 Hz unless the method says otherwise.',
     },
     {
       key: 'grind_time',
       columnLetter: 'I',
       sheetHeader: 'Grind time',
-      label: 'Grind time',
-      type: 'text',
+      // NOT grind time, whatever the column is called. This is how long the
+      // stack ran in the vibrator, which is a property of the sieve test and
+      // not of how the product was made.
+      label: 'Vibration time',
+      type: 'number',
+      unit: 'min',
       section: 'settings',
       required: 'optional',
+      min: 0,
+      implausibleAbove: 240,
+      decimals: 0,
+      defaultValue: '10',
+      help: 'How long the sieve stack ran in the vibrator. 10 minutes unless the method says otherwise.',
     },
     {
       key: 'sieve_series',

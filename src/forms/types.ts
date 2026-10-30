@@ -127,6 +127,24 @@ export interface FieldDef {
 
   /** Inline help. Taken verbatim from the workbook `Read me` tab where available. */
   readonly help?: string;
+
+  /**
+   * What a BLANK NEW form starts this field at. Always a string, because form
+   * state is strings all the way to the server.
+   *
+   * For settings an operator changes rarely and re-types every time: the
+   * sieve shaker runs at 8 Hz for 10 minutes on almost every test, so making
+   * that the starting point removes two keystrokes from each record while
+   * leaving both fully editable.
+   *
+   * SEEDED ONLY ON A NEW FORM, by `defaultStageValues`. Reopening a stored
+   * record never applies it: a value an operator deliberately cleared must
+   * stay cleared, and a default re-appearing on a saved record would be the
+   * system quietly asserting a setting nobody used. Never put a default on a
+   * field that records a MEASUREMENT — a pre-filled reading is a reading
+   * nobody took.
+   */
+  readonly defaultValue?: string;
   readonly placeholder?: string;
 
   /**

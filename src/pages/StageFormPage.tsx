@@ -312,6 +312,7 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
         // queued. Only one value may ever be upgraded to "confirmed".
         sheetSync={isSheetConfirmed(result.sheetSync) ? 'confirmed' : 'pending'}
         derived={result.derived}
+        submittedValues={submittedText.current}
         onEnterResults={
           can('sample.enter_results')
             ? () => navigate(`/samples/${result.sampleUuid}`)

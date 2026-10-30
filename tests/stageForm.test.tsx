@@ -215,8 +215,13 @@ describe('StageForm — section bands', () => {
       );
 
       for (const field of editableFields(stage, values)) {
+        // Matched on the LABEL, not on a span. A field laid out in a grid
+        // cell renders its label `sr-only` and without the span wrapper the
+        // stacked layout uses, so a span selector silently stopped seeing the
+        // fourteen sieve masses — while the label, and the association that
+        // actually matters, were still there.
         expect(
-          screen.getAllByText(field.label, { selector: 'span' }).length,
+          screen.getAllByText(field.label, { selector: 'span, label' }).length,
           `"${field.label}" on ${stage}`,
         ).toBe(1);
         checked += 1;

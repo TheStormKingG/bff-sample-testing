@@ -25,11 +25,18 @@
 -- stage, and no gate reads it. Two independent review lenses found it; nothing
 -- mechanical did.
 --
--- NO BACKFILL. `select count(*) from samples where stage = 'dgm'` is 0: the
--- stage went live today and the end-to-end registration was deliberately not
--- run. If any DGM sample had been registered before this migration, its two
--- projection columns would need rebuilding from its measurements, and this
--- file would carry that update.
+-- BACKFILL. A DGM sample WAS registered before this migration -- the live
+-- end-to-end verification -- so at least one record already carries the NULL
+-- the missing arms produced. The fix to the function does nothing for a row
+-- already written, so the two columns are rebuilt from `sample_measurements`,
+-- which is the authoritative per-column store and holds both values
+-- correctly: `apply_submitted_values` wrote them there from the same payload
+-- the CASE ignored.
+--
+-- The update is narrow on purpose. Only `stage = 'dgm'`, only where the
+-- column is still NULL, so it cannot touch a record an operator later
+-- corrected by hand, and cannot touch the seven stages that were never
+-- affected.
 --
 -- The function below is 0013's definition verbatim, with two lines added. It
 -- is reproduced in full because Postgres replaces a function wholesale, and
@@ -286,6 +293,45 @@ begin
   from public.samples s where s.id = v_uuid;
 end;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Backfill: records written while the arms were missing.
+-- ---------------------------------------------------------------------------
+update public.samples s
+   set feed_type_label = m.text_value
+  from public.sample_measurements m
+ where m.sample_uuid = s.id
+   and m.field_key   = 'feed_type'
+   and s.stage       = 'dgm'
+   and s.feed_type_label is null
+   and m.text_value  is not null;
+
+update public.samples s
+   set source_reference = m.text_value
+  from public.sample_measurements m
+ where m.sample_uuid = s.id
+   and m.field_key   = 'batch_no'
+   and s.stage       = 'dgm'
+   and s.source_reference is null
+   and m.text_value  is not null;
+
+-- Report what moved, so a run on a database with no such rows is visibly a
+-- no-op rather than an unexamined success.
+do $$
+declare n_blank int;
+begin
+  select count(*) into n_blank
+    from public.samples
+   where stage = 'dgm'
+     and (feed_type_label is null or source_reference is null);
+  if n_blank > 0 then
+    raise notice
+      'DGM samples still missing a projection value: % (expected only where the '
+      'measurement itself is absent)', n_blank;
+  else
+    raise notice 'Every DGM sample now carries both projection values.';
+  end if;
+end $$;
 
 -- The ACL went with the dropped function. These two statements are 0013's,
 -- unchanged, and they are what keeps registration working at all.

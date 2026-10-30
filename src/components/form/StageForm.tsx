@@ -71,6 +71,7 @@ import {
 
 import { ErrorSummary, type SummarisedError } from './ErrorSummary';
 import { FieldRenderer } from './FieldRenderer';
+import { SieveGrid, isSieveMassField } from './SieveGrid';
 import { fieldIds } from './FieldShell';
 import { FormSection } from './FormSection';
 import { ImplausibleValueDialog } from './ImplausibleValueDialog';
@@ -592,18 +593,45 @@ export function StageForm({
             errorCount={errorCountIn(section)}
             fieldCount={sectionFields.length}
           >
-            {sectionFields.map((field) => (
-              <FieldRenderer
-                key={field.key}
-                field={field}
-                idPrefix={prefix}
-                required={required.has(field.key)}
-                error={errorFor(field.key)}
-                control={register(field.key)}
-                disabled={busy}
-                currentValue={values[field.key] ?? ''}
+            {/*
+              Sieve masses are seven PAIRS and are laid out as a table; every
+              other field keeps the one-per-row form. The inputs are identical
+              either way — `SieveGrid` arranges `FieldRenderer`s, it does not
+              replace them — so error routing, `revealField` and the per-section
+              error count go on finding these fields by key.
+            */}
+            {sectionFields
+              .filter((field) => !isSieveMassField(field))
+              .map((field) => (
+                <FieldRenderer
+                  key={field.key}
+                  field={field}
+                  idPrefix={prefix}
+                  required={required.has(field.key)}
+                  error={errorFor(field.key)}
+                  control={register(field.key)}
+                  disabled={busy}
+                  currentValue={values[field.key] ?? ''}
+                />
+              ))}
+            {sectionFields.some(isSieveMassField) ? (
+              <SieveGrid
+                fields={sectionFields.filter(isSieveMassField)}
+                presetId={values['sieve_series'] ?? ''}
+                renderField={(field) => (
+                  <FieldRenderer
+                    field={field}
+                    idPrefix={prefix}
+                    required={required.has(field.key)}
+                    error={errorFor(field.key)}
+                    control={register(field.key)}
+                    disabled={busy}
+                    currentValue={values[field.key] ?? ''}
+                    compact
+                  />
+                )}
               />
-            ))}
+            ) : null}
           </FormSection>
         );
       })}
