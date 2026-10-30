@@ -71,6 +71,26 @@ describe('the public base path', () => {
     expect(html).not.toMatch(/location\.hostname\s*!==/);
   });
 
+  it('the committed Worker source agrees with the base path and the origin', () => {
+    // The Worker is the only piece of this path that lives outside the
+    // repository: Cloudflare serves what is in its own editor, and this file
+    // is a copy kept for review and recovery. It cannot prove what Cloudflare
+    // is running, but it can catch the drift that breaks the site — a PREFIX
+    // that no longer matches the base the app is built for, which yields a
+    // blank page and no error anywhere.
+    const worker = read('infra/cloudflare/feed-quality-app.worker.js');
+    const prefix = /const PREFIX = '([^']+)'/.exec(worker)?.[1];
+    expect(prefix, 'the Worker declares no PREFIX').toBeDefined();
+    // base is '/FeedQualityApp/', the Worker prefix is '/FeedQualityApp'.
+    expect(`${prefix}/`).toBe(base);
+
+    const origin = /const ORIGIN = '([^']+)'/.exec(worker)?.[1] ?? '';
+    expect(origin.startsWith('https://'), 'the Worker origin must be https').toBe(true);
+    expect(origin.endsWith('/'), 'the origin must not end in a slash; it is concatenated').toBe(
+      false,
+    );
+  });
+
   it('POSITIVE CONTROL: the workflow check can fail', () => {
     const fake = 'run: |\n  base="/$repo/"\n';
     expect(fake).toMatch(/base="\/\$repo/);
