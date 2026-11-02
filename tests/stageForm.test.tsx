@@ -250,11 +250,12 @@ describe('StageForm — section bands', () => {
       0,
     );
     // 98 across the original seven tabs plus 35 for `8 DGM`.
-    expect(columns).toBe(133);
-    // Was 7 — one column A per stage. Now 17: eight column As, plus DGM's nine
-    // server-computed columns, which are `system` precisely so they never
-    // render as an operator input.
-    expect(systemColumns).toBe(17);
+    expect(columns).toBe(209);
+    // Was 7 — one column A per stage. Then 17, when DGM added nine
+    // server-computed columns. Now 44: eight column As, plus nine computed
+    // columns on each of the FOUR tabs that carry a sieve test. All of them
+    // are `system` precisely so they never render as an operator input.
+    expect(systemColumns).toBe(8 + 9 * 4);
     expect(notApplicable).toBe(1);
     expect(checked).toBe(columns - systemColumns - notApplicable);
   });
@@ -344,12 +345,20 @@ describe('StageForm — units', () => {
   });
 
   it('shows no unit for a dimensionless column', () => {
-    // GSD has no unit by definition and the workbook `Limits` unit cell is
-    // blank, so inventing one would be a fabricated technical fact.
+    // The durability tester's drum speed states its own unit in its name, so
+    // the registry gives it none; inventing one in the badge would be a
+    // fabricated technical fact, and flagging its absence would be worse.
+    //
+    // This stood on `size_spread_gsd` until the sieve test replaced it. The
+    // quantity still exists — as the computed `gsd` column, which is equally
+    // dimensionless — but a `system` column never renders as an input, so it
+    // cannot carry this assertion.
     const values = { ...defaultStageValues('ground'), sampling_point: 'BC' };
     renderStage('ground', values);
 
-    const gsd = STAGE_SCHEMAS.ground.fields.find((field) => field.key === 'size_spread_gsd');
+    const gsd = STAGE_SCHEMAS.ground.fields.find(
+      (field) => field.key === 'durability_tester_rpm',
+    );
     expect(gsd?.unit).toBeUndefined();
     expect(gsd?.unitConfirmed).toBeUndefined();
     // The label is the label and nothing else: no invented unit, and no

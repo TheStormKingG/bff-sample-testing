@@ -207,11 +207,29 @@ describe('a sample on which nothing was retained', () => {
 });
 
 describe('stages with nothing to calculate', () => {
-  it.each(STAGES.filter((s) => s !== 'dgm'))('renders nothing for %s', (stage) => {
+  it.each(STAGES)('renders nothing for %s when nothing was computed', (stage) => {
     // Returning null rather than an empty card: a heading reading "Calculated
-    // results" over no rows would suggest a calculation that failed.
+    // results" over nine rows of "Not calculated" asserts a calculation that
+    // reads as a failure, when in fact none was attempted.
+    //
+    // Now EVERY stage, not just the four without computed columns. `2 Ground`,
+    // `6 Crumble` and `7 Mash` gained the sieve test with OPTIONAL weights, so
+    // a sample registered at the mill before the lab has run the test is the
+    // ordinary case on three of the eight tabs rather than an impossible one.
     const { container } = render(<DerivedResultsTable stage={stage} derived={{}} />);
     expect(container.firstChild).toBeNull();
+  });
+
+  it('still renders for a sieve tab once one figure exists', () => {
+    // The boundary: one computed value is enough, on a stage whose other
+    // eight are undefined. Without this the rule above could be satisfied by
+    // a component that never renders for these stages at all.
+    const { container } = render(
+      <DerivedResultsTable stage="ground" derived={{ total_retained_g: '0.00' }} />,
+    );
+    expect(container.firstChild).not.toBeNull();
+    expect(screen.getByText('Total retained')).toBeInTheDocument();
+    expect(screen.getAllByText('Not calculated')).toHaveLength(7);
   });
 
   it('POSITIVE CONTROL: it does render something for dgm', () => {

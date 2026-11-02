@@ -622,16 +622,21 @@ describe('the schema is generated, not hand-written per stage', () => {
       expect(new Set(actualKeys).size, stage).toBe(actualKeys.length);
       for (const key of expectedKeys) expect(actualKeys, `${stage} missing ${key}`).toContain(key);
     }
-    // 47 number fields + 8 controlled-code fields across the eight tabs.
-    // The 47 went up by two when DGM's shaker frequency and vibration time
-    // stopped being free text (migration 0027).
-    // The 8 are: raw materials `material`, `mould_seen`, `insects_seen`,
-    // `foreign_matter_seen`, `bad_smell`; ground `sampling_point` and
-    // `mill_screen_size_mm`; DGM `sieve_series`. No other tab has a select or
-    // yes/no column.
+    // 93 number fields + 11 controlled-code fields across the eight tabs.
+    //
+    // The numbers were 47 before the sieve test moved onto `2 Ground`,
+    // `6 Crumble` and `7 Mash`: each tab gained 17 numeric sieve columns and
+    // shed its analyser-reading ones (two on Ground and Mash, one on Crumble,
+    // which never had a GSD column), for +46.
+    //
+    // The controlled codes were 8: raw materials `material`, `mould_seen`,
+    // `insects_seen`, `foreign_matter_seen`, `bad_smell`; ground
+    // `sampling_point` and `mill_screen_size_mm`; DGM `sieve_series`. They are
+    // 11 now because `sieve_series` is a select and three more tabs carry one.
+    //
     // Asserted so that a registry change dropping fields out of the sweep
     // fails here rather than passing quietly with less coverage than claimed.
-    expect(checked).toBe(55);
+    expect(checked).toBe(93 + 11);
   });
 
   it('never emits a key the registry does not define for the stage', () => {

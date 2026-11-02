@@ -39,6 +39,25 @@ export function DerivedResultsTable({
   const rows = schema.fields.filter((f) => f.type === 'system' && f.key !== 'sample_id');
   if (rows.length === 0) return null;
 
+  /*
+    Nothing computed at all means nothing to show, even on a tab that HAS
+    computed columns.
+
+    This became load-bearing when the sieve test moved onto `2 Ground`,
+    `6 Crumble` and `7 Mash`, where the weights are optional: a sample
+    registered at the mill before the lab has run the test carries no weights
+    and therefore no results. Without this, every such record would show a
+    "Calculated results" card listing nine rows of "Not calculated" — a
+    heading asserting a calculation over an answer that reads as a failure,
+    for a test nobody has run yet.
+
+    An all-zero weighing is NOT this case and still renders: `total_retained_g`
+    comes back as "0.00", which is a measurement, so the map is not empty.
+    The emptiness tested here is the absence of any computation, not the
+    absence of an answer from one.
+  */
+  if (rows.every((field) => (derived[field.key] ?? '').trim() === '')) return null;
+
   // `gsd_basis` is shown as a footnote rather than a row: it is provenance for
   // the figure above it, not a result in its own right, and a row reading
   // "GSD basis — series-ratio-top-bound/pan-excluded" in a results table reads

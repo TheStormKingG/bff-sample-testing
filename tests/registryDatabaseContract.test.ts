@@ -216,6 +216,52 @@ function applyUpdates(table: string, rows: Array<Record<string, SqlValue>>): voi
   }
 }
 
+/**
+ * Apply every `delete from public.<table> where ...` over the inserted rows.
+ *
+ * WHY THIS IS NOT OPTIONAL, for exactly the reason `applyUpdates` is not. The
+ * seed is its INSERTs, its UPDATEs **and its DELETEs**: migration 0029
+ * removes five `stage_fields` rows when the sieve test replaces the typed-in
+ * particle-size columns on three tabs. Without this, those five rows stay in
+ * the model forever and "seeds no column the registry does not declare" fails
+ * against a database state that stopped being true — reporting a stale seed
+ * that is not stale, and, far worse, concealing a genuinely stale one behind
+ * the noise.
+ *
+ * FAILS CLOSED in the same way: only `where col = literal [and ...]` is
+ * understood, and anything else THROWS rather than being skipped. A DELETE
+ * this parser quietly ignored would leave rows in the model that the database
+ * no longer has, which is the blindness it exists to remove.
+ */
+function applyDeletes(table: string, rows: Array<Record<string, SqlValue>>): void {
+  // Anchored at the start of a line, so the word "delete" inside a migration
+  // comment is not read as a statement.
+  const re = new RegExp(`(?:^|\\n)[ \\t]*delete\\s+from\\s+public\\.${table}\\b`, 'gi');
+  for (const match of SQL.matchAll(re)) {
+    const end = SQL.indexOf(';', match.index!);
+    if (end === -1) throw new Error(`unterminated delete from ${table}`);
+    const statement = SQL.slice(match.index! + match[0].length, end);
+    const split = statement.split(/\bwhere\b/i);
+    const wherePart = split[1];
+    if (wherePart === undefined) {
+      throw new Error(`delete from ${table} has no WHERE; refusing to guess its scope`);
+    }
+    if (/\b(from|select|or|in)\b/i.test(wherePart)) {
+      throw new Error(
+        `delete from ${table} uses a WHERE this parser cannot read: ${wherePart.trim()}`,
+      );
+    }
+    const conditions = wherePart.split(/\sand\s/i).map((text) => {
+      const at = text.indexOf('=');
+      if (at === -1) throw new Error(`unreadable condition in delete from ${table}: ${text}`);
+      return [text.slice(0, at).trim(), parseValue(text.slice(at + 1).trim())] as const;
+    });
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (conditions.every(([col, want]) => rows[i]![col] === want)) rows.splice(i, 1);
+    }
+  }
+}
+
 /** Enum labels, from the CREATE plus every later ADD VALUE. */
 function stageEnumLabels(): string[] {
   const labels: string[] = [];
@@ -229,11 +275,27 @@ function stageEnumLabels(): string[] {
 }
 
 const STAGE_FIELD_ROWS = insertedRows('stage_fields');
-// The seed is its INSERTs PLUS every later UPDATE. Without this the file
-// compares the registry against a database state that stopped being true the
-// first time a migration corrected a seeded column.
+// The seed is its INSERTs PLUS every later UPDATE and DELETE. Without these
+// the file compares the registry against a database state that stopped being
+// true the first time a migration corrected or removed a seeded column.
+//
+// DELETES LAST, and that order is load-bearing: 0029 deletes
+// `ground.avg_particle_size_um` and then inserts twenty-seven new ground
+// columns. `insertedRows` has already flattened every INSERT in the corpus
+// into one list with no notion of when each ran, so a delete applied before
+// the model held those inserts would still be correct here — but an UPDATE
+// applied after a delete would silently match nothing where the real database
+// had already moved the row. Running updates over the full set and then
+// removing the deleted rows models the end state either way round.
 applyUpdates('stage_fields', STAGE_FIELD_ROWS);
+applyDeletes('stage_fields', STAGE_FIELD_ROWS);
 const STAGE_DEFINITION_ROWS = insertedRows('stage_definitions');
+// Same reasoning as `stage_fields`, and it became load-bearing with 0029:
+// that migration widens three tabs by UPDATING `last_column` and
+// `column_count` rather than by re-seeding the row. Until this line existed
+// the file read the 0002 values and reported a drift that had been fixed.
+applyUpdates('stage_definitions', STAGE_DEFINITION_ROWS);
+applyDeletes('stage_definitions', STAGE_DEFINITION_ROWS);
 const PREFIX_ROWS = insertedRows('sample_prefixes');
 
 describe('the instrument works before anything it says is believed', () => {
@@ -247,9 +309,13 @@ describe('the instrument works before anything it says is believed', () => {
   });
 
   it('parsed every seeded column row, not some of them', () => {
-    // 98 across the original seven tabs + 35 for DGM. Stated as the sum so a
-    // change names which side moved.
-    expect(STAGE_FIELD_ROWS).toHaveLength(133);
+    // 209: 98 across the original seven tabs, + 35 for DGM, + 81 inserted and
+    // 5 deleted by 0029 when the sieve test moved onto three of those seven.
+    // Stated as the arithmetic so a change names which side moved — and it is
+    // also the positive control for `applyDeletes`, since a parser that read
+    // no DELETEs would land on 214.
+    expect(98 + 35 + 81 - 5).toBe(209);
+    expect(STAGE_FIELD_ROWS).toHaveLength(209);
     expect(STAGE_DEFINITION_ROWS).toHaveLength(8);
     expect(PREFIX_ROWS).toHaveLength(9);
   });
@@ -325,19 +391,42 @@ describe('stage_definitions matches the registry, field for field', () => {
   });
 });
 
+/** `'A'` -> 0, `'AN'` -> 39. Local, so the gate does not borrow the
+ * implementation it is checking the seed against. */
+function columnIndex(letter: string): number {
+  let index = 0;
+  for (const char of letter) index = index * 26 + (char.charCodeAt(0) - 64);
+  return index - 1;
+}
+
 describe('stage_fields matches the registry, column for column', () => {
   it.each(STAGES)('%s: the same columns, in the same order', (stage: Stage) => {
     const seeded = STAGE_FIELD_ROWS.filter((r) => r['stage'] === stage);
     const schema = STAGE_SCHEMAS[stage];
 
-    // Order matters and is asserted: `toSheetRow` places cells by their INDEX
-    // in `schema.fields`, not by `columnLetter`, so a field in the wrong
-    // position writes to the wrong cell with no error anywhere.
+    // Compared in COLUMN order, not in the order the INSERT statements happen
+    // to appear in. The two were the same until 0029, which adds columns to
+    // the middle of three tabs that 0002 had already seeded — the new rows
+    // are appended to the file and belong in the middle of the tab, so the
+    // statement order stopped being the column order and never meant anything
+    // at runtime anyway. `toSheetRow` places cells by their index in
+    // `schema.fields`, which is the REGISTRY's order; nothing reads the order
+    // of rows in a migration.
+    //
+    // What the assertion is actually for survives intact, and is what the two
+    // lines below check: the seed holds a row for every column the registry
+    // declares and no other, and each sits at the letter the registry gives
+    // it. A field in the wrong position still fails, because its letter would
+    // then disagree.
+    const byColumn = [...seeded].sort(
+      (a, b) =>
+        columnIndex(String(a['column_letter'])) - columnIndex(String(b['column_letter'])),
+    );
     expect(
-      seeded.map((r) => String(r['column_letter'])),
+      byColumn.map((r) => String(r['column_letter'])),
       `${stage}: seeded column letters`,
     ).toEqual(schema.fields.map((f) => f.columnLetter));
-    expect(seeded.map((r) => String(r['field_key']))).toEqual(schema.fields.map((f) => f.key));
+    expect(byColumn.map((r) => String(r['field_key']))).toEqual(schema.fields.map((f) => f.key));
   });
 
   it.each(STAGES)('%s: every property of every column agrees', (stage: Stage) => {

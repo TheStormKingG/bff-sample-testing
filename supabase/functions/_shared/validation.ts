@@ -421,28 +421,51 @@ export function validateStagePayload(args: ValidateArgs): ValidationResult {
     };
   }
 
-  //    A stage that HAS computed columns and produced NONE of them is not an
-  //    empty result; it is a payload that did not carry the inputs, and it
-  //    must never be allowed to serialise.
+  //    A stage that HAS computed columns and produced NONE of them is USUALLY
+  //    not an empty result; it is a payload that did not carry the inputs,
+  //    and such a payload must never be allowed to serialise.
   //
-  //    THE DATA-LOSS PATH THIS CLOSES. `deriveDgm` returns `{}` when a mass
-  //    key is absent, on the reasoning that requiredness has already run so
-  //    the only way to arrive incomplete is a phase that does not require the
-  //    masses. That phase exists: `fieldsRequiredAt` matches `required ===
-  //    phase` EXACTLY, not cumulatively, and every DGM field is
-  //    `required: 'registration'` — so at phase 'testing', which
+  //    THE DATA-LOSS PATH THIS CLOSES. `deriveSieveTest` returns `{}` when a
+  //    mass key is absent, on the reasoning that requiredness has already run
+  //    so the only way to arrive incomplete is a phase that does not require
+  //    the masses. That phase exists: `fieldsRequiredAt` matches `required ===
+  //    phase` EXACTLY, not cumulatively, so at phase 'testing', which
   //    `update-results` validates at, NOTHING is required and `{}` is a valid
-  //    payload. The row then serialises with Y..AG all blank, reaches
-  //    `enqueue_sheet_sync_event`, and `tg_record_derived_results` reads each
-  //    blank cell as "the computation had no answer" and DELETES the stored
-  //    result. Every calculated figure for that sample would be destroyed by
-  //    a call that supplied no figures at all, and the spreadsheet row would
-  //    be overwritten with blanks.
+  //    payload. The row then serialises with every computed cell blank,
+  //    reaches `enqueue_sheet_sync_event`, and `tg_record_derived_results`
+  //    reads each blank cell as "the computation had no answer" and DELETES
+  //    the stored result. Every calculated figure for that sample would be
+  //    destroyed by a call that supplied no figures at all, and the
+  //    spreadsheet row would be overwritten with blanks.
   //
   //    The trigger's blank-is-absence rule is right and stays: a genuine
   //    all-zero weighing really does blank seven of the nine cells. What was
   //    missing is that only a payload carrying the inputs may say so.
-  if (hasDerivedColumns(args.stage) && Object.keys(derived).length === 0) {
+  //
+  //    THE ONE CASE THAT IS LEGITIMATELY EMPTY, and why the rule is not just
+  //    "never empty". `2 Ground`, `6 Crumble` and `7 Mash` carry the sieve
+  //    test alongside their other columns, and their masses are `optional`:
+  //    the sample is taken at the mill and registered there, while the test
+  //    happens later in the lab. A registration with no weights is therefore
+  //    a NORMAL record, not a broken one, and there is nothing stored yet for
+  //    a blank cell to erase.
+  //
+  //    So the refusal is narrowed to the two shapes that are still wrong:
+  //      * a payload carrying SOME weights but not enough to compute — a
+  //        half-finished weighing, which would otherwise register silently
+  //        with nine blank columns beside six filled ones; and
+  //      * any payload at a phase OTHER than registration, which is by
+  //        definition an update to a record that may already hold figures.
+  //    `8 DGM` is unchanged by this: its masses are `registration`-required,
+  //    so a registration always carries them and every other phase is
+  //    refused exactly as before.
+  const sieveMassKeys = STAGE_SCHEMAS[args.stage].fields
+    .filter((field) => /^sieve\d+_(tare|gross)_g$/.test(field.key))
+    .map((field) => field.key);
+  const carriesSomeMass = sieveMassKeys.some((key) => clean[key] !== undefined);
+  const mayBeLegitimatelyEmpty = args.phase === 'registration' && !carriesSomeMass;
+
+  if (hasDerivedColumns(args.stage) && Object.keys(derived).length === 0 && !mayBeLegitimatelyEmpty) {
     return {
       ok: false,
       issues: [
@@ -450,9 +473,10 @@ export function validateStagePayload(args: ValidateArgs): ValidationResult {
           field: '_payload',
           code: 'derivation_incomplete',
           message:
-            `A ${STAGE_SCHEMAS[args.stage].title} record is calculated from values this ` +
-            `payload does not carry, so there is nothing to compute. Submitting it would ` +
-            `erase the figures already recorded for this sample rather than update them.`,
+            `A ${STAGE_SCHEMAS[args.stage].title} record's calculated results come from the ` +
+            `sieve weights, and this payload does not carry a complete set of them. Submitting ` +
+            `it would erase the figures already recorded for this sample rather than update ` +
+            `them. Weigh every sieve, or send no weights at all.`,
         },
       ],
     };

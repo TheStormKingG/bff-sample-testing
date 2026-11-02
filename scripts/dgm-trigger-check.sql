@@ -107,29 +107,102 @@ begin
 end $$;
 
 -- ===========================================================================
--- CASE C — the other seven stages must store nothing at all.
+-- CASE C — a stage with no computed columns must store nothing at all.
+--
+-- `4 Pellets`, NOT `7 Mash`. This case used to use Mash on the reasoning that
+-- "its only system column is A", and that stopped being true with migration
+-- 0029: Mash, Ground and Crumble each gained the sieve test and its nine
+-- computed columns. The assertion would still have passed — the short
+-- projected row below carries nothing for the trigger to store — so it would
+-- have gone on reporting a clean result while testing a stage that no longer
+-- had the property the case exists to check. Pellets has no `system` column
+-- but A, so the loop body genuinely never executes.
 -- ===========================================================================
 insert into public.samples
   (id, sample_id, stage, prefix, collection_instant, collection_local_date, collection_local_time,
    created_by, registered_by, registered_at, capture_state)
 values
-  ('cccccccc-0000-0000-0000-00000000000c', 'MS-261029-01', 'mash', 'MS',
+  ('cccccccc-0000-0000-0000-00000000000c', 'AP-261029-01', 'pellets', 'AP',
    '2026-10-29T13:30:00Z', '2026-10-29', '09:30',
    'aaaaaaaa-0000-0000-0000-00000000000a',
    'aaaaaaaa-0000-0000-0000-00000000000a', now(), 'registered');
 insert into public.sheet_sync_outbox
   (sample_uuid, target_tab, event_kind, payload_revision, payload_hash, payload, projected_row)
 values
-  ('cccccccc-0000-0000-0000-00000000000c', '7 Mash', 'register', 1, repeat('c',64), '{}'::jsonb,
-   array['','2026-10-29','09:30','x','','','','','','','','','']::text[]);
+  ('cccccccc-0000-0000-0000-00000000000c', '4 Pellets', 'register', 1, repeat('c',64), '{}'::jsonb,
+   array['','2026-10-29','09:30','x','','','','','','','']::text[]);
 
 do $$
 declare n int;
 begin
   select count(*) into n from public.sample_derived_results
    where sample_uuid = 'cccccccc-0000-0000-0000-00000000000c';
-  if n <> 0 then raise exception 'a non-DGM stage stored % derived rows', n; end if;
-  raise notice 'CASE C  ok  mash stored 0 derived rows (its only system column is A)';
+  if n <> 0 then raise exception 'a stage with no computed columns stored % derived rows', n; end if;
+  raise notice 'CASE C  ok  pellets stored 0 derived rows (its only system column is A)';
+end $$;
+
+-- ===========================================================================
+-- CASE D — the same trigger, on a tab where the sieve test is only PART of
+--          the row.
+--
+-- `6 Crumble` carries the sieve test alongside a roll gap, a moisture, a
+-- durability index and a crumble size, and its computed block sits at AC..AK
+-- rather than at Y..AG. Nothing in the trigger is told that: it reads
+-- `stage_fields` for
+-- whichever columns are `system` and indexes the projected row by letter. If
+-- `column_letter_to_index` and the row's own width ever disagreed, this is
+-- where a two-letter column past Z would land on the wrong slot — and the
+-- DGM cases above could not show it, because they only ever exercise one tab.
+-- ===========================================================================
+insert into public.samples
+  (id, sample_id, stage, prefix, collection_instant, collection_local_date, collection_local_time,
+   created_by, registered_by, registered_at, capture_state)
+values
+  ('dddddddd-0000-0000-0000-00000000000d', 'CR-261029-01', 'crumble', 'CR',
+   '2026-10-29T13:30:00Z', '2026-10-29', '09:30',
+   'aaaaaaaa-0000-0000-0000-00000000000a',
+   'aaaaaaaa-0000-0000-0000-00000000000a', now(), 'registered');
+insert into public.sheet_sync_outbox
+  (sample_uuid, target_tab, event_kind, payload_revision, payload_hash, payload, projected_row)
+values
+  ('dddddddd-0000-0000-0000-00000000000d', '6 Crumble', 'register', 1, repeat('d',64), '{}'::jsonb,
+   -- A:AM, 39 cells. AC..AK (29..37, 1-indexed) hold the computed block;
+   -- everything else is blank or an operator value.
+   array[
+     '','2026-10-29','09:30','Broiler starter','B-12','R. Singh',                       -- A..F
+     '2.5',                                                                             -- G  roll gap
+     '','8','10','abnt-standard-7',                                                     -- H..K settings
+     '','','',                                                                          -- L..N moisture, PDI, size
+     '','','','','','','','','','','','','','',                                         -- O..AB weights
+     '512.00','3.821782','1472.6131','22.7723','55.0000','22.2277','4.520676','1.9','series-ratio-top-bound/pan-excluded',
+     '',''                                                                              -- AL..AM
+   ]::text[]);
+
+do $$
+declare got text; want text;
+begin
+  select string_agg(result_key || '=' || display_text, '|' order by result_key)
+    into got
+    from public.sample_derived_results
+   where sample_uuid = 'dddddddd-0000-0000-0000-00000000000d';
+  want := 'dgm_um=1472.6131|dpg_legacy_index=4.520676|fineness_module=3.821782|'
+       || 'gsd=1.9|gsd_basis=series-ratio-top-bound/pan-excluded|'
+       || 'total_retained_g=512.00|ui_average_pct=55.0000|ui_coarse_pct=22.7723|ui_fine_pct=22.2277';
+  if got is distinct from want then
+    raise exception E'CASE D stored the wrong cells.\n  got:  %\n  want: %', got, want;
+  end if;
+  raise notice 'CASE D  ok  crumble stored all 9 computed cells from AC..AK, past the Z boundary';
+end $$;
+
+do $$
+declare v numeric;
+begin
+  select numeric_value into v from public.sample_derived_results
+   where sample_uuid='dddddddd-0000-0000-0000-00000000000d' and result_key='dgm_um';
+  if v is distinct from 1472.6131 then
+    raise exception 'CASE D parsed dgm_um as %, expected 1472.6131', v;
+  end if;
+  raise notice 'CASE D  ok  a two-letter column parsed as a number, not as text';
 end $$;
 
 rollback;

@@ -27,12 +27,12 @@ Spreadsheet: `BFF-FRM-06_18_Sample_Test_Log_DRAFT` — a **native Google Sheet**
 | 1 | `Read me` | **Reference. Never written.** | — |
 | 2 | `Limits` | **Reference. Never written.** 34 entries, **0 approved.** | A4:I38 |
 | 3 | `1 Raw materials` | Operational | A:S (19) |
-| 4 | `2 Ground` | Operational | A:O (15) |
+| 4 | `2 Ground` | Operational | A:AN (40) |
 | 5 | `3 Conditioned` | Operational | A:M (13) |
 | 6 | `4 Pellets` | Operational | A:K (11) |
 | 7 | `5 Extruded soya` | Operational | A:P (16) |
-| 8 | `6 Crumble` | Operational | A:M (13) |
-| 9 | `7 Mash` | Operational | A:K (11) |
+| 8 | `6 Crumble` | Operational | A:AM (39) |
+| 9 | `7 Mash` | Operational | A:AJ (36) |
 
 `REFERENCE_TABS = ['Read me', 'Limits']`. The writer refuses to address either, and
 `tests/sheetSync.test.ts` derives that assertion from the constant rather than
@@ -149,7 +149,7 @@ Three rules follow, and all three are enforced in code:
 | | |
 | --- | --- |
 | Stage key | `ground` |
-| Range | A:O (15 columns) |
+| Range | A:AN (40 columns) |
 | Sample-ID prefix | **AM or BC** |
 | Sampling frequency | To set  — **NOT APPROVED**: no overdue flag and no adherence KPI may be computed (FR-020, R-08) |
 | Sampling instruction | AM: single grain at the new sampling door after the mill. BC: mixed mash just before the conditioner. Record the screen size and hammer distance in use. |
@@ -166,14 +166,38 @@ Three rules follow, and all three are enforced in code:
 | G | `sampled_by` | Sampled by | text | Sample details | — | registration | — | — |
 | H | `mill_screen_size_mm` | Mill screen size (mm) | select | Settings when sampled | mm | registration | — | options: 5 / 7 |
 | I | `hammer_distance_mm` | Hammer distance from screen (mm) | number | Settings when sampled | mm | registration | `ground.hammer_distance` | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 500 (confirmable, never assessed); 1 dp preserved |
-| J | `avg_particle_size_um` | Average particle size (µm) | number | Test results | µm | testing | `ground.avg_particle_size` | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 10000 (confirmable, never assessed); 1 dp preserved |
-| K | `size_spread_gsd` | Size spread (GSD) | number | Test results | — | testing | `ground.size_spread_gsd` | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 100 (confirmable, never assessed); 2 dp preserved |
-| L | `moisture_pct_bc` | Moisture (%) at BC | number | Test results | % | testing | `ground.moisture` | applies only when `sampling_point` ∈ {BC}; hard bounds 0..100 (impossibility, not an acceptance limit); 2 dp preserved |
-| M | `action_taken` | Action taken | textarea | Follow-up | — | optional | — | — |
-| N | `tested_by_qo` | Tested by (QO) | text | Follow-up | — | testing | — | — |
-| O | `comments` | Comments | textarea | Follow-up | — | optional | — | — |
-
-*15 mapped fields; the registry declares 15 columns; agreement: **yes**.*
+| J | `durability_tester_rpm` | Durability tester RPM | number | Settings when sampled | — | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 10000 (confirmable, never assessed); 0 dp preserved |
+| K | `sieve_shaker_hz` | Sieve shaker frequency (Hz) | number | Settings when sampled | Hz | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 200 (confirmable, never assessed); new forms start at 8 (changeable); 0 dp preserved |
+| L | `sieve_vibration_min` | Vibration time (min) | number | Settings when sampled | min | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 240 (confirmable, never assessed); new forms start at 10 (changeable); 0 dp preserved |
+| M | `sieve_series` | Sieve series | select | Settings when sampled | — | optional | — | options: abnt-standard-7 |
+| N | `moisture_pct_bc` | Moisture (%) at BC | number | Test results | % | testing | `ground.moisture` | applies only when `sampling_point` ∈ {BC}; hard bounds 0..100 (impossibility, not an acceptance limit); 2 dp preserved |
+| O | `sieve1_tare_g` | ABNT 5 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| P | `sieve1_gross_g` | ABNT 5 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| Q | `sieve2_tare_g` | ABNT 10 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| R | `sieve2_gross_g` | ABNT 10 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| S | `sieve3_tare_g` | ABNT 16 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| T | `sieve3_gross_g` | ABNT 16 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| U | `sieve4_tare_g` | ABNT 30 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| V | `sieve4_gross_g` | ABNT 30 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| W | `sieve5_tare_g` | ABNT 50 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| X | `sieve5_gross_g` | ABNT 50 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| Y | `sieve6_tare_g` | ABNT 400 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| Z | `sieve6_gross_g` | ABNT 400 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| AA | `sieve7_tare_g` | Pan empty (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| AB | `sieve7_gross_g` | Pan + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| AC | `total_retained_g` | Total retained (g) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AD | `fineness_module` | Fineness module (MF) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AE | `dgm_um` | DGM (µm) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AF | `ui_coarse_pct` | UI coarse (%) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AG | `ui_average_pct` | UI average (%) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AH | `ui_fine_pct` | UI fine (%) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AI | `dpg_legacy_index` | DPG legacy index | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AJ | `gsd` | Geometric standard deviation | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AK | `gsd_basis` | GSD basis | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AL | `action_taken` | Action taken | textarea | Follow-up | — | optional | — | — |
+| AM | `tested_by_qo` | Tested by (QO) | text | Follow-up | — | testing | — | — |
+| AN | `comments` | Comments | textarea | Follow-up | — | optional | — | — |
+*40 mapped fields; the registry declares 40 columns; agreement: **yes**.*
 
 
 ## Tab 3 — Conditioned  (`3 Conditioned`)
@@ -272,7 +296,7 @@ Three rules follow, and all three are enforced in code:
 | | |
 | --- | --- |
 | Stage key | `crumble` |
-| Range | A:M (13 columns) |
+| Range | A:AM (39 columns) |
 | Sample-ID prefix | **CR** |
 | Sampling frequency | To set  — **NOT APPROVED**: no overdue flag and no adherence KPI may be computed (FR-020, R-08) |
 | Sampling instruction | Sample finished crumble at the crumbler outlet. Record the roll gap in use. |
@@ -287,14 +311,39 @@ Three rules follow, and all three are enforced in code:
 | E | `batch_no` | Batch no. | text | Sample details | — | registration | — | — |
 | F | `sampled_by` | Sampled by | text | Sample details | — | registration | — | — |
 | G | `crumbler_roll_gap_mm` | Crumbler roll gap (mm) | number | Settings when sampled | mm | registration | `crumble.roll_gap` | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 100 (confirmable, never assessed); 2 dp preserved |
-| H | `moisture_pct` | Moisture (%) | number | Test results | % | testing | `crumble.moisture` | hard bounds 0..100 (impossibility, not an acceptance limit); 2 dp preserved |
-| I | `avg_particle_size_um` | Average particle size (µm) | number | Test results | µm | testing | `crumble.avg_particle_size` | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 10000 (confirmable, never assessed); 1 dp preserved |
-| J | `pellet_durability_pdi_pct` | Pellet durability (PDI, %) | number | Test results | % | testing | `crumble.pellet_durability_pdi` | hard bounds 0..100 (impossibility, not an acceptance limit); 1 dp preserved |
-| K | `crumble_size_mm` | Crumble size (mm) | number | Test results | mm | testing | `crumble.crumble_size` | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 100 (confirmable, never assessed); 2 dp preserved |
-| L | `tested_by_qo` | Tested by (QO) | text | Follow-up | — | testing | — | — |
-| M | `comments` | Comments | textarea | Follow-up | — | optional | — | — |
-
-*13 mapped fields; the registry declares 13 columns; agreement: **yes**.*
+| H | `durability_tester_rpm` | Durability tester RPM | number | Settings when sampled | — | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 10000 (confirmable, never assessed); 0 dp preserved |
+| I | `sieve_shaker_hz` | Sieve shaker frequency (Hz) | number | Settings when sampled | Hz | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 200 (confirmable, never assessed); new forms start at 8 (changeable); 0 dp preserved |
+| J | `sieve_vibration_min` | Vibration time (min) | number | Settings when sampled | min | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 240 (confirmable, never assessed); new forms start at 10 (changeable); 0 dp preserved |
+| K | `sieve_series` | Sieve series | select | Settings when sampled | — | optional | — | options: abnt-standard-7 |
+| L | `moisture_pct` | Moisture (%) | number | Test results | % | testing | `crumble.moisture` | hard bounds 0..100 (impossibility, not an acceptance limit); 2 dp preserved |
+| M | `pellet_durability_pdi_pct` | Pellet durability (PDI, %) | number | Test results | % | testing | `crumble.pellet_durability_pdi` | hard bounds 0..100 (impossibility, not an acceptance limit); 1 dp preserved |
+| N | `crumble_size_mm` | Crumble size (mm) | number | Test results | mm | testing | `crumble.crumble_size` | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 100 (confirmable, never assessed); 2 dp preserved |
+| O | `sieve1_tare_g` | ABNT 5 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| P | `sieve1_gross_g` | ABNT 5 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| Q | `sieve2_tare_g` | ABNT 10 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| R | `sieve2_gross_g` | ABNT 10 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| S | `sieve3_tare_g` | ABNT 16 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| T | `sieve3_gross_g` | ABNT 16 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| U | `sieve4_tare_g` | ABNT 30 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| V | `sieve4_gross_g` | ABNT 30 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| W | `sieve5_tare_g` | ABNT 50 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| X | `sieve5_gross_g` | ABNT 50 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| Y | `sieve6_tare_g` | ABNT 400 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| Z | `sieve6_gross_g` | ABNT 400 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| AA | `sieve7_tare_g` | Pan empty (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| AB | `sieve7_gross_g` | Pan + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| AC | `total_retained_g` | Total retained (g) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AD | `fineness_module` | Fineness module (MF) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AE | `dgm_um` | DGM (µm) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AF | `ui_coarse_pct` | UI coarse (%) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AG | `ui_average_pct` | UI average (%) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AH | `ui_fine_pct` | UI fine (%) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AI | `dpg_legacy_index` | DPG legacy index | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AJ | `gsd` | Geometric standard deviation | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AK | `gsd_basis` | GSD basis | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AL | `tested_by_qo` | Tested by (QO) | text | Follow-up | — | testing | — | — |
+| AM | `comments` | Comments | textarea | Follow-up | — | optional | — | — |
+*39 mapped fields; the registry declares 39 columns; agreement: **yes**.*
 
 
 ## Tab 7 — Mash  (`7 Mash`)
@@ -302,7 +351,7 @@ Three rules follow, and all three are enforced in code:
 | | |
 | --- | --- |
 | Stage key | `mash` |
-| Range | A:K (11 columns) |
+| Range | A:AJ (36 columns) |
 | Sample-ID prefix | **MS** |
 | Sampling frequency | Once per production run |
 | Sampling instruction | Sample finished mash at the mixer discharge, once per production run. |
@@ -316,13 +365,37 @@ Three rules follow, and all three are enforced in code:
 | D | `feed_type` | Feed type | text | Sample details | — | registration | — | — |
 | E | `batch_no` | Batch no. | text | Sample details | — | registration | — | — |
 | F | `sampled_by` | Sampled by | text | Sample details | — | registration | — | — |
-| G | `moisture_pct` | Moisture (%) | number | Test results | % | testing | `mash.moisture` | hard bounds 0..100 (impossibility, not an acceptance limit); 2 dp preserved |
-| H | `avg_particle_size_um` | Average particle size (µm) | number | Test results | µm | testing | `mash.avg_particle_size` | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 10000 (confirmable, never assessed); 1 dp preserved |
-| I | `size_spread_gsd` | Size spread (GSD) | number | Test results | — | testing | `mash.size_spread_gsd` | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 100 (confirmable, never assessed); 2 dp preserved |
-| J | `tested_by_qo` | Tested by (QO) | text | Follow-up | — | testing | — | — |
-| K | `comments` | Comments | textarea | Follow-up | — | optional | — | — |
-
-*11 mapped fields; the registry declares 11 columns; agreement: **yes**.*
+| G | `durability_tester_rpm` | Durability tester RPM | number | Settings when sampled | — | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 10000 (confirmable, never assessed); 0 dp preserved |
+| H | `sieve_shaker_hz` | Sieve shaker frequency (Hz) | number | Settings when sampled | Hz | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 200 (confirmable, never assessed); new forms start at 8 (changeable); 0 dp preserved |
+| I | `sieve_vibration_min` | Vibration time (min) | number | Settings when sampled | min | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 240 (confirmable, never assessed); new forms start at 10 (changeable); 0 dp preserved |
+| J | `sieve_series` | Sieve series | select | Settings when sampled | — | optional | — | options: abnt-standard-7 |
+| K | `moisture_pct` | Moisture (%) | number | Test results | % | testing | `mash.moisture` | hard bounds 0..100 (impossibility, not an acceptance limit); 2 dp preserved |
+| L | `sieve1_tare_g` | ABNT 5 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| M | `sieve1_gross_g` | ABNT 5 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| N | `sieve2_tare_g` | ABNT 10 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| O | `sieve2_gross_g` | ABNT 10 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| P | `sieve3_tare_g` | ABNT 16 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| Q | `sieve3_gross_g` | ABNT 16 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| R | `sieve4_tare_g` | ABNT 30 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| S | `sieve4_gross_g` | ABNT 30 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| T | `sieve5_tare_g` | ABNT 50 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| U | `sieve5_gross_g` | ABNT 50 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| V | `sieve6_tare_g` | ABNT 400 empty sieve (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| W | `sieve6_gross_g` | ABNT 400 sieve + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| X | `sieve7_tare_g` | Pan empty (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| Y | `sieve7_gross_g` | Pan + sample (g) | number | Test results | g | optional | — | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 2000 (confirmable, never assessed); 2 dp preserved |
+| Z | `total_retained_g` | Total retained (g) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AA | `fineness_module` | Fineness module (MF) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AB | `dgm_um` | DGM (µm) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AC | `ui_coarse_pct` | UI coarse (%) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AD | `ui_average_pct` | UI average (%) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AE | `ui_fine_pct` | UI fine (%) | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AF | `dpg_legacy_index` | DPG legacy index | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AG | `gsd` | Geometric standard deviation | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AH | `gsd_basis` | GSD basis | system | Test results | — | system | — | computed by the server; never submitted by a client |
+| AI | `tested_by_qo` | Tested by (QO) | text | Follow-up | — | testing | — | — |
+| AJ | `comments` | Comments | textarea | Follow-up | — | optional | — | — |
+*36 mapped fields; the registry declares 36 columns; agreement: **yes**.*
 
 
 ---

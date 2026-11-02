@@ -101,7 +101,7 @@ describe('toSheetRow: width and isolation', () => {
 
   it('ignores unknown keys instead of appending them', () => {
     const row = toSheetRow('mash', 'MS-261024-01', { injected_column: 'boom' });
-    expect(row).toHaveLength(11);
+    expect(row).toHaveLength(36);
     expect(row).not.toContain('boom');
   });
 
@@ -147,20 +147,23 @@ describe('toSheetRow: zero is not blank (Master Prompt §10, PRD §6.1)', () => 
     // The coverage claim is asserted, not implied by the loop: if a schema change
     // drops a numeric column out of the sweep, this fails instead of passing quietly.
     //
-    // 47 is the count of registry fields with type 'number'. It is deliberately
+    // 93 is the count of registry fields with type 'number'. It is deliberately
     // NOT the 34 entries on the workbook `Limits` tab — those are two different
     // sets and conflating them is easy: `Mill screen size (mm)` is a select, and
     // several limit entries describe equipment settings with no numeric field of
-    // their own. Breakdown: raw 4, ground 4, conditioned 4, pellets 2,
-    // extruded soya 8, crumble 5, mash 3, DGM 17.
+    // their own. Breakdown: raw 4, ground 19, conditioned 4, pellets 2,
+    // extruded soya 8, crumble 21, mash 18, DGM 17.
     //
-    // DGM's 17 are the seven tare masses, the seven gross masses, `mill_rpm`,
-    // and the two sieve-shaker settings — frequency and vibration time — which
-    // 0027 made numeric after they were seeded as free text from a workbook
-    // header describing how the product was MILLED rather than how it was
-    // SIEVED. Its nine DERIVED columns are `type: 'system'` and so are correctly
-    // absent from this sweep: `toSheetRow` never reads a client value for them.
-    expect(checked).toBe(47);
+    // A SIEVE TEST CONTRIBUTES 17: the seven tare masses, the seven gross
+    // masses, the durability-tester RPM, the shaker frequency and the
+    // vibration time. `sieve_series` is a select, so it is not among them, and
+    // the NINE COMPUTED COLUMNS are `type: 'system'` and so are correctly
+    // absent from this sweep — `toSheetRow` never reads a client value for one.
+    //
+    // That is why Ground went 4 -> 19 and Mash 3 -> 18 (each +17 and -2, for
+    // the two analyser-reading columns the test replaced) while Crumble went
+    // 5 -> 21 (+17, -1: it never had a GSD column).
+    expect(checked).toBe(93);
   });
 });
 
@@ -238,7 +241,8 @@ describe('toSheetRow: non-applicable fields', () => {
       sampling_point: 'BC',
       moisture_pct_bc: 12.4,
     });
-    expect(row[columnLetterToIndex('L')]).toBe('12.4');
+    // N since the sieve test took J..M on `2 Ground`.
+    expect(row[columnLetterToIndex('N')]).toBe('12.4');
   });
 });
 
@@ -290,8 +294,8 @@ describe('toSheetRow: no cross-tab or cross-column bleed', () => {
       ['raw_materials', 'J'],
       ['conditioned', 'J'],
       ['extruded_soya', 'L'],
-      ['crumble', 'H'],
-      ['mash', 'G'],
+      ['crumble', 'L'],
+      ['mash', 'K'],
     ];
     const idColumn = columnLetterToIndex('A');
     for (const [stage, letter] of expectations) {

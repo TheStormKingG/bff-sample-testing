@@ -44,32 +44,12 @@ export type SampleValues = Readonly<Record<string, MeasurementValue>>;
 /** Free-text narrative columns, where a leading `-` is legitimate prose. */
 const FREEFORM_TEXT_KEYS: ReadonlySet<string> = new Set(['comments', 'action_taken']);
 
-const COLUMN_PATTERN = /^[A-Z]+$/;
-
-export function columnLetterToIndex(letter: string): number {
-  if (!COLUMN_PATTERN.test(letter)) {
-    throw new Error(`Invalid column reference ${JSON.stringify(letter)}: expected uppercase letters such as "A" or "AA"`);
-  }
-  let index = 0;
-  for (const char of letter) {
-    index = index * 26 + (char.charCodeAt(0) - 64);
-  }
-  return index - 1;
-}
-
-export function indexToColumnLetter(index: number): string {
-  if (!Number.isInteger(index) || index < 0) {
-    throw new Error(`Invalid column index ${index}: expected a non-negative integer`);
-  }
-  let letter = '';
-  let n = index + 1;
-  while (n > 0) {
-    const remainder = (n - 1) % 26;
-    letter = String.fromCharCode(65 + remainder) + letter;
-    n = Math.floor((n - 1) / 26);
-  }
-  return letter;
-}
+/*
+ * The base-26 arithmetic lives in `columns.ts`, which the REGISTRY also uses
+ * to generate runs of columns. Re-exported here so every existing caller and
+ * test keeps its import path.
+ */
+export { columnLetterToIndex, indexToColumnLetter } from './columns.ts';
 
 /**
  * Quote a tab name for A1 notation. Every operational tab name contains a

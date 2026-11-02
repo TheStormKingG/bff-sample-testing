@@ -17,6 +17,7 @@
 
 import {
   type FieldDef,
+  type Requiredness,
   type Stage,
   type StageSchema,
   YES_NO_OPTIONS,
@@ -26,6 +27,10 @@ import {
 // imports of its own, which is what keeps it safe for the Edge Function
 // toolchain too (scripts/check-shared-module-imports.mjs).
 import { DEFAULT_SIEVE_PRESET, SIEVE_PRESETS } from '../lib/dgm.ts';
+// Base-26 column arithmetic, so a run of fourteen or nine columns is
+// generated from where it starts rather than typed out as letters. Its own
+// module because `sheetMapping.ts`, which held it, imports this file.
+import { indexToColumnLetter } from './columns.ts';
 
 const MATERIAL_OPTIONS = [
   { value: 'corn', label: 'Corn' },
@@ -153,6 +158,317 @@ const actionTaken = (col: string): FieldDef => ({
   required: 'optional',
   help: 'What was done about the result. Required when the sample is placed on hold.',
 });
+
+// ---------------------------------------------------------------------------
+// THE SIEVE TEST — four tabs, one definition
+//
+// Granulometry by sieve stack is the measurement behind `Average particle
+// size` and `Size spread (GSD)`. `8 DGM` records it standalone; `2 Ground`,
+// `6 Crumble` and `7 Mash` now record it inline, where those two typed-in
+// columns used to sit. The generators below produce the settings, the
+// fourteen weights and the nine computed results for ALL FOUR, so the tabs
+// cannot drift apart in content or in order.
+//
+// Each takes the 0-based column index its run STARTS at, because the run
+// lands in a different place on every tab. Hand-typed letter arrays were
+// defensible for one tab; across four they would be four chances to transpose
+// a letter, and a transposed letter puts a header in one column and its value
+// in another.
+//
+// THREE THINGS THAT LOOK LIKE CHOICES AND ARE NOT:
+//
+//  1. The masses are never `testing`. There is no results-entry screen in
+//     this application — `StageFormPage` hardcodes `phase="registration"` —
+//     so a `testing` field can be left blank forever with nothing to prompt
+//     for it. That is not a hypothetical: `avg_particle_size_um` and
+//     `size_spread_gsd` were `testing` on all three tabs, and across every
+//     sample ever registered they hold ZERO values. No operator could reach
+//     them. Replacing them with fields nobody can fill would have repeated
+//     the defect in twenty-three more columns.
+//
+//     They are `registration` on `8 DGM` and `optional` on the other three,
+//     and that difference follows the bench rather than the code. A DGM
+//     record IS a sieve test: the weighing is the entire reason the row
+//     exists, so a row without it is not a record of anything. A Ground
+//     sample is taken at the mill and registered there; its sieve test
+//     happens afterwards in the lab. Requiring the weights to register would
+//     mean the operator at the mill could not create the record until
+//     somebody else had finished the test, which is the wrong way round.
+//
+//     `sieve_series` follows the masses for the same reason: a stack that
+//     was not used yet cannot be named. `derived.ts` falls back to the
+//     default preset, and with one preset defined that is the only series
+//     there is.
+//
+//  2. The nine computed columns are `type: 'system'`, exactly like column A.
+//     They have to be: `apply_measurement` raises "Column % is assigned by
+//     the server and cannot be submitted" for any field whose type OR
+//     requiredness is `system`, so a computed value can never be a
+//     `sample_measurements` row. They are serialised into the sheet from
+//     values the Edge Function injects after validation, and stored in
+//     `sample_derived_results`. `validateStagePayload` refuses a
+//     client-supplied value for any of them with `server_assigned`, so an
+//     operator cannot forge a fineness module.
+//
+//  3. Nothing here carries a `parameterKey`, including the two computed
+//     columns that replace parameters which HAD one. With 0 of 34 workbook
+//     limits approved, a parameter key buys no assessment, and a computed
+//     value could not be assessed in any case: the engine assesses
+//     `sample_measurements` rows and these are not one. Carrying the key
+//     forward would imply an acceptance limit exists (PRD FR-009, UAT-05)
+//     when none does, on a figure the engine never looks at.
+// ---------------------------------------------------------------------------
+
+/**
+ * The 14 sieve mass columns, generated from the preset so the ABNT labels and
+ * the apertures cannot drift from the arithmetic that consumes them.
+ * `src/lib/dgm.ts` is the single definition of the series; this reads it.
+ *
+ * The pan is named "Pan" rather than by its ABNT designation, because the
+ * workbook's own conversion table puts ABNT 400 at 37 µm and marks it as the
+ * pan, while the DGM sheet uses 38 µm for ABNT 400 and 37 µm for `Fundo` —
+ * possibly the pan counted twice. Until the lab settles that, calling the last
+ * position "Pan" says what is physically there without asserting a mesh.
+ */
+const sieveMassFields = (startIndex: number, required: Requiredness): FieldDef[] =>
+  DEFAULT_SIEVE_PRESET.positions.flatMap((position, i): FieldDef[] => {
+    const n = i + 1;
+    const name = position.isPan ? 'Pan' : `ABNT ${position.abnt}`;
+    const tareHeader = position.isPan ? 'Pan empty (g)' : `${name} empty sieve (g)`;
+    const grossHeader = position.isPan ? 'Pan + sample (g)' : `${name} sieve + sample (g)`;
+    const aperture = `Aperture ${position.apertureMicrons} µm.`;
+    const common = {
+      type: 'number',
+      section: 'test_results',
+      required,
+      unit: 'g',
+      unitConfirmed: true,
+      min: 0,
+      // A sieve plus a full sample is a few hundred grams. Beyond two
+      // kilograms is a mis-keyed decimal point, which the operator confirms
+      // rather than the system refusing — it is a typo guard, never a limit.
+      implausibleAbove: 2000,
+      decimals: 2,
+    } as const;
+    // Tare and gross alternate, so one sieve's pair is adjacent on the tab
+    // exactly as it is adjacent on the form.
+    return [
+      {
+        ...common,
+        key: `sieve${n}_tare_g`,
+        columnLetter: indexToColumnLetter(startIndex + i * 2),
+        sheetHeader: tareHeader,
+        label: position.isPan ? 'Pan empty' : `${name} empty sieve`,
+        help: `${aperture} Weigh the sieve before any sample is added.`,
+      },
+      {
+        ...common,
+        key: `sieve${n}_gross_g`,
+        columnLetter: indexToColumnLetter(startIndex + i * 2 + 1),
+        sheetHeader: grossHeader,
+        label: position.isPan ? 'Pan + sample' : `${name} sieve + sample`,
+        help: `${aperture} Weigh the same sieve again with whatever stayed on it.`,
+      },
+    ];
+  });
+
+/**
+ * The four settings that describe HOW the sieve test was run.
+ *
+ * ===========================================================================
+ * WHY THESE KEYS AND NOT THE ONES ON THE DGM TAB
+ * ===========================================================================
+ * `8 DGM` records three of these under `mill_rpm`, `mill_hz_position` and
+ * `grind_time` — names it inherited from a column set written when the tab
+ * was thought to be about milling, and that migration 0028 re-headed once the
+ * lab explained what they actually are. The headers there are now correct and
+ * the keys are not.
+ *
+ * Those keys are NOT reused here. On `2 Ground` in particular, a field keyed
+ * `mill_rpm` meaning "the drum speed of the durability tester" would sit on a
+ * form that also records the mill's screen size and hammer distance, and a
+ * field keyed `grind_time` meaning "minutes in the vibrator" would read as the
+ * grind's duration to every person and every query that ever met it. A
+ * misleading key on the stage where the misreading is plausible is worse than
+ * an inconsistent one.
+ *
+ * `8 DGM`'s three keys are deliberately left alone: renaming them is a data
+ * migration over the one stage that was verified figure-by-figure against the
+ * lab's own workbook, and it buys nothing this change needs. `sieve_series`
+ * IS shared, because that name was right the first time — and because it is
+ * the one key the arithmetic in `derived.ts` reads by name.
+ */
+const sieveTestSettings = (startIndex: number, seriesRequired: Requiredness): FieldDef[] => [
+  {
+    key: 'durability_tester_rpm',
+    columnLetter: indexToColumnLetter(startIndex),
+    sheetHeader: 'Durability tester RPM',
+    label: 'Durability tester RPM',
+    type: 'number',
+    section: 'settings',
+    required: 'optional',
+    min: 0,
+    implausibleAbove: 10000,
+    decimals: 0,
+    // Deliberately NOT made conditional on a separate yes/no column. A filled
+    // RPM already means "the Particle Durability Tester was used" and a blank
+    // one means it was not, so the record answers the question without a
+    // second field that could contradict it.
+    help:
+      'Only when the Particle Durability Tester was used: the drum speed for that run. ' +
+      'Leave blank for an ordinary sieve test.',
+  },
+  {
+    key: 'sieve_shaker_hz',
+    columnLetter: indexToColumnLetter(startIndex + 1),
+    sheetHeader: 'Sieve shaker frequency (Hz)',
+    label: 'Sieve shaker frequency',
+    type: 'number',
+    unit: 'Hz',
+    unitConfirmed: true,
+    section: 'settings',
+    required: 'optional',
+    min: 0,
+    implausibleAbove: 200,
+    decimals: 0,
+    defaultValue: '8',
+    help: 'The frequency the sieve stack was shaken at. 8 Hz unless the method says otherwise.',
+  },
+  {
+    key: 'sieve_vibration_min',
+    columnLetter: indexToColumnLetter(startIndex + 2),
+    sheetHeader: 'Vibration time (min)',
+    // NOT grind time. This is how long the stack ran in the vibrator, which
+    // is a property of the sieve test and not of how the product was made.
+    label: 'Vibration time',
+    type: 'number',
+    unit: 'min',
+    unitConfirmed: true,
+    section: 'settings',
+    required: 'optional',
+    min: 0,
+    implausibleAbove: 240,
+    decimals: 0,
+    defaultValue: '10',
+    help: 'How long the sieve stack ran in the vibrator. 10 minutes unless the method says otherwise.',
+  },
+  {
+    key: 'sieve_series',
+    columnLetter: indexToColumnLetter(startIndex + 3),
+    sheetHeader: 'Sieve series',
+    label: 'Sieve series',
+    type: 'select',
+    section: 'settings',
+    required: seriesRequired,
+    // Derived from the arithmetic module rather than re-listed, so a preset
+    // can never exist in one file and not the other. Individual apertures are
+    // deliberately NOT editable: Kj is assigned by POSITION in the stack and
+    // 104.14 is calibrated to this exact series, so a changed aperture would
+    // move no number while silently changing what the number means. Changing
+    // the stack is adding a preset, which is a code change.
+    options: SIEVE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label })),
+    help: 'The stack of sieves used. The apertures are fixed by the series and are shown on each weight below.',
+  },
+];
+
+/** One server-computed column. */
+const derivedField = (
+  key: string,
+  columnLetter: string,
+  sheetHeader: string,
+  label: string,
+  help: string,
+): FieldDef => ({
+  key,
+  columnLetter,
+  sheetHeader,
+  label,
+  // `system`, like column A: computed by the server, refused from a client,
+  // and never a sample_measurements row. See the block comment above.
+  type: 'system',
+  section: 'test_results',
+  required: 'system',
+  help,
+});
+
+/**
+ * The nine columns the server fills in from the weights.
+ *
+ * `dgm_um` and `gsd` are what `Average particle size (µm)` and `Size spread
+ * (GSD)` used to be on `2 Ground`, `6 Crumble` and `7 Mash`: the same two
+ * quantities, no longer typed in from an analyser reading but computed from
+ * the stack the operator actually weighed. Nothing measured is lost by their
+ * removal — those two columns never held a value — and what replaces them
+ * arrives with the weights that produced it in the record beside it.
+ */
+const sieveDerivedFields = (startIndex: number): FieldDef[] => {
+  const at = (offset: number): string => indexToColumnLetter(startIndex + offset);
+  return [
+    derivedField(
+      'total_retained_g',
+      at(0),
+      'Total retained (g)',
+      'Total retained',
+      'The sum of what stayed on every sieve. Worked out by the system.',
+    ),
+    derivedField(
+      'fineness_module',
+      at(1),
+      'Fineness module (MF)',
+      'Fineness module (MF)',
+      'How coarse the grind is overall. Worked out by the system from the weights.',
+    ),
+    derivedField(
+      'dgm_um',
+      at(2),
+      'DGM (µm)',
+      'DGM',
+      'Average geometric diameter in micrometres. Worked out by the system.',
+    ),
+    derivedField(
+      'ui_coarse_pct',
+      at(3),
+      'UI coarse (%)',
+      'UI coarse',
+      'Share of the sample on the two coarsest sieves. Worked out by the system.',
+    ),
+    derivedField(
+      'ui_average_pct',
+      at(4),
+      'UI average (%)',
+      'UI average',
+      'Share of the sample on the three middle sieves. Worked out by the system.',
+    ),
+    derivedField(
+      'ui_fine_pct',
+      at(5),
+      'UI fine (%)',
+      'UI fine',
+      'Share of the sample on the finest sieve and the pan. Worked out by the system.',
+    ),
+    derivedField(
+      'dpg_legacy_index',
+      at(6),
+      'DPG legacy index',
+      'DPG legacy index',
+      'The spreadsheet’s own DPG figure, reproduced exactly so old records still compare. It is an index, not a standard deviation: it carries units and it doubles if you weigh twice as much sample, so it can only be compared between samples of equal mass.',
+    ),
+    derivedField(
+      'gsd',
+      at(7),
+      'Geometric standard deviation',
+      'Geometric standard deviation',
+      'How even the grind is, as a proper dimensionless figure. Unlike the DPG index this does not change with how much sample was weighed.',
+    ),
+    derivedField(
+      'gsd_basis',
+      at(8),
+      'GSD basis',
+      'GSD basis',
+      'Which convention produced the figure beside it. Recorded because the coarsest sieve has nothing above it and the pan has nothing below it, so both bins need a stated rule that a number cannot carry by itself.',
+    ),
+  ];
+};
 
 // ---------------------------------------------------------------------------
 // F01 — 1 Raw materials, A:S (19 columns), prefix RM
@@ -343,15 +659,15 @@ const rawMaterials: StageSchema = {
 };
 
 // ---------------------------------------------------------------------------
-// F02 — 2 Ground, A:O (15 columns), prefix AM or BC from the point code
+// F02 — 2 Ground, A:AN (40 columns), prefix AM or BC from the point code
 // ---------------------------------------------------------------------------
 const ground: StageSchema = {
   stage: 'ground',
   ordinal: 2,
   title: 'Ground',
   sheetTab: '2 Ground',
-  lastColumn: 'O',
-  columnCount: 15,
+  lastColumn: 'AN',
+  columnCount: 40,
   prefix: null, // resolved from sampling_point — see resolvePrefix()
   description: 'Ground material, before conditioning',
   instruction:
@@ -427,40 +743,19 @@ const ground: StageSchema = {
       decimals: 1,
       parameterKey: 'ground.hammer_distance',
     },
-    {
-      key: 'avg_particle_size_um',
-      columnLetter: 'J',
-      sheetHeader: 'Average particle size (µm)',
-      label: 'Average particle size',
-      type: 'number',
-      section: 'test_results',
-      required: 'testing',
-      unit: 'µm',
-      unitConfirmed: true,
-      min: 0,
-      implausibleAbove: 10000,
-      decimals: 1,
-      parameterKey: 'ground.avg_particle_size',
-      help: HELP.particleSize,
-    },
-    {
-      key: 'size_spread_gsd',
-      columnLetter: 'K',
-      sheetHeader: 'Size spread (GSD)',
-      label: 'Size spread (GSD)',
-      type: 'number',
-      section: 'test_results',
-      required: 'testing',
-      // Dimensionless by definition; the workbook `Limits` Unit cell is blank.
-      min: 0,
-      implausibleAbove: 100,
-      decimals: 2,
-      parameterKey: 'ground.size_spread_gsd',
-      help: HELP.gsd,
-    },
+    // J..M. The sieve test replaces what used to be J and K: an `Average
+    // particle size (µm)` and a `Size spread (GSD)` typed in from an analyser
+    // reading, both `testing` and therefore unreachable on a registration-only
+    // form — across every Ground sample ever registered, neither column ever
+    // held a value. Both quantities are still recorded, as `DGM (µm)` and
+    // `Geometric standard deviation` in the computed block below, and now they
+    // come from the stack the operator actually weighed.
+    ...sieveTestSettings(9, 'optional'),
     {
       key: 'moisture_pct_bc',
-      columnLetter: 'L',
+      // Kept FIRST in the results band, ahead of the weights, because it is
+      // the one result on this tab that is not part of the sieve test.
+      columnLetter: 'N',
       sheetHeader: 'Moisture (%) at BC',
       label: 'Moisture at BC',
       type: 'number',
@@ -477,8 +772,12 @@ const ground: StageSchema = {
       appliesWhen: { field: 'sampling_point', equals: ['BC'] },
       help: HELP.moisture,
     },
-    actionTaken('M'),
-    ...testedByAndComments('N', 'O'),
+    // O..AB
+    ...sieveMassFields(14, 'optional'),
+    // AC..AK
+    ...sieveDerivedFields(28),
+    actionTaken('AL'),
+    ...testedByAndComments('AM', 'AN'),
   ],
 };
 
@@ -856,15 +1155,15 @@ const extrudedSoya: StageSchema = {
 };
 
 // ---------------------------------------------------------------------------
-// F06 — 6 Crumble, A:M (13 columns), prefix CR
+// F06 — 6 Crumble, A:AM (39 columns), prefix CR
 // ---------------------------------------------------------------------------
 const crumble: StageSchema = {
   stage: 'crumble',
   ordinal: 6,
   title: 'Crumble',
   sheetTab: '6 Crumble',
-  lastColumn: 'M',
-  columnCount: 13,
+  lastColumn: 'AM',
+  columnCount: 39,
   prefix: 'CR',
   description: 'Finished crumble',
   instruction:
@@ -915,9 +1214,11 @@ const crumble: StageSchema = {
       decimals: 2,
       parameterKey: 'crumble.roll_gap',
     },
+    // H..K
+    ...sieveTestSettings(7, 'optional'),
     {
       key: 'moisture_pct',
-      columnLetter: 'H',
+      columnLetter: 'L',
       sheetHeader: 'Moisture (%)',
       label: 'Moisture',
       type: 'number',
@@ -931,25 +1232,15 @@ const crumble: StageSchema = {
       parameterKey: 'crumble.moisture',
       help: HELP.moisture,
     },
-    {
-      key: 'avg_particle_size_um',
-      columnLetter: 'I',
-      sheetHeader: 'Average particle size (µm)',
-      label: 'Average particle size',
-      type: 'number',
-      section: 'test_results',
-      required: 'testing',
-      unit: 'µm',
-      unitConfirmed: true,
-      min: 0,
-      implausibleAbove: 10000,
-      decimals: 1,
-      parameterKey: 'crumble.avg_particle_size',
-      help: HELP.particleSize,
-    },
+    // `avg_particle_size_um` stood at I: a figure typed in from an analyser
+    // reading, `testing` and therefore unreachable on a registration-only
+    // form — no Crumble sample ever carried a value for it. It is now
+    // computed, as `DGM (µm)`, from the weights below. The durability tester
+    // belongs on this tab more than on any other: its drum is what crumbles
+    // are tumbled in before the stack is weighed.
     {
       key: 'pellet_durability_pdi_pct',
-      columnLetter: 'J',
+      columnLetter: 'M',
       sheetHeader: 'Pellet durability (PDI, %)',
       label: 'Pellet durability (PDI)',
       type: 'number',
@@ -965,7 +1256,7 @@ const crumble: StageSchema = {
     },
     {
       key: 'crumble_size_mm',
-      columnLetter: 'K',
+      columnLetter: 'N',
       sheetHeader: 'Crumble size (mm)',
       label: 'Crumble size',
       type: 'number',
@@ -979,20 +1270,24 @@ const crumble: StageSchema = {
       parameterKey: 'crumble.crumble_size',
       help: HELP.size,
     },
-    ...testedByAndComments('L', 'M'),
+    // O..AB
+    ...sieveMassFields(14, 'optional'),
+    // AC..AK
+    ...sieveDerivedFields(28),
+    ...testedByAndComments('AL', 'AM'),
   ],
 };
 
 // ---------------------------------------------------------------------------
-// F07 — 7 Mash, A:K (11 columns), prefix MS
+// F07 — 7 Mash, A:AJ (36 columns), prefix MS
 // ---------------------------------------------------------------------------
 const mash: StageSchema = {
   stage: 'mash',
   ordinal: 7,
   title: 'Mash',
   sheetTab: '7 Mash',
-  lastColumn: 'K',
-  columnCount: 11,
+  lastColumn: 'AJ',
+  columnCount: 36,
   prefix: 'MS',
   description: 'Finished mash',
   instruction:
@@ -1029,9 +1324,16 @@ const mash: StageSchema = {
       section: 'sample_details',
       required: 'registration',
     },
+    // G..J. `7 Mash` had no settings band at all until now: nothing about how
+    // the mash was made was recorded on the tab. These four describe the sieve
+    // test rather than the mixer, which is what the band means on every other
+    // tab that has one.
+    ...sieveTestSettings(6, 'optional'),
     {
       key: 'moisture_pct',
-      columnLetter: 'G',
+      // Kept first in the results band, ahead of the weights: the one result
+      // on this tab that is not part of the sieve test.
+      columnLetter: 'K',
       sheetHeader: 'Moisture (%)',
       label: 'Moisture',
       type: 'number',
@@ -1045,149 +1347,37 @@ const mash: StageSchema = {
       parameterKey: 'mash.moisture',
       help: HELP.moisture,
     },
-    {
-      key: 'avg_particle_size_um',
-      columnLetter: 'H',
-      sheetHeader: 'Average particle size (µm)',
-      label: 'Average particle size',
-      type: 'number',
-      section: 'test_results',
-      required: 'testing',
-      unit: 'µm',
-      unitConfirmed: true,
-      min: 0,
-      implausibleAbove: 10000,
-      decimals: 1,
-      parameterKey: 'mash.avg_particle_size',
-      help: HELP.particleSize,
-    },
-    {
-      key: 'size_spread_gsd',
-      columnLetter: 'I',
-      sheetHeader: 'Size spread (GSD)',
-      label: 'Size spread (GSD)',
-      type: 'number',
-      section: 'test_results',
-      required: 'testing',
-      min: 0,
-      implausibleAbove: 100,
-      decimals: 2,
-      parameterKey: 'mash.size_spread_gsd',
-      help: HELP.gsd,
-    },
-    ...testedByAndComments('J', 'K'),
+    // `avg_particle_size_um` (H) and `size_spread_gsd` (I) stood here: two
+    // figures typed in from an analyser reading, both `testing` and therefore
+    // unreachable on a registration-only form — no Mash sample ever carried a
+    // value for either. They return below as `DGM (µm)` and `Geometric
+    // standard deviation`, computed from the weights rather than transcribed.
+    // L..Y
+    ...sieveMassFields(11, 'optional'),
+    // Z..AH
+    ...sieveDerivedFields(25),
+    ...testedByAndComments('AI', 'AJ'),
   ],
 };
 
 // ---------------------------------------------------------------------------
 // F08 — 8 DGM, A:AI (35 columns), prefix DG
 //
-// Granulometry: a seven-sieve stack weighed on crumbled product. Unlike the
-// other seven tabs this one was AUTHORED rather than transcribed — the tab did
-// not exist in the workbook until 2026-10-29 — so the direction of verification
-// is the same but the history is not: the header strings below were typed into
-// the live workbook by hand, then READ BACK out of it and copied here. That
-// read-back caught a real defect (the micro sign arrived as `¬µ`, because the
-// clipboard carried UTF-8 bytes that Sheets decoded as Mac Roman), which is the
-// whole reason the step exists.
+// Granulometry standalone: a seven-sieve stack weighed on crumbled product,
+// with no other measurement on the tab. Unlike the other seven tabs this one
+// was AUTHORED rather than transcribed — it did not exist in the workbook
+// until 2026-10-29 — so the direction of verification is the same but the
+// history is not: the header strings were typed into the live workbook by
+// hand, then READ BACK out of it and copied here. That read-back caught a
+// real defect (the micro sign arrived as `¬µ`, because the clipboard carried
+// UTF-8 bytes that Sheets decoded as Mac Roman), which is the whole reason
+// the step exists.
 //
-// THREE THINGS THAT LOOK LIKE CHOICES AND ARE NOT:
-//
-//  1. The sieve masses are `registration`, not `testing`. There is no
-//     results-entry screen in this application — `StageFormPage` hardcodes
-//     `phase="registration"` — so a `testing` field can be left blank forever
-//     with nothing to prompt for it. A DGM test is one bench event anyway: the
-//     weighing IS the test, so everything is captured in one submit.
-//
-//  2. The nine derived columns are `type: 'system'`, exactly like column A.
-//     They have to be: `apply_measurement` raises
-//     "Column % is assigned by the server and cannot be submitted" for any
-//     field whose type OR requiredness is `system`, so a computed value can
-//     never be a `sample_measurements` row. They are serialised into the sheet
-//     from values the Edge Function injects after validation, and stored in
-//     `sample_derived_results`. `validateStagePayload` refuses a client-supplied
-//     value for any of them with `server_assigned`, so an operator cannot forge
-//     a fineness module.
-//
-//  3. Nothing here carries a `parameterKey`. With 0 of 34 workbook limits
-//     approved, a parameter key buys no assessment and `release_blockers`
-//     already treats `not_assessable` as a blocker. Adding one would imply an
-//     acceptance limit exists (PRD FR-009, UAT-05) when none does.
+// Its settings, weights and computed columns come from the same generators
+// `2 Ground`, `6 Crumble` and `7 Mash` use — see THE SIEVE TEST above, which
+// also explains why this tab keeps its three legacy setting keys while the
+// other three do not.
 // ---------------------------------------------------------------------------
-
-/**
- * The 14 sieve mass columns, K..X, generated from the preset so the ABNT
- * labels and the apertures cannot drift from the arithmetic that consumes
- * them. `src/lib/dgm.ts` is the single definition of the series; this reads it.
- *
- * The pan is named "Pan" rather than by its ABNT designation, because the
- * workbook's own conversion table puts ABNT 400 at 37 µm and marks it as the
- * pan, while the DGM sheet uses 38 µm for ABNT 400 and 37 µm for `Fundo` —
- * possibly the pan counted twice. Until the lab settles that, calling the last
- * position "Pan" says what is physically there without asserting a mesh.
- */
-const sieveMassFields = (): FieldDef[] => {
-  const tareLetters = ['K', 'M', 'O', 'Q', 'S', 'U', 'W'];
-  const grossLetters = ['L', 'N', 'P', 'R', 'T', 'V', 'X'];
-  return DEFAULT_SIEVE_PRESET.positions.flatMap((position, i): FieldDef[] => {
-    const n = i + 1;
-    const name = position.isPan ? 'Pan' : `ABNT ${position.abnt}`;
-    const tareHeader = position.isPan ? 'Pan empty (g)' : `${name} empty sieve (g)`;
-    const grossHeader = position.isPan ? 'Pan + sample (g)' : `${name} sieve + sample (g)`;
-    const aperture = `Aperture ${position.apertureMicrons} µm.`;
-    const common = {
-      type: 'number',
-      section: 'test_results',
-      required: 'registration',
-      unit: 'g',
-      unitConfirmed: true,
-      min: 0,
-      // A sieve plus a full sample is a few hundred grams. Beyond two
-      // kilograms is a mis-keyed decimal point, which the operator confirms
-      // rather than the system refusing — it is a typo guard, never a limit.
-      implausibleAbove: 2000,
-      decimals: 2,
-    } as const;
-    return [
-      {
-        ...common,
-        key: `sieve${n}_tare_g`,
-        columnLetter: tareLetters[i]!,
-        sheetHeader: tareHeader,
-        label: position.isPan ? 'Pan empty' : `${name} empty sieve`,
-        help: `${aperture} Weigh the sieve before any sample is added.`,
-      },
-      {
-        ...common,
-        key: `sieve${n}_gross_g`,
-        columnLetter: grossLetters[i]!,
-        sheetHeader: grossHeader,
-        label: position.isPan ? 'Pan + sample' : `${name} sieve + sample`,
-        help: `${aperture} Weigh the same sieve again with whatever stayed on it.`,
-      },
-    ];
-  });
-};
-
-/** The nine server-computed columns, Y..AG. */
-const derivedField = (
-  key: string,
-  columnLetter: string,
-  sheetHeader: string,
-  label: string,
-  help: string,
-): FieldDef => ({
-  key,
-  columnLetter,
-  sheetHeader,
-  label,
-  // `system`, like column A: computed by the server, refused from a client,
-  // and never a sample_measurements row. See the block comment above.
-  type: 'system',
-  section: 'test_results',
-  required: 'system',
-  help,
-});
 
 const dgm: StageSchema = {
   stage: 'dgm',
@@ -1300,70 +1490,10 @@ const dgm: StageSchema = {
       options: SIEVE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label })),
       help: 'The stack of sieves used. The apertures are fixed by the series and are shown on each weight below.',
     },
-    ...sieveMassFields(),
-    derivedField(
-      'total_retained_g',
-      'Y',
-      'Total retained (g)',
-      'Total retained',
-      'The sum of what stayed on every sieve. Worked out by the system.',
-    ),
-    derivedField(
-      'fineness_module',
-      'Z',
-      'Fineness module (MF)',
-      'Fineness module (MF)',
-      'How coarse the grind is overall. Worked out by the system from the weights.',
-    ),
-    derivedField(
-      'dgm_um',
-      'AA',
-      'DGM (µm)',
-      'DGM',
-      'Average geometric diameter in micrometres. Worked out by the system.',
-    ),
-    derivedField(
-      'ui_coarse_pct',
-      'AB',
-      'UI coarse (%)',
-      'UI coarse',
-      'Share of the sample on the two coarsest sieves. Worked out by the system.',
-    ),
-    derivedField(
-      'ui_average_pct',
-      'AC',
-      'UI average (%)',
-      'UI average',
-      'Share of the sample on the three middle sieves. Worked out by the system.',
-    ),
-    derivedField(
-      'ui_fine_pct',
-      'AD',
-      'UI fine (%)',
-      'UI fine',
-      'Share of the sample on the finest sieve and the pan. Worked out by the system.',
-    ),
-    derivedField(
-      'dpg_legacy_index',
-      'AE',
-      'DPG legacy index',
-      'DPG legacy index',
-      'The spreadsheet’s own DPG figure, reproduced exactly so old records still compare. It is an index, not a standard deviation: it carries units and it doubles if you weigh twice as much sample, so it can only be compared between samples of equal mass.',
-    ),
-    derivedField(
-      'gsd',
-      'AF',
-      'Geometric standard deviation',
-      'Geometric standard deviation',
-      'How even the grind is, as a proper dimensionless figure. Unlike the DPG index this does not change with how much sample was weighed.',
-    ),
-    derivedField(
-      'gsd_basis',
-      'AG',
-      'GSD basis',
-      'GSD basis',
-      'Which convention produced the figure beside it. Recorded because the coarsest sieve has nothing above it and the pan has nothing below it, so both bins need a stated rule that a number cannot carry by itself.',
-    ),
+    // K..X, the same fourteen weights the three inline sieve tabs carry.
+    ...sieveMassFields(10, 'registration'),
+    // Y..AG
+    ...sieveDerivedFields(24),
     {
       key: 'tested_by_qo',
       columnLetter: 'AH',

@@ -29,10 +29,16 @@
  * arithmetic, keeps the validator stage-agnostic and keeps this knowledge in
  * one file.
  *
- * Seven of the eight stages have no entry and get `{}` without allocating.
+ * Four of the eight stages have no entry and get `{}` without allocating.
  */
 
-import { computeDgm, sievePresetById, DEFAULT_SIEVE_PRESET, type SieveReading } from '../lib/dgm.ts';
+import {
+  computeDgm,
+  sievePresetById,
+  DEFAULT_SIEVE_PRESET,
+  SIEVE_COUNT,
+  type SieveReading,
+} from '../lib/dgm.ts';
 import { STAGE_SCHEMAS } from './registry.ts';
 import type { Stage } from './types.ts';
 
@@ -92,21 +98,21 @@ function numberAt(values: CleanValues, key: string): number {
     const n = Number(raw);
     if (Number.isFinite(n)) return n;
   }
-  throw new Error(`Field "${key}" is required to compute the DGM results and was not usable.`);
+  throw new Error(`Field "${key}" is required to compute the sieve results and was not usable.`);
 }
 
 /**
- * The DGM outputs, as spreadsheet cells.
+ * The sieve-test outputs for one stage, as spreadsheet cells.
  *
  * Returns `{}` rather than throwing when a mass is missing: requiredness is
  * the validator's job and it has already run, so the only way to arrive here
  * incomplete is a phase that does not require the masses. Writing partial
  * arithmetic would be worse than writing nothing.
  */
-function deriveDgm(values: CleanValues): Record<string, string> {
-  const schema = STAGE_SCHEMAS.dgm;
+function deriveSieveTest(stage: Stage, values: CleanValues): Record<string, string> {
+  const schema = STAGE_SCHEMAS[stage];
   const readings: SieveReading[] = [];
-  for (let n = 1; n <= 7; n++) {
+  for (let n = 1; n <= SIEVE_COUNT; n++) {
     const tareKey = `sieve${n}_tare_g`;
     const grossKey = `sieve${n}_gross_g`;
     if (values[tareKey] === undefined || values[grossKey] === undefined) return {};
@@ -154,9 +160,24 @@ function deriveDgm(values: CleanValues): Record<string, string> {
   return out;
 }
 
-const DERIVERS: Partial<Record<Stage, (values: CleanValues) => Record<string, string>>> = {
-  dgm: deriveDgm,
-};
+/**
+ * The stages whose columns the server fills in.
+ *
+ * All four carry the same sieve test and therefore the same nine computed
+ * columns, so they share one implementation parameterised by stage rather
+ * than four copies that could disagree about what a fineness module is. The
+ * per-stage lookup is still a TABLE and not a `switch` in the validator:
+ * `validation.ts` states in its own header that "nothing here enumerates
+ * fields", and a `switch` on stage there would be the first exception to that
+ * and would invite the second.
+ */
+const DERIVERS: Partial<Record<Stage, (stage: Stage, values: CleanValues) => Record<string, string>>> =
+  {
+    ground: deriveSieveTest,
+    crumble: deriveSieveTest,
+    mash: deriveSieveTest,
+    dgm: deriveSieveTest,
+  };
 
 /** Does this stage have columns the server fills in? */
 export function hasDerivedColumns(stage: Stage): boolean {
@@ -171,5 +192,5 @@ export function hasDerivedColumns(stage: Stage): boolean {
 export function deriveSystemValues(stage: Stage, values: CleanValues): Record<string, string> {
   const derive = DERIVERS[stage];
   if (derive === undefined) return {};
-  return derive(values);
+  return derive(stage, values);
 }

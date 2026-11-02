@@ -277,8 +277,6 @@ describe('UAT-02: AM and BC compose differently all the way to the sheet', () =>
     const stale = {
       ...groundBase,
       sampling_point: 'AM',
-      avg_particle_size_um: '880',
-      size_spread_gsd: '2.1',
       moisture_pct_bc: '12.4', // left over from a BC entry before switching
       tested_by_qo: 'R. Singh',
     };
@@ -294,7 +292,9 @@ describe('UAT-02: AM and BC compose differently all the way to the sheet', () =>
     expect(parsed.values).not.toHaveProperty('moisture_pct_bc');
 
     const row = toSheetRow('ground', 'AM-261024-01', parsed.values);
-    expect(row[columnLetterToIndex('L')]).toBe('');
+    // N, not L: the sieve test took J..M when it replaced the two
+    // analyser-reading columns.
+    expect(row[columnLetterToIndex('N')]).toBe('');
 
     // And it assesses as Not Applicable — distinct from Not Tested.
     const assessments = assessAll('ground', parsed.values, NO_APPROVED_RULES, instant);
@@ -306,8 +306,6 @@ describe('UAT-02: AM and BC compose differently all the way to the sheet', () =>
     const withoutMoisture = {
       ...groundBase,
       sampling_point: 'BC',
-      avg_particle_size_um: '720',
-      size_spread_gsd: '2.4',
       tested_by_qo: 'R. Singh',
     };
 
@@ -321,22 +319,22 @@ describe('UAT-02: AM and BC compose differently all the way to the sheet', () =>
     expect(complete.ok).toBe(true);
     if (!complete.ok) return;
     const row = toSheetRow('ground', 'BC-261024-01', complete.values);
-    expect(row[columnLetterToIndex('L')]).toBe('12.4');
+    expect(row[columnLetterToIndex('N')]).toBe('12.4');
   });
 
   it('the two points write to the same tab but never to each other\'s columns', () => {
     const am = parseStageValues('ground', 'testing', {
-      ...groundBase, sampling_point: 'AM', avg_particle_size_um: '880', size_spread_gsd: '2.1', tested_by_qo: 'R. Singh',
+      ...groundBase, sampling_point: 'AM', tested_by_qo: 'R. Singh',
     });
     const bc = parseStageValues('ground', 'testing', {
-      ...groundBase, sampling_point: 'BC', avg_particle_size_um: '720', size_spread_gsd: '2.4', moisture_pct_bc: '12.4', tested_by_qo: 'R. Singh',
+      ...groundBase, sampling_point: 'BC', moisture_pct_bc: '12.4', tested_by_qo: 'R. Singh',
     });
     if (!am.ok || !bc.ok) throw new Error('both should validate');
 
     const amRow = toSheetRow('ground', 'AM-261024-01', am.values);
     const bcRow = toSheetRow('ground', 'BC-261024-01', bc.values);
-    expect(amRow).toHaveLength(15);
-    expect(bcRow).toHaveLength(15);
+    expect(amRow).toHaveLength(40);
+    expect(bcRow).toHaveLength(40);
     expect(amRow[columnLetterToIndex('D')]).toBe('AM after mill');
     expect(bcRow[columnLetterToIndex('D')]).toBe('BC before conditioning');
   });
@@ -423,8 +421,10 @@ describe('the soft implausibility guard never becomes a limit', () => {
       batch_no: 'B-4472',
       sampled_by: 'A. Persaud',
       moisture_pct: '13.0',
-      avg_particle_size_um: '99999', // beyond implausibleAbove (10000)
-      size_spread_gsd: '2.2',
+      // A sieve plus its sample, beyond implausibleAbove (2000 g). This used
+      // to be `avg_particle_size_um` at 99999 µm; that column is gone from
+      // `7 Mash`, and a sieve mass is the same kind of guard on the same tab.
+      sieve1_gross_g: '99999',
       tested_by_qo: 'R. Singh',
     };
 
@@ -434,11 +434,11 @@ describe('the soft implausibility guard never becomes a limit', () => {
     if (!parsed.ok) return;
 
     const findings = implausibleFindings('mash', parsed.values);
-    expect(findings.map((f) => f.field.key)).toContain('avg_particle_size_um');
+    expect(findings.map((f) => f.field.key)).toContain('sieve1_gross_g');
 
     // Once confirmed, it is written exactly as typed.
     const row = toSheetRow('mash', 'MS-261024-01', parsed.values);
-    expect(row[columnLetterToIndex('H')]).toBe('99999');
+    expect(row[columnLetterToIndex('M')]).toBe('99999');
   });
 
   it('a physically impossible percentage IS rejected', () => {

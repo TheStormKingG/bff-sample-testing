@@ -158,7 +158,26 @@ export function FieldShell({
   }
 
   return (
-    <div className="py-3">
+    /*
+      `flex h-full flex-col` with the control block on `mt-auto` is a NO-OP
+      in the one-field-per-row layout and the whole alignment mechanism in the
+      two-column one. Outside a grid this div's height is auto, so there is no
+      free space for `mt-auto` to absorb and the parts stack exactly as a
+      plain block. Inside `PairedFields`' grid the cell is stretched to the
+      taller of the two, and the control is pushed to the bottom of it.
+
+      That matters because the two fields beside each other have help text of
+      DIFFERENT lengths — "AM is after the mill…" runs to three lines at phone
+      width while "Material or feed type" has none — and top-aligned controls
+      would then sit at two different heights in one row, which reads as a
+      rendering fault rather than a layout. Aligning on the control also puts
+      the two tap targets on one line, which is what an operator is aiming at.
+
+      Done here rather than with a `paired` prop because a prop would have to
+      be threaded through all five input components that reach this shell, and
+      every one of them would have to remember to forward it.
+    */
+    <div className="flex h-full flex-col py-3">
       <label htmlFor={ids.input} className={labelClass(error !== undefined)}>
         <span>{field.label}</span>
         <UnitBadge field={field} />
@@ -168,20 +187,22 @@ export function FieldShell({
       <HelpHint id={ids.help} text={field.help} />
       <UnitNote field={field} id={ids.unitNote} />
 
-      <div className="mt-2">{children}</div>
+      <div className="mt-auto">
+        <div className="mt-2">{children}</div>
 
-      {error !== undefined ? (
-        <p
-          id={ids.error}
-          className="mt-2 flex items-start gap-1.5 text-sm font-semibold text-red-800"
-        >
-          <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            <span className="sr-only">Problem: </span>
-            {error}
-          </span>
-        </p>
-      ) : null}
+        {error !== undefined ? (
+          <p
+            id={ids.error}
+            className="mt-2 flex items-start gap-1.5 text-sm font-semibold text-red-800"
+          >
+            <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              <span className="sr-only">Problem: </span>
+              {error}
+            </span>
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

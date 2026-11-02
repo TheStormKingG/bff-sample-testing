@@ -33,7 +33,7 @@ import { describe, expect, it } from 'vitest';
 import { validateStagePayload } from '../supabase/functions/_shared/validation.ts';
 import { deriveSystemValues, hasDerivedColumns } from '@/forms/derived';
 import { STAGE_SCHEMAS } from '@/forms/registry';
-import { STAGES } from '@/forms/types';
+import { STAGES, type Stage } from '@/forms/types';
 import { columnLetterToIndex } from '@/forms/sheetMapping';
 
 /** The worked example from `Cópia de DGM (2).xls`: 202 g of "BF". */
@@ -258,24 +258,43 @@ describe('a sample on which nothing was retained', () => {
   });
 });
 
-describe('the other seven stages are untouched', () => {
-  it('only DGM has computed columns', () => {
-    const withDerived = STAGES.filter((s) => hasDerivedColumns(s));
-    expect(withDerived).toEqual(['dgm']);
+/** The four tabs that carry a sieve test, and therefore computed columns. */
+const SIEVE_STAGES: readonly Stage[] = ['ground', 'crumble', 'mash', 'dgm'];
+
+describe('the four tabs without a sieve test are untouched', () => {
+  it('computed columns exist on the sieve tabs and nowhere else', () => {
+    expect(STAGES.filter((s) => hasDerivedColumns(s))).toEqual(SIEVE_STAGES);
   });
 
-  it('derives nothing for them, and allocates nothing doing it', () => {
+  it('derives nothing for the others, and allocates nothing doing it', () => {
     for (const stage of STAGES) {
-      if (stage === 'dgm') continue;
+      if (SIEVE_STAGES.includes(stage)) continue;
       expect(deriveSystemValues(stage, {}), stage).toEqual({});
     }
   });
 
-  it('leaves their rows exactly as wide as they were', () => {
+  it('derives nothing for a sieve tab that carries no weights', () => {
+    // The ordinary case on `2 Ground`, `6 Crumble` and `7 Mash`: registered at
+    // the mill, weighed later. An empty map here is what keeps the row's
+    // computed cells blank rather than filled with arithmetic over nothing.
+    for (const stage of ['ground', 'crumble', 'mash'] as const) {
+      expect(deriveSystemValues(stage, {}), stage).toEqual({});
+    }
+  });
+
+  it('leaves the four untouched rows exactly as wide as they were', () => {
     // A regression here would mean the derive step had leaked a key into a
     // stage that has no column for it.
-    const widths = STAGES.filter((s) => s !== 'dgm').map((s) => STAGE_SCHEMAS[s].columnCount);
-    expect(widths).toEqual([19, 15, 13, 11, 16, 13, 11]);
+    const widths = STAGES.filter((s) => !SIEVE_STAGES.includes(s)).map(
+      (s) => STAGE_SCHEMAS[s].columnCount,
+    );
+    expect(widths).toEqual([19, 13, 11, 16]);
+  });
+
+  it('widened exactly the three tabs that gained the test', () => {
+    expect(STAGE_SCHEMAS.ground.columnCount).toBe(40);
+    expect(STAGE_SCHEMAS.crumble.columnCount).toBe(39);
+    expect(STAGE_SCHEMAS.mash.columnCount).toBe(36);
   });
 });
 
