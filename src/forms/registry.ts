@@ -247,7 +247,25 @@ const actionTaken = (col: string): FieldDef => ({
   type: 'textarea',
   section: 'follow_up',
   required: 'optional',
-  help: 'What was done about the result. Required when the sample is placed on hold.',
+  /*
+    HIDDEN, AND THE COLUMN STAYS — see `FieldDef.hidden`.
+
+    Three tabs carried it, it was optional on all three, and after the life
+    of the system it holds ZERO rows: not one operator has ever used it.
+    What they use instead is the disposition and hold flow, which asks for a
+    reason, records who gave it and audits it — a free-text box on a form is
+    a weaker record of the same thing, and having both invites the real
+    decision to be written in the place that is not audited.
+
+    Its help text also said "Required when the sample is placed on hold",
+    which nothing enforced and nothing ever has. Removing the field removes
+    the false claim with it.
+
+    The column is kept rather than deleted because deleting one means
+    restructuring three live workbook tabs and re-widening the frozen rows
+    already queued against them. It stays blank, as it has always been.
+  */
+  hidden: true,
 });
 
 // ---------------------------------------------------------------------------

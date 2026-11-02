@@ -268,20 +268,27 @@ describe('StageForm — section bands', () => {
     expect(notApplicable).toBe(1);
 
     /*
-      The sieve series, on each of the five tabs that carry a sieve test.
+      Two fields are recorded but not asked for, and they are counted here
+      rather than subtracted silently, because "submitted but never shown"
+      is precisely the thing a reader of this test should be made to see.
 
-      It is a dropdown with exactly one option, so asking for it was asking
-      an operator to choose the only answer there is. It keeps its column,
-      its heading, its stored code and its sheet cell — and loses its place
-      on the screen. Counted here rather than subtracted silently, because
-      "a field that is submitted but never shown" is precisely the thing a
-      reader of this test should be made to see.
+        sieve_series  on each of the five tabs that weigh a stack. A dropdown
+                      with exactly one option, so asking for it was asking an
+                      operator to choose the only answer there is. It keeps
+                      its column, heading, stored code and sheet cell.
+
+        action_taken  on three tabs. Optional everywhere, and after the life
+                      of the system it holds zero rows — the disposition and
+                      hold flow is where that decision is actually recorded,
+                      with a reason, an actor and an audit entry.
     */
-    const hiddenFields = Object.values(STAGE_SCHEMAS).reduce(
-      (n, s) => n + s.fields.filter((f) => f.hidden === true).length,
-      0,
+    const hidden = Object.values(STAGE_SCHEMAS).flatMap((s) =>
+      s.fields.filter((f) => f.hidden === true).map((f) => `${s.stage}.${f.key}`),
     );
-    expect(hiddenFields).toBe(5);
+    expect(hidden.filter((k) => k.endsWith('.sieve_series'))).toHaveLength(5);
+    expect(hidden.filter((k) => k.endsWith('.action_taken'))).toHaveLength(3);
+    const hiddenFields = hidden.length;
+    expect(hiddenFields).toBe(8);
     expect(checked).toBe(columns - systemColumns - notApplicable - hiddenFields);
   });
 });

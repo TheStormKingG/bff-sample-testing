@@ -221,11 +221,12 @@ export interface FieldDef {
    * unchanged — and only stops appearing on the screen and in its section's
    * field count.
    *
-   * A hidden field MUST carry a `defaultValue`, because nothing else will
-   * ever supply one; `tests/registry.test.ts` asserts that, and that the
+   * A hidden field must be SATISFIABLE WITHOUT THE OPERATOR: either optional,
+   * or carrying a `defaultValue`, because nothing else will ever supply one.
+   * `tests/controlledPeopleAndProgress.test.tsx` asserts that, and that a
    * default is one of the field's own options. It is still validated like any
-   * other field, so a payload that omits it is refused rather than silently
-   * accepted.
+   * other field, so a payload that omits a required one is refused rather
+   * than silently accepted.
    */
   readonly hidden?: boolean;
 }
