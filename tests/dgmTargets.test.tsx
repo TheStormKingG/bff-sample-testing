@@ -23,6 +23,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { render, screen, within } from '@testing-library/react';
 
 import { DerivedResultsTable } from '@/components/form/DerivedResultsTable';
@@ -483,5 +485,42 @@ describe('the navigation under a registration', () => {
     const row = screen.getByText('Back to forms').parentElement as HTMLElement;
     expect(within(row).getAllByRole('button')).toHaveLength(2);
     expect(row.className).toContain('flex-nowrap');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The reader's cache after a write
+// ---------------------------------------------------------------------------
+
+describe('saving a setting drops the cache the screens read it from', () => {
+  it('names the query keys that both configuration writers have to invalidate', () => {
+    // A behaviour test would need a live QueryClient and a mocked Edge call
+    // to assert one line; this reads the line instead, and it is the line
+    // that matters: both settings are read with an hour's staleTime, so a
+    // missing invalidation leaves the administrator looking at the document
+    // they just replaced — which is how it behaved when first deployed.
+    const source = readFileSync(
+      join(process.cwd(), 'src', 'hooks', 'useAdmin.ts'),
+      'utf8',
+    );
+    const onSuccess = source.slice(source.indexOf('onSuccess:'));
+    for (const [action, key] of [
+      ['set_sieve_series', 'sieve-series'],
+      ['set_dgm_target_ranges', 'dgm-target-ranges'],
+    ]) {
+      const branch = onSuccess.indexOf(`input.action === '${action}'`);
+      expect(branch, `${action} does not invalidate anything`).toBeGreaterThan(-1);
+      expect(onSuccess.slice(branch, branch + 200)).toContain(`'${key}'`);
+    }
+
+    // And the keys are the ones the hooks actually use, read from the hooks
+    // rather than retyped here — a pair of matching strings in two files is
+    // exactly the shape that drifts.
+    expect(
+      readFileSync(join(process.cwd(), 'src', 'hooks', 'useDgmTargets.ts'), 'utf8'),
+    ).toContain("queryKey: ['dgm-target-ranges']");
+    expect(
+      readFileSync(join(process.cwd(), 'src', 'hooks', 'useSieveSeries.ts'), 'utf8'),
+    ).toContain("queryKey: ['sieve-series']");
   });
 });

@@ -529,9 +529,27 @@ export function useAdminAction() {
       if (!result.ok) throw new Error(result.message);
       return result;
     },
-    onSuccess: () => {
+    onSuccess: (_result, input) => {
       void client.invalidateQueries({ queryKey: ['admin'] });
       void client.invalidateQueries({ queryKey: ['authority'] });
+      /*
+        The two actions that write `system_config` also have to drop the
+        READER'S cache, which is a different query key and a long one: both
+        settings are read with an hour's `staleTime`, because equipment and
+        targets change when somebody decides they do, not during a shift.
+
+        Without this the administrator saves, the server commits, and their
+        own screen keeps showing the old document for an hour — so the
+        "Discard changes" baseline and the enabled/disabled state of Save are
+        computed against a version that no longer exists, and a second edit
+        in the same sitting is diffed against the wrong thing.
+      */
+      if (input.action === 'set_sieve_series') {
+        void client.invalidateQueries({ queryKey: ['sieve-series'] });
+      }
+      if (input.action === 'set_dgm_target_ranges') {
+        void client.invalidateQueries({ queryKey: ['dgm-target-ranges'] });
+      }
     },
   });
 }
