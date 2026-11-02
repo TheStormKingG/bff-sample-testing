@@ -33,20 +33,24 @@ export interface StickyFormFooterProps {
  * labels the three buttons wrapped onto two rows at 390px and the bar stood
  * 121px tall, clipping the field behind it mid-sentence.
  *
- * The labels are therefore single words — Register, Save, Cancel, Void — and
- * that is the fix the earlier version of this comment already prescribed
- * ("shorten the WORD rather than letting it wrap or truncate"). Two of them
- * lost a noun they did not need: the button sits under the form it acts on,
- * so "Register sample" said "sample" to somebody looking at one.
+ * The labels are therefore single words — Register, Draft, Save, Cancel,
+ * Void — and that is the fix the earlier version of this comment already
+ * prescribed ("shorten the WORD rather than letting it wrap or truncate").
+ * Each lost a noun it did not need: the button sits under the form it acts
+ * on, so "Register sample" said "sample" to somebody looking at one.
  *
- * WHAT THE SHORTENING WOULD HAVE COST, AND HOW IT IS PAID BACK. "Save draft"
- * and "Save results" are different acts, and both become "Save". They can
- * never appear together — `availableActions` gates the first on the capture
- * state being `draft` and the second on `awaiting_results` — so no screen
- * ever shows two Saves. But a screen reader announcing a bare "Save" to
- * somebody who cannot see which form they are on would have lost the
- * distinction for good, so each keeps its full name as its ACCESSIBLE name
- * via `aria-label`. Visible text short, announced text exact.
+ * WHICH WORD SURVIVED, AND WHY IT IS NOT "SAVE" TWICE. "Save draft" and
+ * "Save results" are different acts. Keeping the shared verb for both would
+ * have left two buttons reading "Save" that mean different things, so each
+ * keeps the word that DISTINGUISHES it instead: the draft button is "Draft",
+ * the results button is "Save". They can never appear together anyway —
+ * `availableActions` gates the first on the capture state being `draft` and
+ * the second on `awaiting_results` — but a label should not need the state
+ * machine to be unambiguous.
+ *
+ * Both keep their full name as their ACCESSIBLE name via `aria-label`,
+ * because "Draft" alone is a noun and announces as one; "Save draft" says
+ * what pressing it does. Visible text short, announced text exact.
  *
  * `px-3` rather than `px-4`, and `gap-1.5` rather than `gap-2`, bought the
  * room for four buttons at 320px. `flex-1 basis-0` on every button divides
@@ -148,7 +152,7 @@ export function StickyFormFooter({
             className={SECONDARY}
           >
             <FileText aria-hidden="true" className="hidden h-5 w-5 shrink-0 sm:block" />
-            Save
+            Draft
           </button>
         ) : null}
 
