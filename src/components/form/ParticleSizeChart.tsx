@@ -309,6 +309,17 @@ export function ParticleSizeChart({
           x={Math.min(Math.max(x(peakIndex), PAD.left + 26), WIDTH - PAD.right - 26)}
           y={y(peak.percent) - 12}
           textAnchor="middle"
+          /*
+            A white halo, painted UNDER the glyphs. The modal bin and the
+            sample's own mean are often the same part of the stack — a coarse
+            grind peaks near its own mean — so this label and the dashed
+            marker land on top of each other on exactly the samples the band
+            was added for. Moving the label would be guesswork about which
+            side is free; a halo keeps it legible over anything.
+          */
+          stroke="white"
+          strokeWidth={3}
+          paintOrder="stroke"
           className="fill-blue-800 text-[14px] font-semibold tabular"
         >
           {peak.percent.toFixed(1)}%
