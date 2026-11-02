@@ -58,6 +58,7 @@ import { STAGE_SCHEMAS } from '@/forms/registry';
 import { SECTIONS, type FieldDef, type Section, type Stage } from '@/forms/types';
 import { clearNonApplicable, defaultStageValues } from '@/forms/defaults';
 import type { SieveSeriesDocument } from '@/lib/sieveSeries';
+import { withResolvedOptions, type VocabularyDocument } from '@/lib/vocabulary';
 import {
   buildStageSchema,
   editableFields,
@@ -134,6 +135,12 @@ export interface StageFormProps {
   readonly phase: FormPhase;
   /** The lab's sieve table, for the row headings on the sieve grid. */
   readonly sieveSeries?: SieveSeriesDocument | null;
+  /**
+   * The administrator's dropdown lists. Null draws, and validates against,
+   * the lists the application shipped with — which is what a caller that has
+   * not read them should get.
+   */
+  readonly vocabulary?: VocabularyDocument | null;
   /** Seeded from `defaultStageValues` when omitted. Read once, at mount. */
   readonly initialValues?: StageFormValues;
   /** Which footer buttons to offer. Composed by the page from state + can(). */
@@ -182,6 +189,7 @@ export function StageForm({
   phase,
   initialValues,
   sieveSeries = null,
+  vocabulary = null,
   actions,
   saveState,
   errorMessage = null,
@@ -436,7 +444,7 @@ export function StageForm({
 
   const onValid = useCallback(
     (raw: StageFormValues) => {
-      const parsed = parseStageValues(stage, phase, raw);
+      const parsed = parseStageValues(stage, phase, raw, vocabulary);
       if (!parsed.ok) {
         // Unreachable while the resolver and this call share one schema. If it
         // ever is reached the schema changed under us, and the honest response
@@ -528,7 +536,7 @@ export function StageForm({
   const saveDraft = useCallback(() => {
     const raw = getValues();
     clearErrors();
-    const parsed = parseStageValues(stage, 'draft', raw);
+    const parsed = parseStageValues(stage, 'draft', raw, vocabulary);
     if (!parsed.ok) {
       for (const [key, message] of Object.entries(parsed.errors)) {
         setError(key, { type: 'validate', message });
@@ -600,9 +608,15 @@ export function StageForm({
           section's field count, so "Settings when sampled — 4 fields" counts
           what the operator can actually see.
         */
-        const sectionFields = applicable.filter(
-          (field) => field.section === section && field.hidden !== true,
-        );
+        const sectionFields = applicable
+          .filter((field) => field.section === section && field.hidden !== true)
+          /*
+            Resolved HERE rather than passed as another prop, so every control
+            and everything downstream of it reads one list. A field whose
+            options are code-driven comes back by identity, so this costs
+            nothing on the other 280 columns.
+          */
+          .map((field) => withResolvedOptions(field, vocabulary));
         return (
           <FormSection
             key={section}

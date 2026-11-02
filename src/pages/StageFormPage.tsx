@@ -37,6 +37,7 @@ import { STAGES, type Stage } from '@/forms/types';
 import { defaultStageValues, hydrateStageValues } from '@/forms/defaults';
 import { useSieveSeries } from '@/hooks/useSieveSeries';
 import { useDgmTargets } from '@/hooks/useDgmTargets';
+import { useVocabulary } from '@/hooks/useVocabulary';
 import type { StageFormValues } from '@/forms/zodSchema';
 
 import {
@@ -172,6 +173,8 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
   // `?? null` twice over: the query may not have resolved, and a form with no
   // stored target is the ordinary case rather than a fault.
   const dgmTargets = useDgmTargets();
+  const vocabularyQuery = useVocabulary();
+  const vocabulary = vocabularyQuery.data ?? null;
   const dgmTarget = dgmTargets.data?.document.ranges[stage] ?? null;
 
   const [initialValues, setInitialValues] = useState<StageFormValues | null>(null);
@@ -475,6 +478,7 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
       ) : (
         <StageForm
           sieveSeries={series}
+          vocabulary={vocabulary}
           key={`${stage}-${formInstance}`}
           stage={stage}
           // Registration requiredness. Results are entered later, against the

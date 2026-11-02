@@ -550,6 +550,16 @@ export function useAdminAction() {
       if (input.action === 'set_dgm_target_ranges') {
         void client.invalidateQueries({ queryKey: ['dgm-target-ranges'] });
       }
+      /*
+        0037 made feed_types, samplers and testers the actual source of three
+        dropdowns, so a list edit now changes what a FORM offers — and the
+        form's copy is held for an hour. Without this an administrator adds a
+        sampler, sees it saved, and does not see it on the form, which is
+        precisely the complaint this release exists to fix.
+      */
+      if (input.action === 'upsert_controlled_value') {
+        void client.invalidateQueries({ queryKey: ['vocabulary'] });
+      }
     },
   });
 }
@@ -771,10 +781,26 @@ const VOCABULARY_SOURCES = [
         .order('sort_order', { ascending: true, nullsFirst: false }),
   },
   {
+    listKey: 'samplers',
+    read: () =>
+      db
+        .from('samplers')
+        .select('code,label,sort_order,active')
+        .order('sort_order', { ascending: true, nullsFirst: false }),
+  },
+  {
     listKey: 'suppliers',
     read: () =>
       db
         .from('suppliers')
+        .select('code,label,sort_order,active')
+        .order('sort_order', { ascending: true, nullsFirst: false }),
+  },
+  {
+    listKey: 'testers',
+    read: () =>
+      db
+        .from('testers')
         .select('code,label,sort_order,active')
         .order('sort_order', { ascending: true, nullsFirst: false }),
   },

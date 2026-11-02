@@ -43,6 +43,8 @@ export const SECTION_LABELS: Record<Section, string> = {
   follow_up: 'Follow-up',
 };
 
+import type { VocabularyListKey } from '../lib/vocabulary.ts';
+
 export type FieldType =
   | 'system' // assigned by the server; never operator-editable (column A)
   | 'text'
@@ -127,6 +129,23 @@ export interface FieldDef {
   readonly unitConfirmed?: boolean;
 
   readonly options?: readonly SelectOption[];
+
+  /**
+   * The administrator-editable list this field's options come from.
+   *
+   * When set, `resolveOptions` (src/lib/vocabulary.ts) replaces `options`
+   * with the rows of that table — and `options` becomes the SHIPPED FALLBACK,
+   * used when the list is missing, unreadable or empty. It is never removed:
+   * an empty list on a required field is a form nobody can submit.
+   *
+   * Absent means the list is part of the code, and for three of the four
+   * selects that is a decision rather than an omission. `sampling_point`
+   * drives the sample-ID prefix and the BC-only moisture rule, so a code an
+   * administrator invented would have no prefix and no rule; `sieve_series`
+   * cannot grow because the arithmetic is calibrated to one stack;
+   * `mill_screen_size_mm` is a physical fitting. Yes/no is not a vocabulary.
+   */
+  readonly optionsListKey?: VocabularyListKey;
 
   /**
    * Hard bounds. These are physical or logical impossibilities only — a

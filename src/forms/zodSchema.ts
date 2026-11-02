@@ -41,6 +41,7 @@ import {
 } from './registry';
 import { looksLikeFormula, type MeasurementValue } from './sheetMapping';
 import type { FieldDef, Stage } from './types';
+import { resolveOptions, type VocabularyDocument } from '@/lib/vocabulary';
 
 /** The workflow phase whose requiredness set applies to this submission. */
 export type FormPhase = 'draft' | 'registration' | 'testing' | 'review';
@@ -291,8 +292,18 @@ function numberFieldSchema(field: FieldDef, required: boolean): FieldSchema {
   });
 }
 
-function enumFieldSchema(field: FieldDef, required: boolean): FieldSchema {
-  const options = field.options ?? [];
+function enumFieldSchema(
+  field: FieldDef,
+  required: boolean,
+  vocabulary: VocabularyDocument | null,
+): FieldSchema {
+  /*
+    `resolveOptions`, never `field.options`. On a field whose list an
+    administrator owns, the registry's list is only the fallback — and a gate
+    reading the fallback while the form drew the stored list would refuse the
+    operator's own choice, which is the worst way to fail.
+  */
+  const options = resolveOptions(field, vocabulary);
   const allowed = options.map((o) => o.value);
   return z.unknown().transform((raw, ctx): string | undefined => {
     const text = normalizeToText(raw);
@@ -396,13 +407,17 @@ function timeFieldSchema(field: FieldDef, required: boolean): FieldSchema {
   });
 }
 
-function fieldSchema(field: FieldDef, required: boolean): FieldSchema {
+function fieldSchema(
+  field: FieldDef,
+  required: boolean,
+  vocabulary: VocabularyDocument | null,
+): FieldSchema {
   switch (field.type) {
     case 'number':
       return numberFieldSchema(field, required);
     case 'select':
     case 'yesno':
-      return enumFieldSchema(field, required);
+      return enumFieldSchema(field, required, vocabulary);
     case 'date':
       return dateFieldSchema(field, required);
     case 'time':
@@ -434,12 +449,22 @@ export function buildStageSchema(
   stage: Stage,
   phase: FormPhase,
   values: Readonly<Record<string, unknown>> = {},
+  /*
+    The administrator's lists, when they have been read.
+
+    OPTIONAL and defaulting to null, which resolves every select to the list
+    the application shipped with. That is correct for a caller with no
+    vocabulary — a test, or a path that runs before the tables are reachable
+    — and it is never silently wrong, because the shipped list is a superset
+    of the seeded one by contract (`tests/vocabulary.test.ts`).
+  */
+  vocabulary: VocabularyDocument | null = null,
 ): StageZodSchema {
   const required = requiredFieldKeys(stage, phase, values);
   const shape: Record<string, FieldSchema> = {};
 
   for (const field of editableFields(stage, values)) {
-    shape[field.key] = fieldSchema(field, required.has(field.key));
+    shape[field.key] = fieldSchema(field, required.has(field.key), vocabulary);
   }
 
   // `z.object` strips unknown keys, so a value left over from a previously
@@ -465,8 +490,9 @@ export function parseStageValues(
   stage: Stage,
   phase: FormPhase,
   raw: Readonly<Record<string, unknown>>,
+  vocabulary: VocabularyDocument | null = null,
 ): StageParseResult {
-  const result = buildStageSchema(stage, phase, raw).safeParse(raw);
+  const result = buildStageSchema(stage, phase, raw, vocabulary).safeParse(raw);
   if (result.success) return { ok: true, values: result.data };
 
   const errors: Record<string, string> = {};

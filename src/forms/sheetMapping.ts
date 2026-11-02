@@ -26,6 +26,7 @@ import {
   PROTECTED_HEADER_ROWS,
 } from './registry.ts';
 import type { FieldDef, Stage } from './types.ts';
+import { resolveOptions, type VocabularyDocument } from '../lib/vocabulary.ts';
 
 /**
  * `RAW` is the primary formula-injection control: Sheets stores the string
@@ -190,11 +191,18 @@ function encodeNumber(field: FieldDef, raw: MeasurementValue): string {
   return text;
 }
 
-function encodeEnum(field: FieldDef, raw: MeasurementValue): string {
+function encodeEnum(
+  field: FieldDef,
+  raw: MeasurementValue,
+  vocabulary: VocabularyDocument | null,
+): string {
   const code = String(raw);
-  const option = field.options?.find((o) => o.value === code);
+  // `resolveOptions`, so a value an administrator added is encodable and a
+  // value they retired still is. See `src/lib/vocabulary.ts`.
+  const options = resolveOptions(field, vocabulary);
+  const option = options.find((o) => o.value === code);
   if (!option) {
-    const allowed = (field.options ?? []).map((o) => o.value).join(', ');
+    const allowed = options.map((o) => o.value).join(', ');
     throw new Error(
       `Field "${field.key}" received unknown code ${JSON.stringify(code)}; allowed codes are [${allowed}]`,
     );
@@ -224,6 +232,12 @@ export function toSheetRow(
   stage: Stage,
   sampleId: string,
   values: SampleValues,
+  /*
+    The administrator's lists, when the caller has read them. Null resolves
+    every select to the list the application shipped with, which is what a
+    caller with no vocabulary should get — and what every test gets.
+  */
+  vocabulary: VocabularyDocument | null = null,
 ): string[] {
   const schema = STAGE_SCHEMAS[stage];
 
@@ -242,7 +256,7 @@ export function toSheetRow(
         return encodeNumber(field, raw);
       case 'select':
       case 'yesno':
-        return encodeEnum(field, raw);
+        return encodeEnum(field, raw, vocabulary);
       case 'text':
       case 'textarea':
       case 'date':

@@ -32,6 +32,7 @@ import { STAGES, type FieldDef, type Stage } from '../../../src/forms/types.ts';
 import { looksLikeFormula, toSheetRow } from '../../../src/forms/sheetMapping.ts';
 import { deriveSystemValues, hasDerivedColumns } from '../../../src/forms/derived.ts';
 import type { SieveSeriesDocument } from '../../../src/lib/sieveSeries.ts';
+import { resolveOptions, type VocabularyDocument } from '../../../src/lib/vocabulary.ts';
 import type { SampleValues } from '../../../src/forms/sheetMapping.ts';
 
 /**
@@ -113,6 +114,21 @@ export interface ValidateArgs {
    * supplies and what a deployment that has never edited the table has.
    */
   readonly sieveSeries?: SieveSeriesDocument | null;
+  /**
+   * The administrator-editable dropdown lists, read from their tables by the
+   * endpoint.
+   *
+   * Passed IN for the same reason the sieve table is: this module is pure
+   * and the unit tests call it with no database. Absent resolves every
+   * select to the list the application shipped with — which is correct for a
+   * field whose list is code-driven, and the conservative fallback for the
+   * three that are not.
+   *
+   * THE SERVER HAS TO SEE THIS. The option list is the validation contract;
+   * a list the browser could read and this function could not would offer
+   * the operator values that are then refused here.
+   */
+  readonly vocabulary?: VocabularyDocument | null;
 }
 
 export type ValidationResult =
@@ -336,9 +352,12 @@ export function validateStagePayload(args: ValidateArgs): ValidationResult {
       case 'select':
       case 'yesno': {
         const code = typeof raw === 'string' ? raw : String(raw);
-        const option = field.options?.find((o) => o.value === code);
+        // `resolveOptions`, never `field.options` — see the note on
+        // `vocabulary` above.
+        const options = resolveOptions(field, args.vocabulary ?? null);
+        const option = options.find((o) => o.value === code);
         if (option === undefined) {
-          const allowed = (field.options ?? []).map((o) => o.value).join(', ');
+          const allowed = options.map((o) => o.value).join(', ');
           issues.push({
             field: field.key,
             code: 'unknown_option',
@@ -500,7 +519,7 @@ export function validateStagePayload(args: ValidateArgs): ValidationResult {
     // identifier: the real id replaces it at enqueue time, after allocation.
     const forRow =
       Object.keys(derived).length === 0 ? clean : { ...clean, ...derived };
-    row = toSheetRow(args.stage, '', forRow as SampleValues);
+    row = toSheetRow(args.stage, '', forRow as SampleValues, args.vocabulary ?? null);
   } catch (error) {
     return {
       ok: false,

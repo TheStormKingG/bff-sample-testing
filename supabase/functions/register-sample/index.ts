@@ -28,6 +28,7 @@ import {
 } from '../_shared/adapters/mutation.ts';
 import { parseStage, validateStagePayload, prefixFor } from '../_shared/validation.ts';
 import { readSieveSeries } from '../_shared/adapters/sieveSeries.ts';
+import { readVocabulary } from '../_shared/adapters/vocabulary.ts';
 import { RPC, type RegisterSampleResult } from '../_shared/rpc.ts';
 import { syncStatusFor } from '../_shared/syncStatus.ts';
 import { recordAudit } from '../_shared/adapters/authorize.ts';
@@ -98,12 +99,17 @@ async function handler(ctx: RequestContext): Promise<Response> {
       // null and the built-in series — a configuration fault must not take
       // the plant's record-keeping offline.
       const sieveSeries = await readSieveSeries(admin);
+      // The administrator's dropdown lists, read here for the same reason
+      // and with the same failure behaviour: a list that cannot be read
+      // falls back to the one the application shipped with.
+      const vocabulary = await readVocabulary(admin);
       const validation = validateStagePayload({
         stage,
         phase: 'registration',
         values,
         confirmedImplausible: readConfirmed(body),
         sieveSeries,
+        vocabulary,
       });
       if (!validation.ok) {
         throw new ApiError('validation_failed', { details: { issues: validation.issues } });
