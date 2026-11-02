@@ -105,7 +105,7 @@ describe('a sample registered before the lab ran the test', () => {
       // sample taken at the mill carries none. A "Calculated results" heading
       // over nine rows of "Not calculated", or an empty axis, would both read
       // as a failed computation rather than a test nobody has run yet.
-      show(stage, { feed_type: 'Broiler starter' });
+      show(stage, { feed_type: 'Starter' });
       expect(screen.queryByText('Calculated results')).toBeNull();
       expect(screen.queryByRole('img')).toBeNull();
     },

@@ -24,7 +24,7 @@ function rawRegistration(overrides: Partial<StageFormValues> = {}): StageFormVal
     delivery_or_lot_no: 'LOT-4471',
     truck_or_container_no: 'GXX 1234',
     quantity_received_t: '28.500',
-    sampled_by: 'A. Persaud',
+    sampled_by: 'Satesh',
     mould_seen: 'no',
     insects_seen: 'no',
     foreign_matter_seen: 'no',
@@ -42,7 +42,7 @@ function rawTesting(overrides: Partial<StageFormValues> = {}): StageFormValues {
   return rawRegistration({
     moisture_pct: '12.4',
     aflatoxin_ppb: '3',
-    tested_by_qo: 'R. Singh',
+    tested_by_qo: 'Kayla',
     ...overrides,
   });
 }
@@ -57,9 +57,9 @@ function groundRegistration(
     collection_date: '2026-10-24',
     collection_time: '10:00',
     sampling_point: point,
-    material_or_feed_type: 'Broiler starter',
+    material_or_feed_type: 'Starter',
     batch_or_bin_no: 'B-2291',
-    sampled_by: 'A. Persaud',
+    sampled_by: 'Satesh',
     mill_screen_size_mm: '5',
     hammer_distance_mm: '12.5',
     ...overrides,
@@ -367,7 +367,7 @@ describe('conditional applicability: AM versus BC (UAT-02)', () => {
     const result = parseStageValues('ground', 'testing', groundRegistration('AM', {
       avg_particle_size_um: '880',
       size_spread_gsd: '1.9',
-      tested_by_qo: 'R. Singh',
+      tested_by_qo: 'Kayla',
     }));
     if (!result.ok) throw new Error(`expected valid: ${JSON.stringify(result.errors)}`);
     expect('moisture_pct_bc' in result.values).toBe(false);
@@ -377,7 +377,7 @@ describe('conditional applicability: AM versus BC (UAT-02)', () => {
     const result = parseStageValues('ground', 'testing', groundRegistration('BC', {
       avg_particle_size_um: '880',
       size_spread_gsd: '1.9',
-      tested_by_qo: 'R. Singh',
+      tested_by_qo: 'Kayla',
     }));
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -391,7 +391,7 @@ describe('conditional applicability: AM versus BC (UAT-02)', () => {
       moisture_pct_bc: '13.2',
       avg_particle_size_um: '880',
       size_spread_gsd: '1.9',
-      tested_by_qo: 'R. Singh',
+      tested_by_qo: 'Kayla',
     }));
     if (!result.ok) throw new Error(`expected valid: ${JSON.stringify(result.errors)}`);
     expect('moisture_pct_bc' in result.values).toBe(false);
@@ -414,7 +414,8 @@ describe('formula injection: identity fields refuse it, narrative fields allow i
     ['supplier', '=HYPERLINK("http://evil","click")'],
     ['delivery_or_lot_no', '+1+1'],
     ['truck_or_container_no', '-2'],
-    ['sampled_by', '@SUM(A1)'],
+    // `sampled_by` was the fourth case here and is no longer free text — see
+    // the block below, which asserts the STRONGER guarantee it now has.
   ];
 
   for (const [key, payload] of identityCases) {
@@ -427,6 +428,31 @@ describe('formula injection: identity fields refuse it, narrative fields allow i
       expect(result.errors[key]).toMatch(/cannot start with/i);
     });
   }
+
+  it('refuses a formula in a field that is now a list, by refusing the value itself', () => {
+    /*
+      `sampled_by` used to be tested here beside the other identity fields,
+      because a typed name could begin with `=` and reach a spreadsheet cell
+      as a formula. 0036 made it a controlled vocabulary, which closes the
+      hole from the other side and more completely: the value is refused for
+      not being a member, so there is no text left to inspect for a leading
+      `=`. The message differs for that reason, and that is the point of
+      keeping the case — a reader who finds the old assertion gone should
+      find this one rather than assume the protection was dropped.
+    */
+    const result = parseStageValues('raw_materials', 'registration', rawRegistration({
+      sampled_by: '@SUM(A1)',
+    }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors['sampled_by']).toBeDefined();
+    // And the same holds for ordinary text that simply is not on the list,
+    // which is the case a formula guard never covered at all.
+    const plain = parseStageValues('raw_materials', 'registration', rawRegistration({
+      sampled_by: 'Somebody Else',
+    }));
+    expect(plain.ok).toBe(false);
+  });
 
   it('allows formula-like text in comments', () => {
     const result = parseStageValues('raw_materials', 'registration', rawRegistration({
@@ -622,7 +648,7 @@ describe('the schema is generated, not hand-written per stage', () => {
       expect(new Set(actualKeys).size, stage).toBe(actualKeys.length);
       for (const key of expectedKeys) expect(actualKeys, `${stage} missing ${key}`).toContain(key);
     }
-    // 111 number fields + 12 controlled-code fields across the eight tabs.
+    // 111 number fields + 33 controlled-code fields across the eight tabs.
     //
     // The numbers were 47 before the sieve test moved onto `2 Ground`,
     // `6 Crumble` and `7 Mash`: each tab gained 17 numeric sieve columns and
@@ -633,7 +659,14 @@ describe('the schema is generated, not hand-written per stage', () => {
     // `insects_seen`, `foreign_matter_seen`, `bad_smell`; ground
     // `sampling_point` and `mill_screen_size_mm`; DGM `sieve_series`. They are
     // 11 then, because `sieve_series` is a select and three more tabs carried
-    // one; 12 now that `4 Pellets` carries one too.
+    // one; 12 once `4 Pellets` carried one too.
+    //
+    // 0036 took them to 33, by putting a list on three fields that had been
+    // free text since the workbook was written: `feed_type` on the five tabs
+    // that ask for one (+5), and `sampled_by` and `tested_by_qo` on all
+    // eight (+16). That is the single largest increase in controlled
+    // vocabulary this schema has had, and it is why the number moved by more
+    // than any previous release.
     //
     // 0033 moved the numbers from 93 to 111: Ground and Mash each lost the
     // durability tester's drum speed (-1 twice); `6 Crumble` traded one
@@ -643,7 +676,7 @@ describe('the schema is generated, not hand-written per stage', () => {
     //
     // Asserted so that a registry change dropping fields out of the sweep
     // fails here rather than passing quietly with less coverage than claimed.
-    expect(checked).toBe(111 + 12);
+    expect(checked).toBe(111 + 33);
   });
 
   it('never emits a key the registry does not define for the stage', () => {

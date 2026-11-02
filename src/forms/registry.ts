@@ -42,6 +42,93 @@ const MATERIAL_OPTIONS = [
 ] as const;
 
 /**
+ * The feeds the mill makes, and the people who sample and test them.
+ *
+ * ===========================================================================
+ * THE CODE IS THE LABEL, DELIBERATELY
+ * ===========================================================================
+ * Everywhere else in this registry a select stores a short code and writes a
+ * human label to the sheet — `AM` becomes "AM after mill". These three store
+ * exactly what they display, for one reason: all three were FREE TEXT until
+ * now, and the database already holds `Grower`, `Stefan` and `Kayla` as typed
+ * by an operator. Codes equal to the labels mean those rows are already valid
+ * against the new list, their sheet cells keep the characters they have
+ * always had, and no migration has to rewrite a single stored measurement.
+ *
+ * ===========================================================================
+ * AND THE LIST HAS A PAST — see `SelectOption.retired`
+ * ===========================================================================
+ * The values below marked `retired` are not inventions. They are what a
+ * query of `sample_measurements` returned on 2026-11-02 for these three
+ * fields, minus the ones the live list already covers. They are kept because
+ * `encodeEnum` throws on an unknown code: without them, the eight DGM records
+ * that say "Crumble" could never be written to the spreadsheet again, and
+ * reopening one would show an empty dropdown over a record that holds an
+ * answer. They are not offered for a new sample.
+ *
+ * ===========================================================================
+ * CHANGING THEM NEEDS A DEPLOYMENT, AND THAT IS A KNOWN COST
+ * ===========================================================================
+ * These are source constants, like `MATERIAL_OPTIONS` above, because the
+ * option list is the VALIDATION CONTRACT: `enumFieldSchema` is shared with
+ * the Edge Functions, so a value not in this file is refused by the server.
+ * An administrator-editable list would have to be readable by the server
+ * before it could be enforced there — the shape built for the sieve table in
+ * 0032 and the DGM targets in 0034. Until that is done, a new sampler on the
+ * payroll cannot be recorded without a release, and that is a real
+ * operational constraint rather than an oversight.
+ */
+const FEED_TYPE_OPTIONS = [
+  { value: 'Pre-starter', label: 'Pre-starter' },
+  { value: 'Starter', label: 'Starter' },
+  { value: 'Grower', label: 'Grower' },
+  { value: 'Finisher', label: 'Finisher' },
+  // Recorded before the list existed. A snapshot of the database, not a
+  // design: `Crumble`, `Pellet` and `Pellets` are feed FORMS that operators
+  // entered where a feed type was asked for, which is itself the argument
+  // for the list.
+  { value: 'Crumble', label: 'Crumble', retired: true },
+  { value: 'Pellet', label: 'Pellet', retired: true },
+  { value: 'Pellets', label: 'Pellets', retired: true },
+  { value: 'Broiler Starter (TEST)', label: 'Broiler Starter (TEST)', retired: true },
+  { value: 'TEST Broiler Starter', label: 'TEST Broiler Starter', retired: true },
+  {
+    value: 'TEST BROILER STARTER CRUMBLE (E2E)',
+    label: 'TEST BROILER STARTER CRUMBLE (E2E)',
+    retired: true,
+  },
+  { value: 'TEST LAYER MASH (E2E)', label: 'TEST LAYER MASH (E2E)', retired: true },
+] as const;
+
+const SAMPLED_BY_OPTIONS = [
+  { value: 'Stefan', label: 'Stefan' },
+  { value: 'Satesh', label: 'Satesh' },
+  { value: 'Kayla', label: 'Kayla' },
+  // Commissioning and end-to-end test records. Retired rather than deleted,
+  // for the same reason as above: they sit on real rows.
+  { value: 'TEST E2E (do not action)', label: 'TEST E2E (do not action)', retired: true },
+  { value: 'TEST OPERATOR', label: 'TEST OPERATOR', retired: true },
+  { value: 'TEST Quality Officer', label: 'TEST Quality Officer', retired: true },
+  { value: 'TEST Quality Manager', label: 'TEST Quality Manager', retired: true },
+  { value: 'Autosync Check', label: 'Autosync Check', retired: true },
+  { value: 'Live Form Check', label: 'Live Form Check', retired: true },
+  { value: 'Test Account (BFF QA)', label: 'Test Account (BFF QA)', retired: true },
+] as const;
+
+/**
+ * Who may be named as having carried out the test.
+ *
+ * Shorter than the sampler list on purpose: sampling is a plant task and
+ * testing is a Quality Officer's. Nothing here GRANTS that authority — the
+ * permission matrix does, on the server — so this is a record of who did the
+ * work, not a check that they were allowed to.
+ */
+const TESTED_BY_OPTIONS = [
+  { value: 'Stefan', label: 'Stefan' },
+  { value: 'Kayla', label: 'Kayla' },
+] as const;
+
+/**
  * Structured sampling-point codes for `2 Ground`. The CODE drives the sample-ID
  * prefix and the BC-moisture rule; the LABEL is what the sheet cell receives.
  * PRD §5.2: "derive prefix AM or BC directly from structured point code rather
@@ -134,7 +221,8 @@ const testedByAndComments = (
     columnLetter: testedByCol,
     sheetHeader: 'Tested by (QO)',
     label: 'Tested by (QO)',
-    type: 'text',
+    type: 'select',
+    options: TESTED_BY_OPTIONS,
     section: 'follow_up',
     required: 'testing',
     help: 'The Quality Officer who actually carried out the test. If that is not you, an attestation is recorded.',
@@ -328,9 +416,14 @@ interface SieveSettingsOptions {
   readonly durabilityTester: boolean;
 }
 
+/*
+  The `seriesRequired` parameter is gone with the dropdown it configured.
+  Every caller passed 'optional' anyway; the sieve series is now a `system`
+  column the server fills in, so there is nothing left for a caller to decide
+  about it.
+*/
 const sieveTestSettings = (
   startIndex: number,
-  seriesRequired: Requiredness,
   { durabilityTester }: SieveSettingsOptions,
 ): FieldDef[] => {
   const settings: Omit<FieldDef, 'columnLetter'>[] = [];
@@ -391,17 +484,31 @@ const sieveTestSettings = (
       label: 'Sieve series',
       type: 'select',
       section: 'settings',
-      required: seriesRequired,
-    // Derived from the arithmetic module rather than re-listed, so a preset
-    // can never exist in one file and not the other. Individual apertures are
-    // deliberately NOT editable: Kj is assigned by POSITION in the stack and
-    // 104.14 is calibrated to this exact series, so a changed aperture would
-    // move no number while silently changing what the number means. Changing
-    // the stack is adding a preset, which is a code change.
+      // Unchanged from the day the column was created: the stored value is
+      // still the preset's id and the sheet cell still receives its label.
       options: SIEVE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label })),
-      // The apertures are not restated here: every weight below is labelled
-      // with its own, which is where an operator is looking when the question
-      // arises. Short enough for a two-column cell — see `pairedFields`.
+      // OPTIONAL on the four inline tabs, which is what every caller of
+      // `sieveTestSettings` passed before the parameter was removed. A sample
+      // registered at the mill before the lab has run a sieve test records no
+      // stack, because none was used yet — requiring one here would refuse
+      // the ordinary case on three of the eight tabs.
+      required: 'optional',
+      /*
+        HIDDEN, NOT REMOVED — see `FieldDef.hidden`.
+
+        A dropdown with one option asked the operator, on every sieve test,
+        to choose the only answer there is. The list cannot grow by
+        configuration either: Kj is assigned by POSITION in the stack and
+        104.14 is calibrated to this exact series, so adding a stack is a
+        code change by design.
+
+        So the question is gone from the form and the RECORD is not. Which
+        stack a sample was weighed on is provenance: the day a second series
+        exists, every record made before it has to say which one it was.
+        Same column, same heading, same stored code, same text in the cell.
+      */
+      hidden: true,
+      defaultValue: DEFAULT_SIEVE_PRESET.id,
       help: 'The sieve stack used.',
     },
   );
@@ -661,7 +768,8 @@ const rawMaterials: StageSchema = {
       columnLetter: 'I',
       sheetHeader: 'Sampled by',
       label: 'Sampled by',
-      type: 'text',
+      type: 'select',
+      options: SAMPLED_BY_OPTIONS,
       section: 'sample_details',
       required: 'registration',
     },
@@ -826,7 +934,8 @@ const ground: StageSchema = {
       columnLetter: 'G',
       sheetHeader: 'Sampled by',
       label: 'Sampled by',
-      type: 'text',
+      type: 'select',
+      options: SAMPLED_BY_OPTIONS,
       section: 'sample_details',
       required: 'registration',
     },
@@ -870,7 +979,7 @@ const ground: StageSchema = {
     // tester's drum, so the drum-speed column was a question this tab could
     // not answer; it was removed at the owner's instruction and everything
     // right of it moved one column left.
-    ...sieveTestSettings(9, 'optional', { durabilityTester: false }),
+    ...sieveTestSettings(9, { durabilityTester: false }),
     {
       key: 'moisture_pct_bc',
       // Kept FIRST in the results band, ahead of the weights, because it is
@@ -924,7 +1033,8 @@ const conditioned: StageSchema = {
       columnLetter: 'D',
       sheetHeader: 'Feed type',
       label: 'Feed type',
-      type: 'text',
+      type: 'select',
+      options: FEED_TYPE_OPTIONS,
       section: 'sample_details',
       required: 'registration',
     },
@@ -943,7 +1053,8 @@ const conditioned: StageSchema = {
       columnLetter: 'F',
       sheetHeader: 'Sampled by',
       label: 'Sampled by',
-      type: 'text',
+      type: 'select',
+      options: SAMPLED_BY_OPTIONS,
       section: 'sample_details',
       required: 'registration',
     },
@@ -1054,7 +1165,8 @@ const pellets: StageSchema = {
       columnLetter: 'D',
       sheetHeader: 'Feed type',
       label: 'Feed type',
-      type: 'text',
+      type: 'select',
+      options: FEED_TYPE_OPTIONS,
       section: 'sample_details',
       required: 'registration',
     },
@@ -1073,12 +1185,13 @@ const pellets: StageSchema = {
       columnLetter: 'F',
       sheetHeader: 'Sampled by',
       label: 'Sampled by',
-      type: 'text',
+      type: 'select',
+      options: SAMPLED_BY_OPTIONS,
       section: 'sample_details',
       required: 'registration',
     },
     // G..J
-    ...sieveTestSettings(6, 'optional', { durabilityTester: true }),
+    ...sieveTestSettings(6, { durabilityTester: true }),
     {
       key: 'pellet_temperature_c',
       columnLetter: 'K',
@@ -1165,7 +1278,8 @@ const extrudedSoya: StageSchema = {
       columnLetter: 'F',
       sheetHeader: 'Sampled by',
       label: 'Sampled by',
-      type: 'text',
+      type: 'select',
+      options: SAMPLED_BY_OPTIONS,
       section: 'sample_details',
       required: 'registration',
     },
@@ -1319,7 +1433,8 @@ const crumble: StageSchema = {
       columnLetter: 'D',
       sheetHeader: 'Feed type',
       label: 'Feed type',
-      type: 'text',
+      type: 'select',
+      options: FEED_TYPE_OPTIONS,
       section: 'sample_details',
       required: 'registration',
     },
@@ -1337,7 +1452,8 @@ const crumble: StageSchema = {
       columnLetter: 'F',
       sheetHeader: 'Sampled by',
       label: 'Sampled by',
-      type: 'text',
+      type: 'select',
+      options: SAMPLED_BY_OPTIONS,
       section: 'sample_details',
       required: 'registration',
     },
@@ -1358,7 +1474,7 @@ const crumble: StageSchema = {
     },
     // H..K. The drum speed belongs on this tab more than on any other: the
     // tester's drum is what crumbles are tumbled in before they are weighed.
-    ...sieveTestSettings(7, 'optional', { durabilityTester: true }),
+    ...sieveTestSettings(7, { durabilityTester: true }),
     {
       key: 'moisture_pct',
       columnLetter: 'L',
@@ -1432,7 +1548,8 @@ const mash: StageSchema = {
       columnLetter: 'D',
       sheetHeader: 'Feed type',
       label: 'Feed type',
-      type: 'text',
+      type: 'select',
+      options: FEED_TYPE_OPTIONS,
       section: 'sample_details',
       required: 'registration',
     },
@@ -1451,7 +1568,8 @@ const mash: StageSchema = {
       columnLetter: 'F',
       sheetHeader: 'Sampled by',
       label: 'Sampled by',
-      type: 'text',
+      type: 'select',
+      options: SAMPLED_BY_OPTIONS,
       section: 'sample_details',
       required: 'registration',
     },
@@ -1459,7 +1577,7 @@ const mash: StageSchema = {
     // the mash was made was recorded on the tab. These three describe the
     // sieve test rather than the mixer, which is what the band means on every
     // other tab that has one. No drum speed: finished mash is not tumbled.
-    ...sieveTestSettings(6, 'optional', { durabilityTester: false }),
+    ...sieveTestSettings(6, { durabilityTester: false }),
     {
       key: 'moisture_pct',
       // Kept first in the results band, ahead of the weights: the one result
@@ -1530,7 +1648,8 @@ const dgm: StageSchema = {
       columnLetter: 'D',
       sheetHeader: 'Feed type',
       label: 'Feed type',
-      type: 'text',
+      type: 'select',
+      options: FEED_TYPE_OPTIONS,
       section: 'sample_details',
       required: 'registration',
     },
@@ -1548,7 +1667,8 @@ const dgm: StageSchema = {
       columnLetter: 'F',
       sheetHeader: 'Sampled by',
       label: 'Sampled by',
-      type: 'text',
+      type: 'select',
+      options: SAMPLED_BY_OPTIONS,
       section: 'sample_details',
       required: 'registration',
     },
@@ -1609,14 +1729,26 @@ const dgm: StageSchema = {
       label: 'Sieve series',
       type: 'select',
       section: 'settings',
-      required: 'registration',
-      // Derived from the arithmetic module rather than re-listed, so a preset
-      // can never exist in one file and not the other. Individual apertures
-      // are deliberately NOT editable: Kj is assigned by POSITION in the
-      // stack and 104.14 is calibrated to this exact series, so a changed
-      // aperture would move no number while silently changing what the number
-      // means. Changing the stack is adding a preset, which is a code change.
+      // Unchanged from the day the column was created: the stored value is
+      // still the preset's id and the sheet cell still receives its label.
       options: SIEVE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label })),
+      required: 'registration',
+      /*
+        HIDDEN, NOT REMOVED — see `FieldDef.hidden`.
+
+        A dropdown with one option asked the operator, on every sieve test,
+        to choose the only answer there is. The list cannot grow by
+        configuration either: Kj is assigned by POSITION in the stack and
+        104.14 is calibrated to this exact series, so adding a stack is a
+        code change by design.
+
+        So the question is gone from the form and the RECORD is not. Which
+        stack a sample was weighed on is provenance: the day a second series
+        exists, every record made before it has to say which one it was.
+        Same column, same heading, same stored code, same text in the cell.
+      */
+      hidden: true,
+      defaultValue: DEFAULT_SIEVE_PRESET.id,
       help: 'The sieve stack used.',
     },
     // K..X, the same fourteen weights the three inline sieve tabs carry.
@@ -1628,7 +1760,8 @@ const dgm: StageSchema = {
       columnLetter: 'AH',
       sheetHeader: 'Tested by (QO)',
       label: 'Tested by (QO)',
-      type: 'text',
+      type: 'select',
+      options: TESTED_BY_OPTIONS,
       section: 'follow_up',
       // `registration`, not `testing` as on the other seven tabs: everything
       // on this form is captured in one submit, so a `testing` requiredness

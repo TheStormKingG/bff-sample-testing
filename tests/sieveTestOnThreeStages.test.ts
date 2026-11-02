@@ -73,17 +73,17 @@ const EXPECTED: Readonly<Record<string, string>> = {
 const IDENTITY: Readonly<Record<string, Record<string, string>>> = {
   ground: {
     sampling_point: 'AM',
-    material_or_feed_type: 'Corn',
+    material_or_feed_type: 'Starter',
     batch_or_bin_no: 'B-2214',
     mill_screen_size_mm: '5',
     hammer_distance_mm: '40',
   },
   crumble: {
-    feed_type: 'Broiler crumble',
+    feed_type: 'Starter',
     batch_no: 'B-2214',
     crumbler_roll_gap_mm: '2.5',
   },
-  mash: { feed_type: 'Broiler mash', batch_no: 'B-2214' },
+  mash: { feed_type: 'Grower', batch_no: 'B-2214' },
 };
 
 const STAGES_UNDER_TEST = ['ground', 'crumble', 'mash'] as const;
@@ -101,7 +101,7 @@ function payload(stage: (typeof STAGES_UNDER_TEST)[number], withWeights: boolean
   return {
     collection_date: '2026-10-29',
     collection_time: '09:30',
-    sampled_by: 'S. Gravesande',
+    sampled_by: 'Stefan',
     ...IDENTITY[stage],
     ...(withWeights ? weights() : {}),
   };
@@ -147,10 +147,10 @@ describe.each(STAGES_UNDER_TEST)('%s: a complete weighing', (stage) => {
     const dgm = validate('dgm', {
       collection_date: '2026-10-29',
       collection_time: '09:30',
-      feed_type: 'Broiler crumble',
+      feed_type: 'Starter',
       batch_no: 'B-2214',
-      sampled_by: 'S. Gravesande',
-      tested_by_qo: 'S. Gravesande',
+      sampled_by: 'Stefan',
+      tested_by_qo: 'Stefan',
       ...weights(),
     });
     expect(result.ok && dgm.ok).toBe(true);
@@ -215,7 +215,7 @@ describe.each(STAGES_UNDER_TEST)('%s: registered before the lab has run the test
   it('still writes the columns that are not part of the sieve test', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(cellFor(result.row, stage, 'sampled_by')).toBe('S. Gravesande');
+    expect(cellFor(result.row, stage, 'sampled_by')).toBe('Stefan');
     expect(cellFor(result.row, stage, 'collection_date')).toBe('2026-10-29');
   });
 });

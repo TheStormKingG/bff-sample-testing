@@ -46,6 +46,7 @@ import {
 } from '@/components/form/StageForm';
 import { InstructionStrip } from '@/components/form/InstructionStrip';
 import { RegistrationConfirmation } from '@/components/form/RegistrationConfirmation';
+import { RegisterProgress } from '@/components/form/RegisterProgress';
 import { availableActions, type FormActionAvailability, type SaveState } from '@/components/form/saveState';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAccess } from '@/components/layout/accessContext';
@@ -458,6 +459,13 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
           {draft.error}
         </p>
       ) : null}
+
+      {/*
+        Only while the REGISTER request is in flight. `registration.isSaving`
+        is that one mutation and nothing else — a draft save is local and
+        instant, and covering the screen for it would be theatre.
+      */}
+      {registration.isSaving ? <RegisterProgress label={`Recording the ${schema.title.toLowerCase()} sample`} /> : null}
 
       {initialValues === null ? (
         <div className="py-10 text-center">

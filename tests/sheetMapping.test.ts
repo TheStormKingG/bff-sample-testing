@@ -329,7 +329,7 @@ describe('toSheetRow: no cross-tab or cross-column bleed', () => {
       delivery_or_lot_no: 'LOT-5512',
       truck_or_container_no: 'GAB 1234',
       quantity_received_t: 27.5,
-      sampled_by: 'A. Persaud',
+      sampled_by: 'Satesh',
       moisture_pct: 11.8,
       aflatoxin_ppb: 0,
       other_mycotoxin_name: 'Zearalenone',
@@ -338,13 +338,13 @@ describe('toSheetRow: no cross-tab or cross-column bleed', () => {
       insects_seen: 'no',
       foreign_matter_seen: 'yes',
       bad_smell: 'no',
-      tested_by_qo: 'R. Singh',
+      tested_by_qo: 'Kayla',
       comments: 'Foreign matter: twine fragments.',
     });
     expect(row).toEqual([
       'RM-261024-07', '2026-10-24', '08:15', 'Soya', 'Acme Grain', 'LOT-5512',
-      'GAB 1234', '27.5', 'A. Persaud', '11.8', '0', 'Zearalenone', '42.5',
-      'No', 'No', 'Yes', 'No', 'R. Singh', 'Foreign matter: twine fragments.',
+      'GAB 1234', '27.5', 'Satesh', '11.8', '0', 'Zearalenone', '42.5',
+      'No', 'No', 'Yes', 'No', 'Kayla', 'Foreign matter: twine fragments.',
     ]);
   });
 });

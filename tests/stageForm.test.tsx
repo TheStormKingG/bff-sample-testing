@@ -214,7 +214,14 @@ describe('StageForm — section bands', () => {
         />,
       );
 
-      for (const field of editableFields(stage, values)) {
+      /*
+        `hidden` fields are excluded, and the exclusion is asserted rather
+        than assumed — see the `hiddenFields` count below. A hidden field is
+        still editable, still validated and still submitted; it simply is not
+        asked for, so it must NOT appear on the form. Leaving it in this
+        sweep would have demanded a label that must not exist.
+      */
+      for (const field of editableFields(stage, values).filter((f) => f.hidden !== true)) {
         // Matched on the LABEL, not on a span. A field laid out in a grid
         // cell renders its label `sr-only` and without the span wrapper the
         // stacked layout uses, so a span selector silently stopped seeing the
@@ -259,7 +266,23 @@ describe('StageForm — section bands', () => {
     // never render as an operator input.
     expect(systemColumns).toBe(8 + 9 * 5 + 1 * 2);
     expect(notApplicable).toBe(1);
-    expect(checked).toBe(columns - systemColumns - notApplicable);
+
+    /*
+      The sieve series, on each of the five tabs that carry a sieve test.
+
+      It is a dropdown with exactly one option, so asking for it was asking
+      an operator to choose the only answer there is. It keeps its column,
+      its heading, its stored code and its sheet cell — and loses its place
+      on the screen. Counted here rather than subtracted silently, because
+      "a field that is submitted but never shown" is precisely the thing a
+      reader of this test should be made to see.
+    */
+    const hiddenFields = Object.values(STAGE_SCHEMAS).reduce(
+      (n, s) => n + s.fields.filter((f) => f.hidden === true).length,
+      0,
+    );
+    expect(hiddenFields).toBe(5);
+    expect(checked).toBe(columns - systemColumns - notApplicable - hiddenFields);
   });
 });
 

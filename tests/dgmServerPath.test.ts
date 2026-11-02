@@ -51,11 +51,11 @@ function payload(overrides: Record<string, unknown> = {}): Record<string, unknow
   const values: Record<string, unknown> = {
     collection_date: '2026-10-29',
     collection_time: '09:30',
-    feed_type: 'Broiler crumble',
+    feed_type: 'Starter',
     batch_no: 'B-2214',
-    sampled_by: 'S. Gravesande',
+    sampled_by: 'Stefan',
     sieve_series: 'abnt-standard-7',
-    tested_by_qo: 'S. Gravesande',
+    tested_by_qo: 'Stefan',
   };
   MASSES.forEach(([tare, gross], i) => {
     values[`sieve${i + 1}_tare_g`] = String(tare);
@@ -130,7 +130,7 @@ describe('a complete DGM registration', () => {
     expect(cellAt(row, 'K'), 'K sieve 1 tare').toBe('370');
     expect(cellAt(row, 'N'), 'N sieve 2 gross').toBe('444');
     expect(cellAt(row, 'X'), 'X pan + sample').toBe('330');
-    expect(cellAt(row, 'D'), 'D feed type').toBe('Broiler crumble');
+    expect(cellAt(row, 'D'), 'D feed type').toBe('Starter');
     // The select writes its LABEL to the sheet and keeps the code in the DB.
     expect(cellAt(row, 'J'), 'J sieve series').toBe(
       'ABNT 5 / 10 / 16 / 30 / 50 / 400 / Fundo',

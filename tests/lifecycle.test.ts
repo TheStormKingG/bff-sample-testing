@@ -108,7 +108,7 @@ describe('UAT-10: raw-material intake, gate to disposition', () => {
     delivery_or_lot_no: 'LOT-5512',
     truck_or_container_no: 'GAB 1234',
     quantity_received_t: '27.5',
-    sampled_by: 'A. Persaud',
+    sampled_by: 'Satesh',
     mould_seen: 'yes', // the adverse observation that drives the whole flow
     insects_seen: 'no',
     foreign_matter_seen: 'no',
@@ -160,7 +160,7 @@ describe('UAT-10: raw-material intake, gate to disposition', () => {
   });
 
   it('a real zero aflatoxin result is recorded as 0, not as missing', () => {
-    const withResults = { ...registrationValues, moisture_pct: '11.8', aflatoxin_ppb: '0', tested_by_qo: 'R. Singh' };
+    const withResults = { ...registrationValues, moisture_pct: '11.8', aflatoxin_ppb: '0', tested_by_qo: 'Kayla' };
     const parsed = parseStageValues('raw_materials', 'testing', withResults);
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
@@ -174,7 +174,7 @@ describe('UAT-10: raw-material intake, gate to disposition', () => {
   });
 
   it('with no approved limits, every measurement is Not Assessable (UAT-05)', () => {
-    const withResults = { ...registrationValues, moisture_pct: '11.8', aflatoxin_ppb: '3.2', tested_by_qo: 'R. Singh' };
+    const withResults = { ...registrationValues, moisture_pct: '11.8', aflatoxin_ppb: '3.2', tested_by_qo: 'Kayla' };
     const parsed = parseStageValues('raw_materials', 'testing', withResults);
     if (!parsed.ok) throw new Error('testing payload should validate');
 
@@ -190,7 +190,7 @@ describe('UAT-10: raw-material intake, gate to disposition', () => {
   });
 
   it('mould = Yes raises a hold even though no numeric result is out of limit (UAT-08)', () => {
-    const withResults = { ...registrationValues, moisture_pct: '11.8', aflatoxin_ppb: '3.2', tested_by_qo: 'R. Singh' };
+    const withResults = { ...registrationValues, moisture_pct: '11.8', aflatoxin_ppb: '3.2', tested_by_qo: 'Kayla' };
     const parsed = parseStageValues('raw_materials', 'testing', withResults);
     if (!parsed.ok) throw new Error('testing payload should validate');
 
@@ -207,7 +207,7 @@ describe('UAT-10: raw-material intake, gate to disposition', () => {
   });
 
   it('the release gate blocks, and names every reason (FR-010)', () => {
-    const withResults = { ...registrationValues, moisture_pct: '11.8', aflatoxin_ppb: '3.2', tested_by_qo: 'R. Singh' };
+    const withResults = { ...registrationValues, moisture_pct: '11.8', aflatoxin_ppb: '3.2', tested_by_qo: 'Kayla' };
     const parsed = parseStageValues('raw_materials', 'testing', withResults);
     if (!parsed.ok) throw new Error('testing payload should validate');
 
@@ -266,9 +266,9 @@ describe('UAT-02: AM and BC compose differently all the way to the sheet', () =>
   const groundBase: Record<string, string> = {
     collection_date: '2026-10-24',
     collection_time: '09:30',
-    material_or_feed_type: 'Broiler starter',
+    material_or_feed_type: 'Starter',
     batch_or_bin_no: 'B-4471',
-    sampled_by: 'A. Persaud',
+    sampled_by: 'Satesh',
     mill_screen_size_mm: '5',
     hammer_distance_mm: '12',
   };
@@ -278,7 +278,7 @@ describe('UAT-02: AM and BC compose differently all the way to the sheet', () =>
       ...groundBase,
       sampling_point: 'AM',
       moisture_pct_bc: '12.4', // left over from a BC entry before switching
-      tested_by_qo: 'R. Singh',
+      tested_by_qo: 'Kayla',
     };
 
     expect(resolvePrefix('ground', stale)).toBe('AM');
@@ -307,7 +307,7 @@ describe('UAT-02: AM and BC compose differently all the way to the sheet', () =>
     const withoutMoisture = {
       ...groundBase,
       sampling_point: 'BC',
-      tested_by_qo: 'R. Singh',
+      tested_by_qo: 'Kayla',
     };
 
     expect(resolvePrefix('ground', withoutMoisture)).toBe('BC');
@@ -325,10 +325,10 @@ describe('UAT-02: AM and BC compose differently all the way to the sheet', () =>
 
   it('the two points write to the same tab but never to each other\'s columns', () => {
     const am = parseStageValues('ground', 'testing', {
-      ...groundBase, sampling_point: 'AM', tested_by_qo: 'R. Singh',
+      ...groundBase, sampling_point: 'AM', tested_by_qo: 'Kayla',
     });
     const bc = parseStageValues('ground', 'testing', {
-      ...groundBase, sampling_point: 'BC', moisture_pct_bc: '12.4', tested_by_qo: 'R. Singh',
+      ...groundBase, sampling_point: 'BC', moisture_pct_bc: '12.4', tested_by_qo: 'Kayla',
     });
     if (!am.ok || !bc.ok) throw new Error('both should validate');
 
@@ -347,14 +347,14 @@ describe('UAT-07: the unconfirmed steam-pressure unit survives the whole chain',
   const conditioned: Record<string, string> = {
     collection_date: '2026-10-24',
     collection_time: '10:00',
-    feed_type: 'Broiler starter',
+    feed_type: 'Starter',
     batch_no: 'B-4471',
-    sampled_by: 'A. Persaud',
+    sampled_by: 'Satesh',
     steam_pressure_reading: '2.5', // squarely inside the workbook's 2.2-2.8
     water_added_pct: '0.7',
     mash_temperature_c: '85',
     moisture_pct: '13.1',
-    tested_by_qo: 'R. Singh',
+    tested_by_qo: 'Kayla',
   };
 
   it('a reading inside the vendor working range still cannot be assessed', () => {
@@ -418,15 +418,15 @@ describe('the soft implausibility guard never becomes a limit', () => {
     const values: Record<string, string> = {
       collection_date: '2026-10-24',
       collection_time: '11:00',
-      feed_type: 'Broiler finisher',
+      feed_type: 'Finisher',
       batch_no: 'B-4472',
-      sampled_by: 'A. Persaud',
+      sampled_by: 'Satesh',
       moisture_pct: '13.0',
       // A sieve plus its sample, beyond implausibleAbove (2000 g). This used
       // to be `avg_particle_size_um` at 99999 µm; that column is gone from
       // `7 Mash`, and a sieve mass is the same kind of guard on the same tab.
       sieve1_gross_g: '99999',
-      tested_by_qo: 'R. Singh',
+      tested_by_qo: 'Kayla',
     };
 
     const parsed = parseStageValues('mash', 'testing', values);
@@ -446,9 +446,9 @@ describe('the soft implausibility guard never becomes a limit', () => {
 
   it('a physically impossible percentage IS rejected', () => {
     const parsed = parseStageValues('mash', 'testing', {
-      collection_date: '2026-10-24', collection_time: '11:00', feed_type: 'x', batch_no: 'y',
-      sampled_by: 'z', moisture_pct: '101', avg_particle_size_um: '700',
-      size_spread_gsd: '2.2', tested_by_qo: 'q',
+      collection_date: '2026-10-24', collection_time: '11:00', feed_type: 'Starter', batch_no: 'y',
+      sampled_by: 'Satesh', moisture_pct: '101', avg_particle_size_um: '700',
+      size_spread_gsd: '2.2', tested_by_qo: 'Kayla',
     });
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) expect(parsed.errors).toHaveProperty('moisture_pct');
@@ -458,9 +458,9 @@ describe('the soft implausibility guard never becomes a limit', () => {
 describe('entered precision survives validation and mapping', () => {
   it('a trailing zero the operator typed reaches the sheet cell', () => {
     const parsed = parseStageValues('conditioned', 'testing', {
-      collection_date: '2026-10-24', collection_time: '10:00', feed_type: 'x', batch_no: 'y',
-      sampled_by: 'z', steam_pressure_reading: '2.50', water_added_pct: '0.70',
-      mash_temperature_c: '84.0', moisture_pct: '13.10', tested_by_qo: 'q',
+      collection_date: '2026-10-24', collection_time: '10:00', feed_type: 'Starter', batch_no: 'y',
+      sampled_by: 'Satesh', steam_pressure_reading: '2.50', water_added_pct: '0.70',
+      mash_temperature_c: '84.0', moisture_pct: '13.10', tested_by_qo: 'Kayla',
     });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;

@@ -588,7 +588,21 @@ export function StageForm({
       </div>
 
       {sections.map((section) => {
-        const sectionFields = applicable.filter((field) => field.section === section);
+        /*
+          `hidden` is filtered HERE and not in `editableFields`, which is the
+          whole point of the distinction. A hidden field is still submitted,
+          still validated on both sides, and still written to its column — it
+          is only not asked for. Filtering it out of `editableFields` would
+          drop it from the payload and from validation, which is deletion
+          wearing the word "hidden".
+
+          Being filtered at the render layer also means it leaves the
+          section's field count, so "Settings when sampled — 4 fields" counts
+          what the operator can actually see.
+        */
+        const sectionFields = applicable.filter(
+          (field) => field.section === section && field.hidden !== true,
+        );
         return (
           <FormSection
             key={section}

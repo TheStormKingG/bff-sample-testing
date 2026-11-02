@@ -70,6 +70,27 @@ export interface SelectOption {
   readonly value: string;
   /** Text shown in the UI and written to the sheet cell. */
   readonly label: string;
+  /**
+   * Recorded before this field had a list, and no longer offered.
+   *
+   * ===========================================================================
+   * WHY A VOCABULARY NEEDS A PAST
+   * ===========================================================================
+   * Putting a dropdown on a field that used to be free text makes every value
+   * already in the database a value the list does not contain. That is not a
+   * cosmetic problem: `encodeEnum` THROWS on a code it cannot find, so an old
+   * record could never be projected to the sheet again, and `SelectField`
+   * would show "Choose…" over a record that in fact holds an answer — which
+   * an operator would then "fix" by picking something, overwriting what was
+   * actually observed.
+   *
+   * So a retired option is a real member of the list. It validates, it
+   * encodes, and the screen shows it when it is the value on THIS record. It
+   * is simply not offered for a new one. Retiring is therefore the only
+   * correct way to drop a value: deleting one rewrites history by making it
+   * unreadable.
+   */
+  readonly retired?: boolean;
 }
 
 /** Condition under which a field applies at all (e.g. BC-only moisture). */
@@ -161,6 +182,33 @@ export interface FieldDef {
 
   /** Field applies only when another field holds one of these values. */
   readonly appliesWhen?: AppliesWhen;
+
+  /**
+   * Recorded, submitted and validated as normal — but not asked for.
+   *
+   * ===========================================================================
+   * FOR A QUESTION WITH EXACTLY ONE ANSWER
+   * ===========================================================================
+   * `sieve_series` was a dropdown containing one option. The operator was
+   * asked, on every sieve test, to choose the only choice there is — and the
+   * list cannot grow by configuration, because adding a stack changes what MF
+   * and DGM MEAN and is a code change by design.
+   *
+   * Hiding it is not the same as deleting it, and the difference is the
+   * record. Which stack a sample was weighed on is provenance: the day a
+   * second series exists, every record made before it has to be able to say
+   * which one it was, and a deleted column could not answer. So the field
+   * keeps its column, its heading, its stored code and its sheet text — all
+   * unchanged — and only stops appearing on the screen and in its section's
+   * field count.
+   *
+   * A hidden field MUST carry a `defaultValue`, because nothing else will
+   * ever supply one; `tests/registry.test.ts` asserts that, and that the
+   * default is one of the field's own options. It is still validated like any
+   * other field, so a payload that omits it is refused rather than silently
+   * accepted.
+   */
+  readonly hidden?: boolean;
 }
 
 export interface StageSchema {
