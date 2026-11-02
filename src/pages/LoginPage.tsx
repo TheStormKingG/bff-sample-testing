@@ -114,7 +114,7 @@ export function LoginPage({ authError, onDismissAuthError }: LoginPageProps) {
   const problem = startError ?? authError;
 
   return (
-    <div className="flex min-h-screen flex-col bg-white">
+    <div className="flex min-h-screen flex-col bg-neu-base">
       <main className="flex flex-1 items-center justify-center px-4 py-10">
         <div className="w-full max-w-md">
           <div className="text-center">
@@ -135,7 +135,7 @@ export function LoginPage({ authError, onDismissAuthError }: LoginPageProps) {
             </p>
           </div>
 
-          <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mt-8 rounded-2xl bg-neu-base p-6 shadow-neu">
             {problem !== null && (
               <div
                 role="alert"
@@ -158,7 +158,7 @@ export function LoginPage({ authError, onDismissAuthError }: LoginPageProps) {
             </Button>
 
             <p className="mt-4 flex items-start gap-2 text-sm text-slate-600">
-              <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+              <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-slate-600" />
               <span>
                 Signing in with Google confirms who you are. It does not give you access on
                 its own — a supervisor approves each account before any record can be seen.
@@ -171,7 +171,7 @@ export function LoginPage({ authError, onDismissAuthError }: LoginPageProps) {
             */}
             <div className="my-6 flex items-center gap-3" aria-hidden="true">
               <span className="h-px flex-1 bg-slate-200" />
-              <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              <span className="text-xs font-semibold uppercase tracking-widest text-slate-600">
                 or
               </span>
               <span className="h-px flex-1 bg-slate-200" />
@@ -239,7 +239,7 @@ export function LoginPage({ authError, onDismissAuthError }: LoginPageProps) {
             </p>
           </div>
 
-          <p className="mt-6 text-center text-sm text-slate-500">
+          <p className="mt-6 text-center text-sm text-slate-600">
             <span className="tabular">Version {env.VITE_APP_VERSION}</span>
           </p>
         </div>

@@ -110,7 +110,7 @@ export function DispositionDialog({
         aria-modal="true"
         aria-labelledby={`${ids}-title`}
         tabIndex={-1}
-        className="my-6 w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl focus:outline-none"
+        className="my-6 w-full max-w-2xl rounded-2xl bg-neu-base p-5 shadow-xl focus:outline-none"
       >
         <div className="flex items-start justify-between gap-4">
           <h2 id={`${ids}-title`} className="text-xl font-semibold text-slate-900">

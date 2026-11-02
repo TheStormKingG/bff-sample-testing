@@ -216,7 +216,7 @@ export function HomeScreen({
           >
             Sample testing
           </h1>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+          <p className="text-xs font-semibold uppercase tracking-widest text-slate-600">
             Bounty Farm Limited
           </p>
         </div>

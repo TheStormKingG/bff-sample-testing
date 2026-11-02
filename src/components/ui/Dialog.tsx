@@ -117,7 +117,11 @@ export function Dialog({
         aria-describedby={description === undefined ? undefined : descriptionId}
         tabIndex={-1}
         className={cn(
-          'relative w-full max-w-lg rounded-t-2xl bg-white shadow-xl sm:rounded-2xl',
+          // The ONE surface that keeps a hard drop shadow. A dialog is not
+          // resting on the page, it is floating above a scrim, and a soft
+          // two-tone neumorphic shadow cannot say that — it would read as
+          // just another card and lose the modality the scrim is asserting.
+          'relative w-full max-w-lg rounded-t-2xl bg-neu-base shadow-xl sm:rounded-2xl',
           'max-h-[90vh] overflow-y-auto',
           className,
         )}

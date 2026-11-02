@@ -42,7 +42,7 @@ export function FormSection({
   const Chevron = open ? ChevronDown : ChevronRight;
 
   return (
-    <section className="mb-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-neu-sm">
+    <section className="mb-4 overflow-hidden rounded-2xl bg-neu-base shadow-neu-sm">
       <h2 id={headingId} className="m-0">
         <button
           type="button"

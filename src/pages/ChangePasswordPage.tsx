@@ -231,7 +231,7 @@ export function ChangePasswordPage({
 
   if (changed) {
     return (
-      <div className="flex min-h-screen flex-col bg-white">
+      <div className="flex min-h-screen flex-col bg-neu-base">
         <main className="flex flex-1 items-center justify-center px-4 py-10">
           <div className="w-full max-w-md text-center">
             <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-green-100">
@@ -310,7 +310,7 @@ export function ChangePasswordPage({
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-white">
+    <div className="flex min-h-screen flex-col bg-neu-base">
       <main className="flex flex-1 items-start justify-center px-4 py-10">
         <div className="w-full max-w-md">
           <div className="text-center">

@@ -50,7 +50,7 @@ export function Header({ compact = false }: HeaderProps = {}) {
       : profile.roles.map((role) => ROLE_LABELS[role]).join(', ');
 
   return (
-    <header className="border-b border-slate-200 bg-white">
+    <header className="border-b border-slate-200 bg-neu-base">
       <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center justify-between gap-3">
           <Link
@@ -120,7 +120,7 @@ export function Header({ compact = false }: HeaderProps = {}) {
             />
           ) : (
             <p className="text-slate-600">
-              <span className="text-slate-500">Last successful save: </span>
+              <span className="text-slate-600">Last successful save: </span>
               <span className="font-medium text-slate-800">
                 {formatPlantDateTimeLabelled(lastWriteAt)}
               </span>

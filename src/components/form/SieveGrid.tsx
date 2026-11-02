@@ -101,11 +101,11 @@ export function SieveGrid({
         aria-hidden="true"
         className="grid grid-cols-[minmax(3.5rem,auto)_1fr_1fr] items-end gap-x-2 gap-y-1 pb-1"
       >
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sieve</span>
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">Sieve</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">
           Empty (g)
         </span>
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">
           + Sample (g)
         </span>
       </div>
@@ -124,7 +124,7 @@ export function SieveGrid({
               <span className="text-sm font-semibold leading-tight text-slate-900">
                 {position.isPan ? 'Pan' : position.abnt}
               </span>
-              <span className="tabular text-xs leading-tight text-slate-500">
+              <span className="tabular text-xs leading-tight text-slate-600">
                 {position.isPan ? '—' : `${position.apertureMicrons} µm`}
               </span>
             </div>

@@ -81,7 +81,7 @@ import AdminPage from '@/pages/AdminPage';
  */
 function CheckingAccess({ message }: { readonly message: string }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white px-4">
+    <div className="flex min-h-screen items-center justify-center bg-neu-base px-4">
       <div className="text-center">
         <Spinner size="lg" label={message} />
         <p className="mt-4 text-base text-slate-700">{message}</p>
@@ -104,7 +104,7 @@ function AccessCheckFailed({
   readonly onRetry: () => void;
 }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white px-4">
+    <div className="flex min-h-screen items-center justify-center bg-neu-base px-4">
       <div className="max-w-md text-center">
         <AlertTriangle aria-hidden="true" className="mx-auto h-10 w-10 text-amber-600" />
         <h1 className="mt-4 text-xl font-bold text-slate-900">

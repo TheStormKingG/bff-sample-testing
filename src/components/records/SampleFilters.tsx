@@ -49,7 +49,7 @@ export function SampleFilters({
 
   return (
     <form
-      className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+      className="flex flex-col gap-4 rounded-2xl bg-neu-base p-4 shadow-neu-sm"
       onSubmit={(e) => {
         e.preventDefault();
         onChange({ ...value, text });

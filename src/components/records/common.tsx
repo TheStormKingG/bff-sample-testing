@@ -135,7 +135,7 @@ export function LinkButton({
         'inline-flex min-h-tap min-w-tap items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-base font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-bff-600 focus-visible:ring-offset-2',
         variant === 'primary'
           ? 'border-bff-800 bg-bff-700 text-white hover:bg-bff-800'
-          : 'border-bff-300 bg-white text-bff-800 hover:bg-bff-50',
+          : 'border-bff-300 bg-neu-base text-bff-800 shadow-neu-sm hover:bg-bff-50 active:shadow-neu-pressed',
       )}
     >
       {children}
@@ -320,7 +320,7 @@ export function Labelled({
 }
 
 export const INPUT_CLASS =
-  'min-h-tap w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 placeholder:text-slate-400 focus:border-bff-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-bff-600';
+  'min-h-tap w-full rounded-xl border border-slate-300 bg-white shadow-neu-inset px-3 py-2 text-base text-slate-900 placeholder:text-slate-400 focus:border-bff-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-bff-600';
 
 /** A definition row, used throughout the detail screen. */
 export function DetailRow({ label, children }: { label: string; children: ReactNode }) {

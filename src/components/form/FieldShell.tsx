@@ -284,7 +284,7 @@ export const INPUT_CLASS =
   'block w-full min-w-0 max-w-full min-h-[44px] rounded-xl border border-slate-300 bg-white px-3 py-2 shadow-neu-inset ' +
   'text-base text-slate-900 placeholder:text-slate-400 ' +
   'focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-1 ' +
-  'disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500';
+  'disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600';
 
 export const INPUT_ERROR_CLASS = 'border-red-700 bg-red-50';
 

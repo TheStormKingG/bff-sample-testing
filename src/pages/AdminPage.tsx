@@ -221,7 +221,7 @@ function TemporaryPasswordPanel({
       // without them going looking for it.
       role="alert"
       aria-label="Temporary password, shown once"
-      className="mb-6 rounded-md border-2 border-bff-700 bg-white p-4"
+      className="mb-6 rounded-2xl border-2 border-bff-700 bg-neu-base p-4 shadow-neu-sm"
     >
       <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
         <KeyRound aria-hidden className="h-6 w-6" />
@@ -672,7 +672,7 @@ function UserRow({
               account. There is no sign-in or last-activity timestamp in the
               schema — see the comment on `fetchAdminUsers` — so none is
               claimed here. */}
-          <p className="text-xs text-slate-500">Account created {instant(user.created_at)}</p>
+          <p className="text-xs text-slate-600">Account created {instant(user.created_at)}</p>
         </div>
         <div className="flex flex-col items-end gap-2">
           <StatusChip
@@ -2210,7 +2210,7 @@ export default function AdminPage() {
                   className={
                     current
                       ? 'inline-flex min-h-tap items-center gap-2 rounded-lg border border-bff-800 bg-bff-700 px-4 py-2.5 text-base font-medium text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-bff-600 focus-visible:ring-offset-2'
-                      : 'inline-flex min-h-tap items-center gap-2 rounded-lg border border-bff-300 bg-white px-4 py-2.5 text-base font-medium text-bff-800 hover:bg-bff-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-bff-600 focus-visible:ring-offset-2'
+                      : 'inline-flex min-h-tap items-center gap-2 rounded-xl border border-bff-300 bg-neu-base shadow-neu-sm px-4 py-2.5 text-base font-medium text-bff-800 hover:bg-bff-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-bff-600 focus-visible:ring-offset-2'
                   }
                 >
                   <Icon aria-hidden className="h-4 w-4" />

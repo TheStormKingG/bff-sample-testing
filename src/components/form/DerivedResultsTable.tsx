@@ -164,7 +164,7 @@ export function DerivedResultsTable({
         id={`derived-${stage}-heading`}
         className="flex items-center gap-2 text-base font-semibold text-slate-900"
       >
-        <Calculator className="h-5 w-5 shrink-0 text-slate-500" aria-hidden="true" />
+        <Calculator className="h-5 w-5 shrink-0 text-slate-600" aria-hidden="true" />
         Calculated results
       </h3>
       <p className="mt-1 text-sm text-slate-600">
@@ -230,7 +230,7 @@ export function DerivedResultsTable({
           ) : null}
 
           {target !== null ? (
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-600">
               Target {target.lowerMicrons}–{target.upperMicrons} µm. {target.basis} It is a
               target for the mill, not an approved specification: nothing in this system
               accepts or rejects a sample on it.
@@ -239,7 +239,7 @@ export function DerivedResultsTable({
         </section>
       ) : null}
 
-      <dl className="mt-3 divide-y divide-slate-200 rounded-neu border border-slate-200 bg-white">
+      <dl className="mt-3 divide-y divide-slate-200 rounded-neu bg-neu-base shadow-neu-sm">
         {valueRows.map((field) => {
           const value = derived[field.key] ?? '';
           const shown = value.trim() !== '';
@@ -251,14 +251,14 @@ export function DerivedResultsTable({
               <dt className="text-sm text-slate-700">
                 {field.label}
                 {field.unit !== undefined && (
-                  <span className="text-slate-500"> ({field.unit})</span>
+                  <span className="text-slate-600"> ({field.unit})</span>
                 )}
               </dt>
               <dd
                 className={
                   shown
                     ? 'tabular text-right text-base font-semibold text-slate-900'
-                    : 'text-right text-sm text-slate-500'
+                    : 'text-right text-sm text-slate-600'
                 }
               >
                 {/*
@@ -276,7 +276,7 @@ export function DerivedResultsTable({
       </dl>
 
       {basis.trim() !== '' && (
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-xs text-slate-600">
           Geometric standard deviation basis: <span className="tabular">{basis}</span>. The
           coarsest sieve has nothing above it and the pan has nothing below it, so both need a
           stated rule; it is recorded with the result so an old record can be read back under

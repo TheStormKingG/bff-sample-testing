@@ -49,7 +49,7 @@ export function RequirePermission({ permission, children }: RequirePermissionPro
   return (
     <Card title="You do not have access to this screen" className="mx-auto max-w-2xl">
       <div className="flex items-start gap-3">
-        <Lock aria-hidden="true" className="mt-0.5 h-6 w-6 shrink-0 text-slate-500" />
+        <Lock aria-hidden="true" className="mt-0.5 h-6 w-6 shrink-0 text-slate-600" />
         <div className="space-y-3 text-base text-slate-700">
           <p>
             Your account is signed in as <strong>{profile.email ?? profile.id}</strong> with{' '}

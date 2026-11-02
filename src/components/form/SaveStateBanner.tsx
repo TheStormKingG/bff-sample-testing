@@ -126,7 +126,7 @@ export function SaveStateBanner({
         <button
           type="button"
           onClick={onRetry}
-          className="mt-2 inline-flex min-h-[44px] items-center gap-2 rounded-md border-2 border-red-700 bg-white px-4 py-2 text-base font-bold text-red-900 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-700 focus:ring-offset-2"
+          className="mt-2 inline-flex min-h-[44px] items-center gap-2 rounded-xl border-2 border-red-700 bg-neu-base shadow-neu-sm active:shadow-neu-pressed px-4 py-2 text-base font-bold text-red-900 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-700 focus:ring-offset-2"
         >
           <Pencil aria-hidden="true" className="h-4 w-4" />
           Try again

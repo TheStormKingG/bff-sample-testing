@@ -55,8 +55,8 @@ export function SecondaryNav({ variant = 'bar', className }: SecondaryNavProps) 
                 cn(
                   'inline-flex min-h-tap items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium',
                   isActive
-                    ? 'bg-white text-bff-800 shadow-sm ring-1 ring-bff-200'
-                    : 'text-slate-700 hover:bg-white hover:text-bff-800',
+                    ? 'bg-neu-base text-bff-800 shadow-neu-sm ring-1 ring-bff-200'
+                    : 'text-slate-700 hover:bg-neu-base hover:text-bff-800',
                 )
               }
             >
@@ -72,8 +72,8 @@ export function SecondaryNav({ variant = 'bar', className }: SecondaryNavProps) 
                   cn(
                     'inline-flex min-h-tap items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium',
                     isActive
-                      ? 'bg-white text-bff-800 shadow-sm ring-1 ring-bff-200'
-                      : 'text-slate-700 hover:bg-white hover:text-bff-800',
+                      ? 'bg-neu-base text-bff-800 shadow-neu-sm ring-1 ring-bff-200'
+                      : 'text-slate-700 hover:bg-neu-base hover:text-bff-800',
                   )
                 }
               >
@@ -105,9 +105,9 @@ export function SecondaryNav({ variant = 'bar', className }: SecondaryNavProps) 
           <li key={item.to}>
             <NavLink
               to={item.to}
-              className="flex min-h-tap items-start gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-neu-sm transition-[transform,box-shadow] duration-150 ease-out hover:border-bff-300 active:scale-[0.99] active:shadow-neu-pressed"
+              className="flex min-h-tap items-start gap-3 rounded-2xl bg-neu-base px-3 py-3 shadow-neu-sm transition-[transform,box-shadow] duration-150 ease-out hover:border-bff-300 active:scale-[0.99] active:shadow-neu-pressed"
             >
-              <item.icon aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-slate-500" />
+              <item.icon aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-slate-600" />
               <span>
                 <span className="block font-medium text-slate-900">{item.label}</span>
                 <span className="block text-sm text-slate-600">{item.description}</span>

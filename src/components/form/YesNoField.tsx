@@ -53,7 +53,7 @@ export function YesNoField({
                   // and a background, not by colour alone (NFR-004).
                   selected
                     ? 'border-blue-700 bg-blue-50 text-blue-900'
-                    : 'border-slate-400 bg-white text-slate-800',
+                    : 'border-slate-400 bg-neu-base text-slate-800 shadow-neu-sm',
                   'peer-focus-visible:ring-2 peer-focus-visible:ring-blue-700 peer-focus-visible:ring-offset-2',
                 ].join(' ')}
               >

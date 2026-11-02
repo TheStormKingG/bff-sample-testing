@@ -69,7 +69,7 @@ function TabContract({
       </div>
 
       {verified !== null && verified.checkedAt !== null ? (
-        <p className="mt-0.5 text-xs text-slate-500">
+        <p className="mt-0.5 text-xs text-slate-600">
           Checked {formatPlantDateTimeLabelled(new Date(verified.checkedAt))}
         </p>
       ) : null}
@@ -117,7 +117,7 @@ function TabContract({
         <ol className="mt-2 grid grid-cols-1 gap-x-6 text-sm text-slate-800 sm:grid-cols-2 lg:grid-cols-3">
           {headers.map((header, index) => (
             <li key={`${header}-${index}`} className="py-0.5">
-              <span className="mr-2 font-mono text-xs text-slate-500">{index + 1}</span>
+              <span className="mr-2 font-mono text-xs text-slate-600">{index + 1}</span>
               {header}
             </li>
           ))}

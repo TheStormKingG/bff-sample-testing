@@ -435,7 +435,7 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
           <button
             type="button"
             onClick={discardDraft}
-            className="mt-2 inline-flex min-h-[44px] items-center gap-2 rounded-md border-2 border-slate-400 bg-white px-4 py-2 text-base font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2"
+            className="mt-2 inline-flex min-h-[44px] items-center gap-2 rounded-xl border-2 border-slate-400 bg-neu-base shadow-neu-sm active:shadow-neu-pressed px-4 py-2 text-base font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2"
           >
             <Trash2 aria-hidden="true" className="h-5 w-5" />
             Discard this draft
@@ -448,7 +448,7 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
       {draftNotice !== null ? (
         <p
           aria-live="polite"
-          className="mb-4 rounded-md border-2 border-slate-300 bg-white px-3 py-2 text-base font-medium text-slate-800"
+          className="mb-4 rounded-xl bg-neu-base px-3 py-2 text-base font-medium text-slate-800 shadow-neu-sm"
         >
           {draftNotice}
         </p>

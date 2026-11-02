@@ -273,7 +273,7 @@ export function DashboardPage() {
                   <Link
                     to={`/stage/${schema.stage}`}
                     className={cn(
-                      'flex h-full min-h-[9.5rem] flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-neu-sm transition-[transform,box-shadow] duration-150 ease-out active:scale-[0.99] active:shadow-neu-pressed',
+                      'flex h-full min-h-[9.5rem] flex-col gap-2 rounded-2xl bg-neu-base p-4 shadow-neu-sm transition-[transform,box-shadow] duration-150 ease-out active:scale-[0.99] active:shadow-neu-pressed',
                       'hover:border-bff-500 hover:bg-bff-50',
                     )}
                   >
@@ -342,10 +342,10 @@ export function DashboardPage() {
               <li key={queue.key}>
                 <Link
                   to={queue.to}
-                  className="flex min-h-tap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-neu-sm transition-[transform,box-shadow] duration-150 ease-out hover:border-bff-300 active:scale-[0.99] active:shadow-neu-pressed"
+                  className="flex min-h-tap items-center justify-between gap-3 rounded-2xl bg-neu-base shadow-neu-sm px-4 py-3 shadow-neu-sm transition-[transform,box-shadow] duration-150 ease-out hover:border-bff-300 active:scale-[0.99] active:shadow-neu-pressed"
                 >
                   <span className="flex items-center gap-3">
-                    <queue.icon aria-hidden="true" className="h-5 w-5 text-slate-500" />
+                    <queue.icon aria-hidden="true" className="h-5 w-5 text-slate-600" />
                     <span className="font-medium text-slate-900">{queue.label}</span>
                   </span>
                   <CountValue

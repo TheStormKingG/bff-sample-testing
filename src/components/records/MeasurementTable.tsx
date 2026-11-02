@@ -79,12 +79,12 @@ function Row({ view }: { view: MeasurementView }) {
             </p>
           ) : null}
           {view.assessment?.ruleId ? (
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="mt-0.5 text-xs text-slate-600">
               Decided by rule version {view.assessment.ruleVersion} ({view.assessment.ruleId})
             </p>
           ) : null}
           {recorded ? (
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="mt-0.5 text-xs text-slate-600">
               Recorded {recorded}
               {view.recordedByName ? ` by ${view.recordedByName}` : ''}
             </p>

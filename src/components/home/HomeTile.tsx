@@ -54,7 +54,7 @@ export interface HomeTileProps {
  *    375x812 screen); nothing here sets a width or a height, so the tile can
  *    only ever be as large as the grid gives it.
  *  - Every text colour used is >= 4.5:1 on the `neu-base` surface.
- *    `text-slate-500` measures 4.31:1 there and is deliberately absent.
+ *    `text-slate-600` measures 4.31:1 there and is deliberately absent.
  *  - The focus ring is restored by `.neu-tile:focus-visible` in
  *    src/styles/index.css, not deleted the way neumorphic designs usually
  *    delete it.

@@ -42,7 +42,7 @@ export function SampleTable({ rows }: { rows: readonly SampleRow[] }) {
       {/* Phone and small tablet: one card per record. */}
       <ul className="flex flex-col gap-3 lg:hidden">
         {rows.map((row) => (
-          <li key={row.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+          <li key={row.id} className="rounded-2xl bg-neu-base p-3 shadow-neu-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Link
                 to={`/samples/${row.id}`}

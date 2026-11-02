@@ -132,7 +132,7 @@ export function LabelDialog({
         aria-modal="true"
         aria-labelledby="label-dialog-title"
         tabIndex={-1}
-        className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl focus:outline-none"
+        className="w-full max-w-lg rounded-2xl bg-neu-base p-5 shadow-xl focus:outline-none"
       >
         <div className="flex items-start justify-between gap-4">
           <h2 id="label-dialog-title" className="text-xl font-semibold text-slate-900">

@@ -18,8 +18,23 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary: 'bg-bff-700 text-white hover:bg-bff-800 active:bg-bff-900 border border-bff-800',
+  /*
+    RAISED, because a button is a thing you press. `secondary` sits on the
+    ground in the ground's own colour and is lifted by the shadow; pressing
+    it swaps the shadow for the inset one, which is the same gesture the
+    home screen's tiles make. The border stays for the reason the inputs
+    keep theirs: a boundary that depends on a soft shadow disappears in
+    daylight on a scratched screen.
+
+    `primary` is deliberately NOT neumorphic. A solid blue block is the only
+    thing on a busy screen that reads instantly as the action to take, and
+    flattening it into the surface to be stylistically consistent would cost
+    the one piece of hierarchy that matters. `ghost` stays flat for the same
+    reason in reverse: it is the option that should recede.
+  */
   secondary:
-    'bg-white text-bff-800 border border-bff-300 hover:bg-bff-50 active:bg-bff-100',
+    'bg-neu-base text-bff-800 border border-bff-300 shadow-neu-sm ' +
+    'hover:bg-bff-50 active:shadow-neu-pressed active:bg-bff-100',
   ghost: 'bg-transparent text-slate-700 border border-transparent hover:bg-slate-100',
   // Red carries no meaning on its own here; destructive buttons always say
   // what they do in words, and high-impact ones go through ConfirmDialog.
@@ -33,7 +48,9 @@ const SIZES: Record<ButtonSize, string> = {
 
 /** Everything that is true of every button whatever it is made of. */
 const SURFACE =
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg font-semibold ' +
+  // 12px, the same radius every control in the app carries. 8px read as a
+  // different family beside the inputs once both sat on the same ground.
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl font-semibold ' +
   'transition-colors disabled:cursor-not-allowed disabled:opacity-60';
 
 /**

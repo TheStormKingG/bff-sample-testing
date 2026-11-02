@@ -82,7 +82,7 @@ function ValueBlock({ label, value }: { label: string; value: unknown }) {
   if (!hasContent(value)) return null;
   return (
     <div className="mt-1">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{label}</p>
       <pre className="mt-0.5 overflow-x-auto whitespace-pre-wrap break-words rounded bg-slate-50 p-2 text-xs text-slate-800">
         {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
       </pre>
@@ -134,7 +134,7 @@ function Event({ event }: { event: AuditEventRow }) {
         </>
       ) : null}
       {event.app_version ? (
-        <p className="mt-0.5 text-xs text-slate-500">
+        <p className="mt-0.5 text-xs text-slate-600">
           Recorded under deployment version {event.app_version}
         </p>
       ) : null}

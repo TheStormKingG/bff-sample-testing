@@ -214,7 +214,7 @@ function RuleCard({
   const isProposer = actorId !== null && rule.proposed_by === actorId;
 
   return (
-    <li className="rounded-lg border border-slate-200 bg-white p-4">
+    <li className="rounded-2xl bg-neu-base p-4 shadow-neu-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold text-slate-900">{rule.test_label ?? rule.parameter_key}</h3>
@@ -350,7 +350,7 @@ function ReferenceEntry({
         <div className="min-w-0">
           <p className="text-base font-semibold text-slate-900">
             {entry.workbook_entry_no !== null ? (
-              <span className="mr-2 font-mono text-sm text-slate-500">
+              <span className="mr-2 font-mono text-sm text-slate-600">
                 #{entry.workbook_entry_no}
               </span>
             ) : null}

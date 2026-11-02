@@ -5,8 +5,9 @@ import { useFieldControl } from '@/components/ui/fieldContext';
 export type InputProps = InputHTMLAttributes<HTMLInputElement>;
 
 export const CONTROL_CLASSES =
-  'block w-full min-h-tap rounded-lg border bg-white px-3 py-2.5 text-base text-slate-900 ' +
-  'placeholder:text-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500';
+  'block w-full min-h-tap rounded-xl border bg-white px-3 py-2.5 shadow-neu-inset ' +
+  'text-base text-slate-900 ' +
+  'placeholder:text-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600';
 
 export const CONTROL_BORDER_OK = 'border-slate-300';
 export const CONTROL_BORDER_INVALID = 'border-red-600 bg-red-50';

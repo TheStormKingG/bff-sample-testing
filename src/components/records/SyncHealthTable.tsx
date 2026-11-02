@@ -130,7 +130,7 @@ export function SyncHealthTable({
           Object.entries(health.counts).map(([state, count]) => (
             <span
               key={state}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm text-slate-800"
+              className="rounded-xl border border-slate-300 bg-white shadow-neu-inset px-3 py-1 text-sm text-slate-800"
             >
               {state.replace(/_/g, ' ')}: <strong>{count}</strong>
             </span>

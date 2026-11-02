@@ -114,7 +114,7 @@ export function AppLayout() {
             {/* The deployment identifier, so a record on screen can be traced to
               the build that produced it (PRD NFR-005/NFR-006). */}
             <p className="tabular">
-              <span className="text-slate-500">Version </span>
+              <span className="text-slate-600">Version </span>
               {env.VITE_APP_VERSION}
             </p>
           </div>

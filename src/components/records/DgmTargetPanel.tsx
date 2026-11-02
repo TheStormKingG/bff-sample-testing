@@ -167,7 +167,7 @@ export function DgmTargetPanel({ onRequest, mayEdit }: DgmTargetPanelProps): JSX
                 on the screen that sets micrometres. The same thousandfold
                 error was found on the sieve table screen and fixed there.
               */}
-              <tr className="border-b border-slate-200 text-xs font-semibold tracking-wide text-slate-500">
+              <tr className="border-b border-slate-200 text-xs font-semibold tracking-wide text-slate-600">
                 <th className="py-2 pr-3">Form</th>
                 <th className="py-2 pr-3">Lower (µm)</th>
                 <th className="py-2 pr-3">Upper (µm)</th>
@@ -183,7 +183,7 @@ export function DgmTargetPanel({ onRequest, mayEdit }: DgmTargetPanelProps): JSX
                     <td className="py-2 pr-3 text-slate-700">
                       {schema.ordinal}. {schema.title}
                       {!isTouched(row) ? (
-                        <span className="ml-1 text-xs text-slate-500">(no target)</span>
+                        <span className="ml-1 text-xs text-slate-600">(no target)</span>
                       ) : null}
                     </td>
                     <td className="py-2 pr-3">

@@ -167,7 +167,7 @@ export function SieveSeriesPanel({ onRequest, mayEdit }: SieveSeriesPanelProps):
                 error, in a quality system, produced entirely by a text
                 transform. Caught in a screenshot of the live page.
               */}
-              <tr className="border-b border-slate-200 text-xs font-semibold tracking-wide text-slate-500">
+              <tr className="border-b border-slate-200 text-xs font-semibold tracking-wide text-slate-600">
                 <th className="py-2 pr-3">Position</th>
                 <th className="py-2 pr-3">ABNT</th>
                 <th className="py-2 pr-3">Aperture (µm)</th>
@@ -183,7 +183,7 @@ export function SieveSeriesPanel({ onRequest, mayEdit }: SieveSeriesPanelProps):
                       // Named, because the last position is a solid pan and
                       // its "aperture" is a bookkeeping value rather than an
                       // opening anything passes through.
-                      <span className="ml-1 text-xs text-slate-500">(pan)</span>
+                      <span className="ml-1 text-xs text-slate-600">(pan)</span>
                     ) : null}
                   </td>
                   <td className="py-2 pr-3">

@@ -19,7 +19,7 @@ export function ReportCard({ metric, to }: { metric: Metric; to?: string }) {
   const numeric = metric.value.kind === 'count';
 
   return (
-    <section className="flex flex-col rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="flex flex-col rounded-2xl bg-neu-base p-4 shadow-neu-sm">
       <h3 className="text-base font-medium text-slate-700">{metric.definition.label}</h3>
 
       <p
@@ -91,7 +91,7 @@ export function StageBreakdown({
   rows: readonly { stage: string; ordinal: number; title: string; valueText: string; numeric: boolean }[];
 }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="rounded-2xl bg-neu-base p-4 shadow-neu-sm">
       <h3 className="text-base font-medium text-slate-700">{title}</h3>
       <ul className="mt-2 divide-y divide-slate-100">
         {rows.map((row) => (

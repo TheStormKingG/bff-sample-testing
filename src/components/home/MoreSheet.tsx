@@ -82,7 +82,7 @@ export function MoreSheet({ open, onClose, queueCounts }: MoreSheetProps) {
                 <NavLink
                   to={item.to}
                   onClick={onClose}
-                  className="flex min-h-tap items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 hover:border-bff-300 hover:bg-bff-50"
+                  className="flex min-h-tap items-center gap-3 rounded-xl bg-neu-base px-3 py-3 shadow-neu-sm hover:border-bff-300 hover:bg-bff-50"
                 >
                   <item.icon aria-hidden="true" className="h-5 w-5 shrink-0 text-slate-600" />
                   <span className="min-w-0 flex-1">

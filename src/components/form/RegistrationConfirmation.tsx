@@ -111,7 +111,7 @@ export function RegistrationConfirmation({
           Sample registered
         </p>
 
-        <div className="mt-4 rounded-lg border-2 border-slate-300 bg-white p-4">
+        <div className="mt-4 rounded-2xl bg-neu-base p-4 shadow-neu">
           <h1 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
             Sample ID
           </h1>
@@ -152,7 +152,7 @@ export function RegistrationConfirmation({
             <button
               type="button"
               onClick={() => void copy()}
-              className="inline-flex min-h-[44px] items-center gap-2 rounded-md border-2 border-slate-400 bg-white px-4 py-2 text-base font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2"
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border-2 border-slate-400 bg-neu-base shadow-neu-sm active:shadow-neu-pressed px-4 py-2 text-base font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2"
             >
               <ClipboardCopy aria-hidden="true" className="h-5 w-5" />
               Copy ID
@@ -160,7 +160,7 @@ export function RegistrationConfirmation({
             <button
               type="button"
               onClick={() => window.print()}
-              className="inline-flex min-h-[44px] items-center gap-2 rounded-md border-2 border-slate-400 bg-white px-4 py-2 text-base font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2"
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border-2 border-slate-400 bg-neu-base shadow-neu-sm active:shadow-neu-pressed px-4 py-2 text-base font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2"
             >
               <Printer aria-hidden="true" className="h-5 w-5" />
               Print label
@@ -227,7 +227,7 @@ export function RegistrationConfirmation({
             <button
               type="button"
               onClick={onRegisterAnother}
-              className="inline-flex min-h-[44px] min-w-0 flex-1 basis-0 items-center justify-center rounded-md border-2 border-slate-400 bg-white px-2 py-2 text-center text-sm font-semibold leading-tight text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2 min-[420px]:text-base"
+              className="inline-flex min-h-[44px] min-w-0 flex-1 basis-0 items-center justify-center rounded-xl border-2 border-slate-400 bg-neu-base shadow-neu-sm active:shadow-neu-pressed px-2 py-2 text-center text-sm font-semibold leading-tight text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2 min-[420px]:text-base"
             >
               Register another
             </button>
@@ -236,7 +236,7 @@ export function RegistrationConfirmation({
             <button
               type="button"
               onClick={onDone}
-              className="inline-flex min-h-[44px] min-w-0 flex-1 basis-0 items-center justify-center rounded-md border-2 border-slate-400 bg-white px-2 py-2 text-center text-sm font-semibold leading-tight text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2 min-[420px]:text-base"
+              className="inline-flex min-h-[44px] min-w-0 flex-1 basis-0 items-center justify-center rounded-xl border-2 border-slate-400 bg-neu-base shadow-neu-sm active:shadow-neu-pressed px-2 py-2 text-center text-sm font-semibold leading-tight text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2 min-[420px]:text-base"
             >
               Back to forms
             </button>

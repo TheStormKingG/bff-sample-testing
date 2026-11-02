@@ -64,7 +64,7 @@ export function ReasonDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={`${fieldId}-title`}
-        className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl"
+        className="w-full max-w-md rounded-2xl bg-neu-base p-5 shadow-xl"
       >
         <h2 id={`${fieldId}-title`} className="text-xl font-bold text-slate-900">
           {title}
@@ -84,7 +84,7 @@ export function ReasonDialog({
           className={[
             'mt-2 block w-full min-h-[44px] rounded-md border-2 px-3 py-2 text-base text-slate-900',
             'focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-1',
-            showError ? 'border-red-700 bg-red-50' : 'border-slate-400 bg-white',
+            showError ? 'border-red-700 bg-red-50' : 'border-slate-400 bg-white shadow-neu-inset',
           ].join(' ')}
         />
         {showError ? (
@@ -102,7 +102,7 @@ export function ReasonDialog({
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="min-h-[44px] rounded-md border-2 border-slate-400 bg-white px-4 py-2 text-base font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2 disabled:opacity-60"
+            className="min-h-[44px] rounded-xl border-2 border-slate-400 bg-neu-base shadow-neu-sm active:shadow-neu-pressed px-4 py-2 text-base font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2 disabled:opacity-60"
           >
             Go back
           </button>

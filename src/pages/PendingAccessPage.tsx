@@ -107,7 +107,7 @@ export function PendingAccessPage({
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-white">
+    <div className="flex min-h-screen flex-col bg-neu-base">
       <main className="flex flex-1 items-center justify-center px-4 py-10">
         <div className="w-full max-w-md text-center">
           <BrandMark size={72} labelled={false} className="mx-auto mb-6" />

@@ -98,7 +98,7 @@ export function RegisterProgress({
       aria-live="polite"
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 backdrop-blur-sm print:hidden"
     >
-      <div className="w-full max-w-sm rounded-neu border border-slate-200 bg-white p-6 shadow-lg">
+      <div className="w-full max-w-sm rounded-neu bg-neu-base p-6 shadow-xl">
         <p className="text-lg font-bold text-slate-900">{label}</p>
         <p className="mt-1 text-sm text-slate-600">
           Do not press Register again. This screen closes by itself when the record is saved.

@@ -82,7 +82,7 @@ function ReasonDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="reason-dialog-title"
-        className="my-6 w-full max-w-xl rounded-lg bg-white p-5 shadow-xl"
+        className="my-6 w-full max-w-xl rounded-2xl bg-neu-base p-5 shadow-xl"
       >
         <div className="flex items-start justify-between gap-4">
           <h2 id="reason-dialog-title" className="text-xl font-semibold text-slate-900">
@@ -465,7 +465,7 @@ export default function SampleDetailPage() {
 
         <Card title="History">
           <AuditTimeline events={data.events} />
-          <p className="mt-3 text-xs text-slate-500">Viewed with app version {appVersion()}.</p>
+          <p className="mt-3 text-xs text-slate-600">Viewed with app version {appVersion()}.</p>
         </Card>
       </div>
 
