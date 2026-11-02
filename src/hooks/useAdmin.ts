@@ -8,6 +8,7 @@
  * (Master Prompt §1, PRD §2).
  */
 
+import type { SieveSeriesDocument } from '@/lib/sieveSeries';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase, edgeErrorMessage } from '@/lib/supabase';
@@ -272,6 +273,8 @@ export type AdminActionKind =
   | 'create_delegation'
   | 'revoke_delegation'
   | 'upsert_controlled_value'
+  /** Migration 0032: the lab's sieve table — designations, apertures, empty weights. */
+  | 'set_sieve_series'
   /** Migration 0019: an administrator makes an account with a temporary password. */
   | 'create_account'
   /** Migration 0019: an administrator replaces a forgotten password with a temporary one. */
@@ -287,6 +290,8 @@ export interface AdminActionInput {
   readonly effectiveTo?: string | null;
   readonly delegationId?: string;
   readonly listKey?: string;
+  /** `set_sieve_series` only: the whole table, replaced in one call. */
+  readonly table?: SieveSeriesDocument;
   readonly value?: string;
   readonly label?: string;
   readonly active?: boolean;
@@ -372,6 +377,7 @@ export function adminActionBody(
   if (input.effectiveTo !== undefined) body['effectiveTo'] = input.effectiveTo;
   if (input.delegationId !== undefined) body['delegationId'] = input.delegationId;
   if (input.listKey !== undefined) body['listKey'] = input.listKey;
+  if (input.table !== undefined) body['table'] = input.table;
   if (input.value !== undefined) body['value'] = input.value;
   if (input.label !== undefined) body['label'] = input.label;
   if (input.active !== undefined) body['active'] = input.active;

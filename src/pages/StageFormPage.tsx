@@ -35,6 +35,7 @@ import { FileText, Trash2 } from 'lucide-react';
 import { STAGE_SCHEMAS, isRetiredStage } from '@/forms/registry';
 import { STAGES, type Stage } from '@/forms/types';
 import { defaultStageValues, hydrateStageValues } from '@/forms/defaults';
+import { useSieveSeries } from '@/hooks/useSieveSeries';
 import type { StageFormValues } from '@/forms/zodSchema';
 
 import {
@@ -150,6 +151,23 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
    * discard whatever the operator has typed since, and a draft save would
    * clear the form it was saved from.
    */
+  /*
+    THE LAB'S SIEVE TABLE, READ ONCE FOR THE SCREEN.
+
+    It supplies three things that must agree with each other and with the
+    server: the empty weights seeded into the tare fields, the row headings on
+    the sieve grid, and the apertures the confirmation chart recomputes from.
+    Read here — at the page — rather than inside each of those components, so
+    they cannot end up holding two different answers, and so the components
+    stay renderable in a test without a query client.
+
+    `data` is undefined only while the first read is in flight. Every consumer
+    takes `null` to mean "the built-in series", which is exactly right for
+    that moment and for a deployment that has never edited the table.
+  */
+  const sieveSeries = useSieveSeries();
+  const series = sieveSeries.data?.document ?? null;
+
   const [initialValues, setInitialValues] = useState<StageFormValues | null>(null);
   const [restoredDraftAt, setRestoredDraftAt] = useState<string | null>(null);
   /** Bumped to remount the form for a deliberate fresh start. */
@@ -171,7 +189,7 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
       setRestoredDraftAt(stored.savedAt);
       return;
     }
-    setInitialValues(defaultStageValues(stage));
+    setInitialValues(defaultStageValues(stage, new Date(), series));
   }, [draft.draft, draft.loaded, initialValues, stage]);
 
   /**
@@ -272,7 +290,7 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
     draft.clear();
     setRestoredDraftAt(null);
     setDraftNotice(null);
-    setInitialValues(defaultStageValues(stage));
+    setInitialValues(defaultStageValues(stage, new Date(), series));
     setFormInstance((instance) => instance + 1);
   }, [draft, stage]);
 
@@ -282,7 +300,7 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
     setKeyError(null);
     setDraftNotice(null);
     setRestoredDraftAt(null);
-    setInitialValues(defaultStageValues(stage));
+    setInitialValues(defaultStageValues(stage, new Date(), series));
     setFormInstance((instance) => instance + 1);
   }, [registration, stage]);
 
@@ -358,6 +376,7 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
   if (result !== null) {
     return (
       <RegistrationConfirmation
+        sieveSeries={series}
         stage={stage}
         sampleId={result.sampleId}
         registeredAt={result.recordedAt}
@@ -441,6 +460,7 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
         </div>
       ) : (
         <StageForm
+          sieveSeries={series}
           key={`${stage}-${formInstance}`}
           stage={stage}
           // Registration requiredness. Results are entered later, against the

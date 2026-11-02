@@ -32,6 +32,7 @@ import {
   runMutation,
 } from '../_shared/adapters/mutation.ts';
 import { parseStage, validateStagePayload } from '../_shared/validation.ts';
+import { readSieveSeries } from '../_shared/adapters/sieveSeries.ts';
 import { RPC, type MutationResult } from '../_shared/rpc.ts';
 import { asOutboxState } from '../_shared/outbox.ts';
 import { syncStatusFor } from '../_shared/syncStatus.ts';
@@ -72,11 +73,18 @@ async function handler(ctx: RequestContext): Promise<Response> {
       // Results are validated at the TESTING phase, so a field that is only
       // mandatory once the laboratory has reported is required here and was
       // not required at registration (FR-005: a draft may be incomplete).
+      // The lab's own sieve table, if it has been edited. Read here rather
+      // than inside the validator, which is pure and is the same function the
+      // unit tests call with no database at all. Unreadable or invalid yields
+      // null and the built-in series — a configuration fault must not take
+      // the plant's record-keeping offline.
+      const sieveSeries = await readSieveSeries(admin);
       const validation = validateStagePayload({
         stage,
         phase: 'testing',
         values,
         confirmedImplausible: readConfirmed(body),
+        sieveSeries,
       });
       if (!validation.ok) {
         throw new ApiError('validation_failed', { details: { issues: validation.issues } });

@@ -125,6 +125,15 @@ export const ADMIN_ACTIONS = [
   'create_delegation',
   'revoke_delegation',
   'upsert_controlled_value',
+  /**
+   * Replace the lab's sieve table — the ABNT designations, the apertures and
+   * the empty weights. `user.manage`, like the other controlled vocabularies:
+   * it describes the EQUIPMENT, not a result, and it decides nothing about
+   * whether a sample conforms. The one quality-adjacent power it carries is
+   * that the apertures are what DGM and the GSD are computed from, which is
+   * why the RPC audits the whole table before and after.
+   */
+  'set_sieve_series',
   'create_account',
   'set_password',
 ] as const;
@@ -203,6 +212,7 @@ export const ADMIN_ACTION_CLAIM_OPERATION: Readonly<Record<AdminAction, string>>
   create_delegation: 'grant_delegation',
   revoke_delegation: 'revoke_delegation',
   upsert_controlled_value: 'upsert_controlled_value',
+  set_sieve_series: 'set_sieve_series',
   // These two are served by `rpc_record_admin_password_set`, which resolves the
   // operation FROM the claim and validates it against its own two-member
   // constant, so the prefixed name IS what it expects. Changing either string
@@ -219,6 +229,7 @@ export const ADMIN_ACTION_PERMISSION: Readonly<Record<AdminAction, Permission>> 
   create_delegation: 'user.manage',
   revoke_delegation: 'user.manage',
   upsert_controlled_value: 'user.manage',
+  set_sieve_series: 'user.manage',
   create_account: 'user.manage',
   set_password: 'user.manage',
 };

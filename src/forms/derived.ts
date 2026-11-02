@@ -39,6 +39,7 @@ import {
   SIEVE_COUNT,
   type SieveReading,
 } from '../lib/dgm.ts';
+import { applySieveSeries, type SieveSeriesDocument } from '../lib/sieveSeries.ts';
 import { STAGE_SCHEMAS } from './registry.ts';
 import type { Stage } from './types.ts';
 
@@ -109,7 +110,11 @@ function numberAt(values: CleanValues, key: string): number {
  * incomplete is a phase that does not require the masses. Writing partial
  * arithmetic would be worse than writing nothing.
  */
-function deriveSieveTest(stage: Stage, values: CleanValues): Record<string, string> {
+function deriveSieveTest(
+  stage: Stage,
+  values: CleanValues,
+  series: SieveSeriesDocument | null,
+): Record<string, string> {
   const schema = STAGE_SCHEMAS[stage];
   const readings: SieveReading[] = [];
   for (let n = 1; n <= SIEVE_COUNT; n++) {
@@ -123,7 +128,14 @@ function deriveSieveTest(stage: Stage, values: CleanValues): Record<string, stri
   }
 
   const presetId = typeof values['sieve_series'] === 'string' ? values['sieve_series'] : '';
-  const preset = sievePresetById(presetId) ?? DEFAULT_SIEVE_PRESET;
+  /*
+    The METHOD comes from the preset — kj by position, the three uniformity
+    bands, which position is the pan. The TABLE comes from the lab, through
+    `system_config.sieve_series`, so a re-calibrated aperture reaches the
+    stored figures and not only the screen. `applySieveSeries` is positional
+    and overrides nothing structural; a null table leaves the preset alone.
+  */
+  const preset = applySieveSeries(sievePresetById(presetId) ?? DEFAULT_SIEVE_PRESET, series);
 
   const result = computeDgm(readings, preset);
 
@@ -171,13 +183,17 @@ function deriveSieveTest(stage: Stage, values: CleanValues): Record<string, stri
  * fields", and a `switch` on stage there would be the first exception to that
  * and would invite the second.
  */
-const DERIVERS: Partial<Record<Stage, (stage: Stage, values: CleanValues) => Record<string, string>>> =
-  {
-    ground: deriveSieveTest,
-    crumble: deriveSieveTest,
-    mash: deriveSieveTest,
-    dgm: deriveSieveTest,
-  };
+const DERIVERS: Partial<
+  Record<
+    Stage,
+    (stage: Stage, values: CleanValues, series: SieveSeriesDocument | null) => Record<string, string>
+  >
+> = {
+  ground: deriveSieveTest,
+  crumble: deriveSieveTest,
+  mash: deriveSieveTest,
+  dgm: deriveSieveTest,
+};
 
 /** Does this stage have columns the server fills in? */
 export function hasDerivedColumns(stage: Stage): boolean {
@@ -189,8 +205,12 @@ export function hasDerivedColumns(stage: Stage): boolean {
  * that has none, and for a payload that does not carry what the computation
  * needs.
  */
-export function deriveSystemValues(stage: Stage, values: CleanValues): Record<string, string> {
+export function deriveSystemValues(
+  stage: Stage,
+  values: CleanValues,
+  series: SieveSeriesDocument | null = null,
+): Record<string, string> {
   const derive = DERIVERS[stage];
   if (derive === undefined) return {};
-  return derive(stage, values);
+  return derive(stage, values, series);
 }

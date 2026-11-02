@@ -37,6 +37,7 @@ import {
   type ApproveAccountArgs,
   type ControlledValueArgs,
   type ControlledValueResult,
+  type SieveSeriesResult,
   type DelegationResult,
   type GrantDelegationArgs,
   type RecordAdminPasswordSetArgs,
@@ -330,8 +331,14 @@ export function adminSpec(action: AdminAction): MutationSpec<Record<string, unkn
      * action-independent gate that a new action could slip through.
      */
     permission: ADMIN_ACTION_PERMISSION[action],
-    subjectType: action === 'upsert_controlled_value' ? 'controlled_value' : 'user',
+    subjectType:
+      action === 'upsert_controlled_value'
+        ? 'controlled_value'
+        : action === 'set_sieve_series'
+          ? 'system_config'
+          : 'user',
     subjectId: (body) => {
+      if (action === 'set_sieve_series') return 'sieve_series';
       if (action === 'upsert_controlled_value') {
         return typeof body['listKey'] === 'string' ? body['listKey'] : null;
       }
@@ -410,6 +417,59 @@ export function adminSpec(action: AdminAction): MutationSpec<Record<string, unkn
           message: result.active
             ? 'The list entry is available for selection.'
             : 'The list entry has been retired. Records that already use it are unchanged.',
+        };
+      }
+
+      // ---- the lab's sieve table ---------------------------------------
+
+      if (action === 'set_sieve_series') {
+        /*
+          The table is forwarded as JSON and validated by the RPC, not here.
+          That is deliberate: `rpc_set_sieve_series` re-checks the width, the
+          aperture order and the tare range in SQL because a value reaching it
+          has not passed through the browser's copy of those rules, and a
+          second implementation in this file would be a third place for them
+          to disagree. What this does is refuse a shape that is not even an
+          object, so the RPC is not handed a string to parse.
+        */
+        const table = body['table'];
+        if (typeof table !== 'object' || table === null || Array.isArray(table)) {
+          throw new ApiError('bad_request', {
+            message: 'The sieve table must be sent as an object.',
+            details: { field: 'table' },
+          });
+        }
+
+        const result = await callTransaction<SieveSeriesResult>(admin, RPC.setSieveSeries, {
+          ...envelope,
+          p_table: table,
+          p_reason: reason,
+        });
+
+        /** COMMIT POINT — see `_shared/commitOutcome.ts`. */
+        markCommitted({ ok: true, action, key: result.key, updatedAt: result.updated_at });
+
+        await recordAudit({
+          actorId: actor.userId,
+          action: `admin_action.${action}`,
+          subjectType: 'system_config',
+          subjectId: result.key,
+          outcome: 'allowed',
+          reason,
+          // The RPC already audits the whole table before and after. This is
+          // the endpoint's own record that the call was allowed and by whom.
+          after: { key: result.key, updated_at: result.updated_at },
+          appVersion,
+        });
+
+        return {
+          ok: true,
+          action,
+          key: result.key,
+          value: result.value,
+          updatedAt: result.updated_at,
+          message:
+            'The sieve table has been updated. New forms will seed the empty weights from it.',
         };
       }
 

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { DEFAULT_SIEVE_PRESET, sievePresetById } from '@/lib/dgm';
+import { applySieveSeries, type SieveSeriesDocument } from '@/lib/sieveSeries';
 import type { FieldDef } from '@/forms/types';
 
 /**
@@ -43,6 +44,12 @@ export interface SieveGridProps {
   readonly presetId: string;
   /** Renders one field; supply the compact variant. */
   readonly renderField: (field: FieldDef) => ReactNode;
+  /**
+   * The lab's own sieve table, when it has been edited. The row headings name
+   * a physical sieve, so they must say what is on the bench rather than what
+   * the application shipped with.
+   */
+  readonly series?: SieveSeriesDocument | null;
 }
 
 /** `sieve3_tare_g` -> 3. Null for anything that is not a sieve mass. */
@@ -58,8 +65,13 @@ export function isSieveMassField(field: FieldDef): boolean {
   return sieveIndexOf(field.key) !== null;
 }
 
-export function SieveGrid({ fields, presetId, renderField }: SieveGridProps): JSX.Element | null {
-  const preset = sievePresetById(presetId) ?? DEFAULT_SIEVE_PRESET;
+export function SieveGrid({
+  fields,
+  presetId,
+  renderField,
+  series = null,
+}: SieveGridProps): JSX.Element | null {
+  const preset = applySieveSeries(sievePresetById(presetId) ?? DEFAULT_SIEVE_PRESET, series);
 
   // Pair by the number in the key rather than by array position: a field that
   // failed to render, or a registry reordering, would otherwise silently pair

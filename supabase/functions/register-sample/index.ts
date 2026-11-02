@@ -27,6 +27,7 @@ import {
   readString,
 } from '../_shared/adapters/mutation.ts';
 import { parseStage, validateStagePayload, prefixFor } from '../_shared/validation.ts';
+import { readSieveSeries } from '../_shared/adapters/sieveSeries.ts';
 import { RPC, type RegisterSampleResult } from '../_shared/rpc.ts';
 import { syncStatusFor } from '../_shared/syncStatus.ts';
 import { recordAudit } from '../_shared/adapters/authorize.ts';
@@ -91,11 +92,18 @@ async function handler(ctx: RequestContext): Promise<Response> {
       }
 
       const values = readValues(body);
+      // The lab's own sieve table, if it has been edited. Read here rather
+      // than inside the validator, which is pure and is the same function the
+      // unit tests call with no database at all. Unreadable or invalid yields
+      // null and the built-in series — a configuration fault must not take
+      // the plant's record-keeping offline.
+      const sieveSeries = await readSieveSeries(admin);
       const validation = validateStagePayload({
         stage,
         phase: 'registration',
         values,
         confirmedImplausible: readConfirmed(body),
+        sieveSeries,
       });
       if (!validation.ok) {
         throw new ApiError('validation_failed', { details: { issues: validation.issues } });

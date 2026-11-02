@@ -8,6 +8,7 @@ import { CAPTURE_STATE_LABELS, type CaptureState } from '@/lib/workflow';
 import { SHEET_SYNC_LABELS, type SheetSyncState } from './saveState';
 import { DerivedResultsTable } from './DerivedResultsTable';
 import { ParticleSizeChart } from './ParticleSizeChart';
+import type { SieveSeriesDocument } from '@/lib/sieveSeries';
 
 export interface RegistrationConfirmationProps {
   readonly stage: Stage;
@@ -31,6 +32,8 @@ export interface RegistrationConfirmationProps {
    * recomputed here.
    */
   readonly submittedValues?: Readonly<Record<string, string>>;
+  /** The lab's sieve table — the same one the server computed from. */
+  readonly sieveSeries?: SieveSeriesDocument | null;
   /** Continue to results entry, when the actor may enter them. */
   readonly onEnterResults?: () => void;
   readonly onRegisterAnother?: () => void;
@@ -63,6 +66,7 @@ export function RegistrationConfirmation({
   sheetSync = 'pending',
   derived,
   submittedValues,
+  sieveSeries = null,
   onEnterResults,
   onRegisterAnother,
   onDone,
@@ -173,7 +177,7 @@ export function RegistrationConfirmation({
         )}
 
         {submittedValues !== undefined && (
-          <ParticleSizeChart values={submittedValues} className="mt-6" />
+          <ParticleSizeChart values={submittedValues} series={sieveSeries} className="mt-6" />
         )}
 
         <div className="mt-5 flex flex-wrap gap-2">

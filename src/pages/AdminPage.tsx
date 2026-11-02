@@ -34,6 +34,7 @@ import {
   FileSearch,
   KeyRound,
   ListChecks,
+  Ruler,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
@@ -97,6 +98,7 @@ import {
 import { AuditTimeline } from '@/components/records/AuditTimeline';
 import { Pagination } from '@/components/records/Pagination';
 import { SchemaVerificationPanel } from '@/components/records/SchemaVerificationPanel';
+import { SieveSeriesPanel } from '@/components/records/SieveSeriesPanel';
 import { SyncHealthTable } from '@/components/records/SyncHealthTable';
 
 /**
@@ -296,12 +298,13 @@ function TemporaryPasswordPanel({
   );
 }
 
-type AdminTab = 'access' | 'delegations' | 'lists' | 'sync' | 'schema' | 'audit';
+type AdminTab = 'access' | 'delegations' | 'lists' | 'equipment' | 'sync' | 'schema' | 'audit';
 
 const TABS: readonly { id: AdminTab; label: string; icon: typeof Users }[] = [
   { id: 'access', label: 'Users and access', icon: Users },
   { id: 'delegations', label: 'Delegated authority', icon: ShieldCheck },
   { id: 'lists', label: 'Controlled lists', icon: ListChecks },
+  { id: 'equipment', label: 'Sieve table', icon: Ruler },
   { id: 'sync', label: 'Google Sheets sync health', icon: RefreshCw },
   { id: 'schema', label: 'Workbook schema check', icon: TableProperties },
   { id: 'audit', label: 'Audit query', icon: FileSearch },
@@ -1465,6 +1468,16 @@ function DelegationsTab({
 // Controlled lists
 // ---------------------------------------------------------------------------
 
+function EquipmentTab({
+  onRequest,
+  mayEdit,
+}: {
+  onRequest: (action: PendingAction) => void;
+  mayEdit: boolean;
+}) {
+  return <SieveSeriesPanel onRequest={onRequest} mayEdit={mayEdit} />;
+}
+
 function ListsTab({ onRequest }: { onRequest: (action: PendingAction) => void }) {
   const values = useControlledValues();
   const [listKey, setListKey] = useState('');
@@ -1950,6 +1963,7 @@ export default function AdminPage() {
   const [formGeneration, setFormGeneration] = useState(0);
 
   const canApproveAccess = allows('user.approve_access');
+  const canManageUsers = allows('user.manage');
   const canViewSync = allows('sync.view');
   const canRetrySync = allows('sync.retry');
   const canViewAudit = allows('audit.view');
@@ -2203,6 +2217,10 @@ export default function AdminPage() {
       ) : null}
 
       {tab === 'lists' ? <ListsTab onRequest={request} /> : null}
+
+      {tab === 'equipment' ? (
+        <EquipmentTab onRequest={request} mayEdit={canManageUsers} />
+      ) : null}
 
       {tab === 'sync' ? (
         canViewSync ? (

@@ -4,6 +4,7 @@ import {
   sievePresetById,
   type SieveReading,
 } from '@/lib/dgm';
+import { applySieveSeries, type SieveSeriesDocument } from '@/lib/sieveSeries';
 
 /**
  * Where this sample's mass fell across the sieve stack.
@@ -51,6 +52,12 @@ export interface ParticleSizeChartProps {
   /** The submitted form values, holding `sieveN_tare_g` / `sieveN_gross_g`. */
   readonly values: Readonly<Record<string, string>>;
   readonly className?: string;
+  /**
+   * The lab's own sieve table, when it has been edited. THE SAME table the
+   * server computed the stored figures from — if the two diverged, this chart
+   * would draw a different distribution from the one the record holds.
+   */
+  readonly series?: SieveSeriesDocument | null;
 }
 
 /*
@@ -77,8 +84,12 @@ function massAt(values: Readonly<Record<string, string>>, key: string): number |
 export function ParticleSizeChart({
   values,
   className,
+  series = null,
 }: ParticleSizeChartProps): JSX.Element | null {
-  const preset = sievePresetById(values['sieve_series'] ?? '') ?? DEFAULT_SIEVE_PRESET;
+  const preset = applySieveSeries(
+    sievePresetById(values['sieve_series'] ?? '') ?? DEFAULT_SIEVE_PRESET,
+    series,
+  );
 
   const readings: SieveReading[] = [];
   for (let n = 1; n <= preset.positions.length; n++) {

@@ -103,6 +103,7 @@ export const RPC = {
   setUserStatus: 'rpc_set_user_status',
   setUserRoles: 'rpc_set_user_roles',
   upsertControlledValue: 'rpc_upsert_controlled_value',
+  setSieveSeries: 'rpc_set_sieve_series',
   grantDelegation: 'rpc_grant_delegation',
   revokeDelegation: 'rpc_revoke_delegation',
   recordAdminPasswordSet: 'rpc_record_admin_password_set',
@@ -545,6 +546,13 @@ export interface ControlledValueArgs extends RpcActorArgs {
   readonly p_label: string | null;
   readonly p_active: boolean | null;
   readonly p_reason: string;
+}
+
+/** `rpc_set_sieve_series`. The stored table, as it now stands. */
+export interface SieveSeriesResult {
+  readonly key: string;
+  readonly value: string;
+  readonly updated_at: string;
 }
 
 export interface ControlledValueResult {

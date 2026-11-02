@@ -47,7 +47,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 const REPO = process.cwd();
 const FUNCTIONS = join(REPO, 'supabase', 'functions');
@@ -90,16 +90,52 @@ function directReads(): readonly DirectRead[] {
 }
 
 /** The tables migration 0023 declares in `c_tables`. */
+/** Every migration, oldest first, as one string. */
+function allMigrations(): string {
+  const dir = dirname(MIGRATION);
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .map((f) => readFileSync(join(dir, f), 'utf8'))
+    .join('\n');
+}
+
 function declaredTables(): readonly string[] {
-  const sql = readFileSync(MIGRATION, 'utf8');
-  const block = /c_tables\s+constant\s+text\[\]\s*:=\s*array\[([\s\S]*?)\]/.exec(sql);
-  if (block === null) return [];
-  return [...(block[1] ?? '').matchAll(/'([a-z_][a-z0-9_]*)'/g)].map((m) => m[1] ?? '');
+  const sql = allMigrations();
+  /*
+    The LAST declaration wins, across every migration.
+
+    0023 introduced `assert_service_role_reads()` holding the whole list. A
+    later migration that makes an Edge Function read a new table replaces that
+    function with a longer list rather than reaching back to edit a file that
+    has already been applied everywhere — an applied migration is a record of
+    what happened, not a list to keep current. So the contract is whatever the
+    most recent definition says, which is also what the database will run.
+  */
+  const blocks = [
+    ...sql.matchAll(/c_tables\s+constant\s+text\[\]\s*:=\s*array\[([\s\S]*?)\]/g),
+  ];
+  const last = blocks[blocks.length - 1];
+  if (last === undefined) return [];
+  return [...(last[1] ?? '').matchAll(/'([a-z_][a-z0-9_]*)'/g)].map((m) => m[1] ?? '');
 }
 
 /** The tables migration 0023 actually grants SELECT on. */
 function grantedTables(): readonly string[] {
-  const sql = readFileSync(MIGRATION, 'utf8');
+  /*
+    EVERY migration, not only 0023.
+
+    0023 introduced the declaration and held the whole list, because it was
+    written to close one gap in one batch. A grant is a declaration wherever
+    it is written, and a later migration that makes an Edge Function read a
+    new table should carry its own grant rather than reaching back to edit a
+    file that has already been applied everywhere — an applied migration is a
+    record of what happened, not a list to keep current.
+
+    The invariant the gate protects is unchanged: a table an Edge Function
+    reads directly must have been granted to `service_role` somewhere.
+  */
+  const sql = allMigrations();
   return [
     ...sql.matchAll(/grant\s+select\s+on\s+public\.([a-z_][a-z0-9_]*)\s+to\s+service_role/gi),
   ].map((m) => m[1] ?? '');

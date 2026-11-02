@@ -1435,7 +1435,7 @@ describe('the hand-edit guard does not block the work it has to allow', () => {
     h.adapter.failNext('upsertOperationalRow', { kind: 'timeout', landsFirst: true });
     const first = await processEvent(h.deps, event({ sampleId, revision: 1 }));
     expect(first.outcome.kind).toBe('unknown');
-    expect(await h.store.confirmedRowNumber(`uuid-${sampleId}`)).toBeNull();
+    expect(await h.store.confirmedRowNumber(`uuid-${sampleId}`, STAGE)).toBeNull();
     expect(h.workbook.countRecords(STAGE)).toBe(1);
 
     const results = await processEvent(

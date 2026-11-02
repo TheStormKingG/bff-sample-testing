@@ -31,6 +31,7 @@ import {
 import { STAGES, type FieldDef, type Stage } from '../../../src/forms/types.ts';
 import { looksLikeFormula, toSheetRow } from '../../../src/forms/sheetMapping.ts';
 import { deriveSystemValues, hasDerivedColumns } from '../../../src/forms/derived.ts';
+import type { SieveSeriesDocument } from '../../../src/lib/sieveSeries.ts';
 import type { SampleValues } from '../../../src/forms/sheetMapping.ts';
 
 /**
@@ -103,6 +104,15 @@ export interface ValidateArgs {
    * so the guard asks rather than refuses.
    */
   readonly confirmedImplausible?: readonly string[];
+  /**
+   * The lab's own sieve table, read from `system_config` by the endpoint.
+   *
+   * Passed IN rather than read here, because this module is pure: it is the
+   * same function the unit tests call with no database at all. Absent means
+   * "the built-in series", which is what every stage without a sieve test
+   * supplies and what a deployment that has never edited the table has.
+   */
+  readonly sieveSeries?: SieveSeriesDocument | null;
 }
 
 export type ValidationResult =
@@ -404,7 +414,7 @@ export function validateStagePayload(args: ValidateArgs): ValidationResult {
   //    untouched and becomes `p_values`; see the note on ValidationResult.
   let derived: Record<string, string>;
   try {
-    derived = deriveSystemValues(args.stage, clean);
+    derived = deriveSystemValues(args.stage, clean, args.sieveSeries ?? null);
   } catch (error) {
     // A computation that refuses is a statement about the numbers, not an
     // internal fault, so it is reported like any other validation problem and

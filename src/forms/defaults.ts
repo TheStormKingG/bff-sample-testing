@@ -14,6 +14,7 @@
  *     submitted the moment some other code path stopped filtering it (UAT-02).
  */
 
+import type { SieveSeriesDocument } from '@/lib/sieveSeries';
 import { STAGE_SCHEMAS, isFieldApplicable } from './registry';
 import type { Stage } from './types';
 import { toPlantParts } from '@/lib/time';
@@ -45,7 +46,19 @@ export function emptyStageValues(stage: Stage): StageFormValues {
  * zone would otherwise file an evening sample under the following day and
  * corrupt the sample-ID sequence key (NFR-008).
  */
-export function defaultStageValues(stage: Stage, now: Date = new Date()): StageFormValues {
+export function defaultStageValues(
+  stage: Stage,
+  now: Date = new Date(),
+  /**
+   * The lab's own sieve table, when it has been edited. The registry's
+   * `defaultValue` carries the series the application shipped with; this
+   * overrides the seven empty weights with the ones the administrator
+   * recorded, so a re-calibrated sieve reaches the form without a deployment.
+   *
+   * Positional and tare-only. Nothing else in this table is a default.
+   */
+  sieveSeries: SieveSeriesDocument | null = null,
+): StageFormValues {
   const values = emptyStageValues(stage);
   // Registry-declared starting points, before the clock. Only on a NEW form:
   // `hydrateStageValues` merges a stored record over this, so a value an
@@ -53,6 +66,12 @@ export function defaultStageValues(stage: Stage, now: Date = new Date()): StageF
   for (const field of STAGE_SCHEMAS[stage].fields) {
     if (field.type === 'system') continue;
     if (field.defaultValue !== undefined) values[field.key] = field.defaultValue;
+  }
+  if (sieveSeries !== null) {
+    sieveSeries.positions.forEach((position, i) => {
+      const key = `sieve${i + 1}_tare_g`;
+      if (key in values) values[key] = String(position.tareDefaultGrams);
+    });
   }
   const { date, time } = toPlantParts(now);
   if ('collection_date' in values) values['collection_date'] = date;

@@ -57,6 +57,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { STAGE_SCHEMAS } from '@/forms/registry';
 import { SECTIONS, type FieldDef, type Section, type Stage } from '@/forms/types';
 import { clearNonApplicable, defaultStageValues } from '@/forms/defaults';
+import type { SieveSeriesDocument } from '@/lib/sieveSeries';
 import {
   buildStageSchema,
   editableFields,
@@ -131,6 +132,8 @@ export interface StageFormProps {
   readonly stage: Stage;
   /** Which requiredness set applies. Registration for a new sample. */
   readonly phase: FormPhase;
+  /** The lab's sieve table, for the row headings on the sieve grid. */
+  readonly sieveSeries?: SieveSeriesDocument | null;
   /** Seeded from `defaultStageValues` when omitted. Read once, at mount. */
   readonly initialValues?: StageFormValues;
   /** Which footer buttons to offer. Composed by the page from state + can(). */
@@ -178,6 +181,7 @@ export function StageForm({
   stage,
   phase,
   initialValues,
+  sieveSeries = null,
   actions,
   saveState,
   errorMessage = null,
@@ -201,7 +205,7 @@ export function StageForm({
    * form mid-edit.
    */
   const [defaults] = useState<StageFormValues>(
-    () => initialValues ?? defaultStageValues(stage),
+    () => initialValues ?? defaultStageValues(stage, new Date(), sieveSeries ?? null),
   );
 
   /**
@@ -639,6 +643,7 @@ export function StageForm({
               <SieveGrid
                 fields={sectionFields.filter(isSieveMassField)}
                 presetId={values['sieve_series'] ?? ''}
+                series={sieveSeries}
                 renderField={(field) => (
                   <FieldRenderer
                     field={field}
