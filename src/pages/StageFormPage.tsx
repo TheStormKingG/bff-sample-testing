@@ -112,9 +112,10 @@ function RetiredStageNotice({ stage }: { readonly stage: Stage }): JSX.Element {
         the sample it belongs to. Record it there.
       </p>
       <p className="mt-3 text-base text-slate-700">
-        Nothing already recorded here has been removed. Existing {schema.title} samples still
-        open from the Samples list, and the <span className="font-semibold">{schema.sheetTab}</span>{' '}
-        tab of the workbook still holds their rows.
+        Nothing already recorded here has been removed, and the tab has not gone quiet: the{' '}
+        <span className="font-semibold">{schema.sheetTab}</span> tab is now the plant-wide master
+        log, and every sieve test recorded on Ground, Crumble or Mash writes a row to it
+        automatically. Existing {schema.title} samples still open from the Samples list.
       </p>
       <div className="mt-6 flex flex-wrap gap-3">
         <Link

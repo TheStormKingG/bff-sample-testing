@@ -65,15 +65,24 @@ export interface SyncStore {
     readonly problems: readonly SchemaProblem[];
   }): Promise<void>;
 
-  /** Highest sample revision already confirmed in the sheet, or null. */
-  latestConfirmedRevision(sampleUuid: string): Promise<number | null>;
-  /** Row number of the last VERIFIED write for this sample, or null. */
-  confirmedRowNumber(sampleUuid: string): Promise<number | null>;
+  /*
+    EVERY ONE OF THESE IS KEYED BY (sample, TARGET STAGE), and the second half
+    of that key is not decoration. A sieve test produces two outbox events for
+    one sample — the sample's own tab, and the `8 DGM` master log — and
+    `confirmedRowNumber` is the number the writer uses to decide WHICH ROW TO
+    OVERWRITE. Keyed by sample alone, the master-log event would be handed the
+    row the source row was confirmed on and would overwrite an unrelated
+    record in the other tab. The first write would look like a success.
+  */
+  /** Highest revision already confirmed for this sample ON THIS TAB, or null. */
+  latestConfirmedRevision(sampleUuid: string, targetStage: Stage): Promise<number | null>;
+  /** Row number of the last VERIFIED write for this sample ON THIS TAB, or null. */
+  confirmedRowNumber(sampleUuid: string, targetStage: Stage): Promise<number | null>;
   /**
    * The row the last VERIFIED write actually put there, or null. Distinct
    * from `confirmedRowNumber`: that is WHERE it landed, this is WHAT it said.
    */
-  confirmedProjectedRow(sampleUuid: string): Promise<readonly string[] | null>;
+  confirmedProjectedRow(sampleUuid: string, targetStage: Stage): Promise<readonly string[] | null>;
   /**
    * Every row this app has projected for this sample in an outbox event that
    * was claimed at least once. The decision layer compares the row currently
@@ -85,7 +94,7 @@ export interface SyncStore {
    * recording the outcome — the case in which the attempt counter was never
    * incremented and the row is nevertheless in the sheet.
    */
-  projectedRowsFor(sampleUuid: string): Promise<readonly (readonly string[])[]>;
+  projectedRowsFor(sampleUuid: string, targetStage: Stage): Promise<readonly (readonly string[])[]>;
 
   /** Persist the outbox transition. Must reject a stale fence. */
   recordOutcome(args: {
@@ -246,7 +255,7 @@ export async function processEvent(
     }
 
     // 3. Never roll a confirmed operational row back to an older revision.
-    const latest = await deps.store.latestConfirmedRevision(event.sampleUuid);
+    const latest = await deps.store.latestConfirmedRevision(event.sampleUuid, event.stage);
     if (isSuperseded(event, latest)) {
       return await finish({
         kind: 'superseded',
@@ -254,7 +263,7 @@ export async function processEvent(
       });
     }
 
-    const confirmedRow = await deps.store.confirmedRowNumber(event.sampleUuid);
+    const confirmedRow = await deps.store.confirmedRowNumber(event.sampleUuid, event.stage);
 
     // 4/5. Locate by immutable sample ID, then decide. The optimisation that
     //      skips the locate is refused for any event that needs reconciling.
@@ -277,7 +286,7 @@ export async function processEvent(
       // retry-after-a-timeout path safe regardless of that timing.
       const priorProjections = [
         event.row,
-        ...(await deps.store.projectedRowsFor(event.sampleUuid)),
+        ...(await deps.store.projectedRowsFor(event.sampleUuid, event.stage)),
       ];
       decision = decideProjection({
         stage: event.stage,
@@ -287,7 +296,7 @@ export async function processEvent(
         duplicateRows: found.duplicateRows,
         confirmedRowNumber: confirmedRow,
         priorProjections,
-        lastConfirmedRow: await deps.store.confirmedProjectedRow(event.sampleUuid),
+        lastConfirmedRow: await deps.store.confirmedProjectedRow(event.sampleUuid, event.stage),
       });
     }
 

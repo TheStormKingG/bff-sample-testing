@@ -235,26 +235,43 @@ export class SupabaseSyncStore implements SyncStore {
    * cached per event so processing one event costs one query rather than two.
    * The cache is per worker invocation and is cleared when the sample changes.
    */
-  private syncStateCache: { uuid: string; row: SampleSyncStateRow | null } | null = null;
+  private syncStateCache: { uuid: string; stage: Stage; row: SampleSyncStateRow | null } | null =
+    null;
 
-  private async sampleSyncState(sampleUuid: string): Promise<SampleSyncStateRow | null> {
-    if (this.syncStateCache !== null && this.syncStateCache.uuid === sampleUuid) {
+  /*
+    CACHED ON (sample, TARGET STAGE), not on the sample.
+    A sieve test produces two outbox events for one sample — its own tab and
+    the `8 DGM` master log — and the row number each was confirmed on is the
+    number the writer uses to decide which row to overwrite. Caching on the
+    sample alone would hand the second event the first one's row number, and
+    the write would land on an unrelated record in the other tab.
+  */
+  private async sampleSyncState(
+    sampleUuid: string,
+    targetStage: Stage,
+  ): Promise<SampleSyncStateRow | null> {
+    if (
+      this.syncStateCache !== null &&
+      this.syncStateCache.uuid === sampleUuid &&
+      this.syncStateCache.stage === targetStage
+    ) {
       return this.syncStateCache.row;
     }
     const data = await callRpc<unknown>(this.admin, RPC.readSampleSyncState, {
       p_sample_uuid: sampleUuid,
+      p_target_stage: targetStage,
     });
     const row = firstRow<SampleSyncStateRow>(data);
-    this.syncStateCache = { uuid: sampleUuid, row };
+    this.syncStateCache = { uuid: sampleUuid, stage: targetStage, row };
     return row;
   }
 
-  async latestConfirmedRevision(sampleUuid: string): Promise<number | null> {
-    return (await this.sampleSyncState(sampleUuid))?.confirmed_revision ?? null;
+  async latestConfirmedRevision(sampleUuid: string, targetStage: Stage): Promise<number | null> {
+    return (await this.sampleSyncState(sampleUuid, targetStage))?.confirmed_revision ?? null;
   }
 
-  async confirmedRowNumber(sampleUuid: string): Promise<number | null> {
-    return (await this.sampleSyncState(sampleUuid))?.confirmed_row_number ?? null;
+  async confirmedRowNumber(sampleUuid: string, targetStage: Stage): Promise<number | null> {
+    return (await this.sampleSyncState(sampleUuid, targetStage))?.confirmed_row_number ?? null;
   }
 
   /**
@@ -262,28 +279,46 @@ export class SupabaseSyncStore implements SyncStore {
    * state: `projectedRowsFor` and `confirmedRow` are two questions about one
    * result, and processing one event must not cost two queries.
    */
-  private projectionCache: { uuid: string; rows: readonly SampleProjectionRow[] } | null = null;
+  private projectionCache:
+    | { uuid: string; stage: Stage; rows: readonly SampleProjectionRow[] }
+    | null = null;
 
-  private async projections(sampleUuid: string): Promise<readonly SampleProjectionRow[]> {
-    if (this.projectionCache !== null && this.projectionCache.uuid === sampleUuid) {
+  private async projections(
+    sampleUuid: string,
+    targetStage: Stage,
+  ): Promise<readonly SampleProjectionRow[]> {
+    if (
+      this.projectionCache !== null &&
+      this.projectionCache.uuid === sampleUuid &&
+      this.projectionCache.stage === targetStage
+    ) {
       return this.projectionCache.rows;
     }
     const data = await callRpc<unknown>(this.admin, RPC.readSampleProjectedRows, {
       p_sample_uuid: sampleUuid,
+      p_target_stage: targetStage,
     });
     const rows = (Array.isArray(data) ? data : []) as readonly SampleProjectionRow[];
-    this.projectionCache = { uuid: sampleUuid, rows };
+    this.projectionCache = { uuid: sampleUuid, stage: targetStage, rows };
     return rows;
   }
 
-  async projectedRowsFor(sampleUuid: string): Promise<readonly (readonly string[])[]> {
-    return (await this.projections(sampleUuid))
+  async projectedRowsFor(
+    sampleUuid: string,
+    targetStage: Stage,
+  ): Promise<readonly (readonly string[])[]> {
+    return (await this.projections(sampleUuid, targetStage))
       .map((r) => r.projected_row)
       .filter((row): row is readonly string[] => Array.isArray(row));
   }
 
-  async confirmedProjectedRow(sampleUuid: string): Promise<readonly string[] | null> {
-    const found = (await this.projections(sampleUuid)).find((r) => r.was_confirmed === true);
+  async confirmedProjectedRow(
+    sampleUuid: string,
+    targetStage: Stage,
+  ): Promise<readonly string[] | null> {
+    const found = (await this.projections(sampleUuid, targetStage)).find(
+      (r) => r.was_confirmed === true,
+    );
     return found !== undefined && Array.isArray(found.projected_row) ? found.projected_row : null;
   }
 

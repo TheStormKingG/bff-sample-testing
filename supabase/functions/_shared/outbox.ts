@@ -38,6 +38,13 @@ export const OUTBOX_EVENT_KINDS = [
   'correction_applied',
   /** Review outcome or disposition that changes a written cell. */
   'review_recorded',
+  /**
+   * A second row for a sieve test, written to `8 DGM` as the plant-wide
+   * master log. Its sample lives on another tab: this is the one kind whose
+   * target tab is not the sample's own stage, which is why delivery state is
+   * keyed by (sample, target stage) rather than by sample alone.
+   */
+  'dgm_master_log',
 ] as const;
 export type OutboxEventKind = (typeof OUTBOX_EVENT_KINDS)[number];
 

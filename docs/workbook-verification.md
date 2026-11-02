@@ -43,6 +43,7 @@ application writes to today, which has changed twice since:
 | 2026-10-29 | `8 DGM` authored — a ninth operational tab, A:AI (35 columns) | `tests/registry.test.ts` holds the read-back; migrations 0024–0028 |
 | 2026-10-30 | Three `8 DGM` columns re-headed once the lab explained them | migration `0028_dgm_sieve_test_headers.sql` |
 | 2026-11-02 | `2 Ground`, `6 Crumble` and `7 Mash` trade their typed-in particle-size columns for the sieve test — A:AN (40), A:AM (39), A:AJ (36) | `docs/workbook-restructure-2026-11-02.md`; migration `0029_sieve_test_on_three_stages.sql` |
+| 2026-11-02 | The `8 DGM` form is retired and its tab becomes the plant-wide MASTER LOG: every sieve test recorded on the three tabs above writes a second row to it, re-projected into DGM column order. Its own 35 columns are unchanged | migrations `0030_dgm_master_log_kind.sql`, `0031_dgm_master_log.sql`; `scripts/dgm-trigger-check.sql` cases E–G |
 
 The last of those is **not yet applied to the live workbook**; see that
 document for the state it must be brought to and the order to do it in.

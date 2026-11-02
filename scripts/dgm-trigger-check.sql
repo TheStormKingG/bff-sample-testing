@@ -205,4 +205,159 @@ begin
   raise notice 'CASE D  ok  a two-letter column parsed as a number, not as text';
 end $$;
 
+
+-- ===========================================================================
+-- CASE E — the DGM MASTER LOG.
+--
+-- CASE D above inserted one `6 Crumble` outbox row carrying a complete sieve
+-- test. That alone must have produced a SECOND outbox row, addressed to
+-- `8 DGM`, holding the same figures re-projected into DGM column order.
+--
+-- This is the case that justifies `target_stage` existing. Without it the
+-- claim would hand the worker the SAMPLE's stage for both rows, and the
+-- master-log row would be verified against, located in and written to
+-- `6 Crumble`.
+-- ===========================================================================
+do $$
+declare n int; v_tab text; v_stage text; v_kind text;
+begin
+  select count(*) into n from public.sheet_sync_outbox
+   where sample_uuid = 'dddddddd-0000-0000-0000-00000000000d';
+  if n <> 2 then
+    raise exception 'CASE E expected 2 outbox rows for the crumble sample, got %', n;
+  end if;
+
+  select o.target_tab, o.target_stage::text, o.event_kind::text
+    into v_tab, v_stage, v_kind
+    from public.sheet_sync_outbox o
+   where o.sample_uuid = 'dddddddd-0000-0000-0000-00000000000d'
+     and o.event_kind = 'dgm_log';
+
+  if v_tab is distinct from '8 DGM' or v_stage is distinct from 'dgm' then
+    raise exception 'CASE E master-log row targets %/% , expected "8 DGM"/dgm', v_tab, v_stage;
+  end if;
+  raise notice 'CASE E  ok  one sieve test produced a second row, addressed to % as %', v_tab, v_kind;
+end $$;
+
+-- The source row's own event still says `6 Crumble`, which is what stops the
+-- two writes colliding.
+do $$
+declare v_stage text;
+begin
+  select o.target_stage::text into v_stage
+    from public.sheet_sync_outbox o
+   where o.sample_uuid = 'dddddddd-0000-0000-0000-00000000000d'
+     and o.event_kind = 'register';
+  if v_stage is distinct from 'crumble' then
+    raise exception 'CASE E source row targets %, expected crumble', v_stage;
+  end if;
+  raise notice 'CASE E  ok  the source row still targets its own tab';
+end $$;
+
+-- The CELLS. Re-projected, never recomputed: the master log must carry the
+-- source row's own strings, in DGM column order.
+do $$
+declare r text[]; want text[];
+begin
+  select o.projected_row into r
+    from public.sheet_sync_outbox o
+   where o.sample_uuid = 'dddddddd-0000-0000-0000-00000000000d'
+     and o.event_kind = 'dgm_log';
+
+  if array_length(r, 1) <> 35 then
+    raise exception 'CASE E master-log row is % cells wide, expected 35', array_length(r, 1);
+  end if;
+
+  -- Identity columns A..F, copied straight across.
+  if r[2] is distinct from '2026-10-29' or r[3] is distinct from '09:30'
+     or r[4] is distinct from 'Broiler starter' or r[5] is distinct from 'B-12'
+     or r[6] is distinct from 'R. Singh' then
+    raise exception E'CASE E identity columns wrong.\n  got: %', r[1:6];
+  end if;
+
+  -- THE ALIASED COLUMNS, which are the whole reason the map table exists.
+  -- 8 DGM calls them mill_hz_position and grind_time; 6 Crumble calls the
+  -- same two sieve_shaker_hz and sieve_vibration_min.
+  if r[8] is distinct from '8' then
+    raise exception 'CASE E H (mill_hz_position <- sieve_shaker_hz) = %, expected 8', r[8];
+  end if;
+  if r[9] is distinct from '10' then
+    raise exception 'CASE E I (grind_time <- sieve_vibration_min) = %, expected 10', r[9];
+  end if;
+  if r[10] is distinct from 'abnt-standard-7' then
+    raise exception 'CASE E J (sieve_series) = %', r[10];
+  end if;
+
+  -- The nine computed cells, Y..AG on this tab, AC..AK on the source.
+  want := array['512.00','3.821782','1472.6131','22.7723','55.0000','22.2277',
+                '4.520676','1.9','series-ratio-top-bound/pan-excluded'];
+  if r[25:33] is distinct from want then
+    raise exception E'CASE E computed block wrong.\n  got:  %\n  want: %', r[25:33], want;
+  end if;
+  raise notice 'CASE E  ok  identity, the three aliased settings and all 9 computed cells re-projected';
+end $$;
+
+-- ===========================================================================
+-- CASE F — a sample with no sieve test enqueues no master-log row.
+--
+-- The ordinary case on `2 Ground`, `6 Crumble` and `7 Mash`: the sample is
+-- taken at the mill and registered there, and the stack is weighed later. A
+-- master log that collected those would be a log of tests nobody ran.
+-- ===========================================================================
+insert into public.samples
+  (id, sample_id, stage, prefix, collection_instant, collection_local_date, collection_local_time,
+   created_by, registered_by, registered_at, capture_state)
+values
+  ('eeeeeeee-0000-0000-0000-00000000000e', 'CR-261029-02', 'crumble', 'CR',
+   '2026-10-29T14:30:00Z', '2026-10-29', '10:30',
+   'aaaaaaaa-0000-0000-0000-00000000000a',
+   'aaaaaaaa-0000-0000-0000-00000000000a', now(), 'registered');
+insert into public.sheet_sync_outbox
+  (sample_uuid, target_tab, event_kind, payload_revision, payload_hash, payload, projected_row)
+values
+  ('eeeeeeee-0000-0000-0000-00000000000e', '6 Crumble', 'register', 1, repeat('e',64), '{}'::jsonb,
+   -- 39 cells, every weight and every computed cell blank.
+   array['','2026-10-29','10:30','Broiler starter','B-13','R. Singh','2.5',
+         '','8','10','abnt-standard-7','','','',
+         '','','','','','','','','','','','','','',
+         '','','','','','','','','',
+         '','']::text[]);
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.sheet_sync_outbox
+   where sample_uuid = 'eeeeeeee-0000-0000-0000-00000000000e';
+  if n <> 1 then
+    raise exception 'CASE F expected 1 outbox row (no master log), got %', n;
+  end if;
+  raise notice 'CASE F  ok  a sample with no weighing enqueues no master-log row';
+end $$;
+
+-- ===========================================================================
+-- CASE G — the master-log row stores no derived results of its own.
+--
+-- `tg_record_derived_results` reads a stage's `system` columns out of the
+-- projected row BY COLUMN LETTER. A master-log row is DGM-shaped while its
+-- sample is a Crumble one, so without the skip it would read AC..AK out of a
+-- row whose computed block is at Y..AG and overwrite nine correct results
+-- with nine wrong ones.
+-- ===========================================================================
+do $$
+declare n int; v text;
+begin
+  select count(*) into n from public.sample_derived_results
+   where sample_uuid = 'dddddddd-0000-0000-0000-00000000000d';
+  if n <> 9 then
+    raise exception 'CASE G expected 9 stored results for the crumble sample, got %', n;
+  end if;
+
+  select display_text into v from public.sample_derived_results
+   where sample_uuid = 'dddddddd-0000-0000-0000-00000000000d' and result_key = 'dgm_um';
+  if v is distinct from '1472.6131' then
+    raise exception 'CASE G dgm_um was overwritten to %, expected 1472.6131', v;
+  end if;
+  raise notice 'CASE G  ok  9 results stored once, from the source row, not re-read from the copy';
+end $$;
+
 rollback;

@@ -1,0 +1,22 @@
+-- ===========================================================================
+-- 0030 — one enum label, and nothing else.
+--
+-- `dgm_log` is the outbox event kind for a row written to the `8 DGM` tab as
+-- a MASTER LOG of a sieve test recorded somewhere else. Everything that uses
+-- it is in 0031.
+--
+-- ---------------------------------------------------------------------------
+-- WHY THIS IS ITS OWN FILE, AGAIN
+-- ---------------------------------------------------------------------------
+-- The same trap 0024 and 0025 were split for: PostgreSQL will not let a
+-- transaction use an enum label it added itself. `alter type ... add value`
+-- followed by a trigger body that writes that label fails with
+--
+--     unsafe use of new value "dgm_log" of enum type sheet_sync_event_kind
+--
+-- and `supabase db push` runs each migration file in one transaction. So the
+-- label is committed here and used in the next file. A reviewer tempted to
+-- merge the two will get a clean dry run and a failure on apply.
+-- ===========================================================================
+
+alter type public.sheet_sync_event_kind add value if not exists 'dgm_log';

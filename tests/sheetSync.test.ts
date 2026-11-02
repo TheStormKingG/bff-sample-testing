@@ -212,19 +212,46 @@ class FakeSyncStore implements SyncStore {
     this.verification = { ...this.verification, schemaDrifted: true };
   }
 
-  latestConfirmedRevision(sampleUuid: string): Promise<number | null> {
+  /**
+   * Every delivery-state question this store was asked, and WHICH TAB it was
+   * asked about.
+   *
+   * The maps above stay keyed by sample, because every existing test seeds
+   * them that way and one sample had one tab when they were written. What is
+   * recorded here is the half of the key that was missing: a sieve test now
+   * produces two events for one sample — its own tab and the `8 DGM` master
+   * log — and `confirmedRowNumber` is the number the writer uses to decide
+   * WHICH ROW TO OVERWRITE. An argument dropped at a call site makes
+   * `targetStage` undefined here and fails the test below, rather than
+   * silently handing the master-log event the source row's row number and
+   * overwriting an unrelated record in the other tab.
+   */
+  readonly lookups: { fn: string; sampleUuid: string; targetStage: Stage | undefined }[] = [];
+
+  private record(fn: string, sampleUuid: string, targetStage: Stage | undefined): void {
+    this.lookups.push({ fn, sampleUuid, targetStage });
+  }
+
+  latestConfirmedRevision(sampleUuid: string, targetStage: Stage): Promise<number | null> {
+    this.record('latestConfirmedRevision', sampleUuid, targetStage);
     return Promise.resolve(this.confirmedRevision.get(sampleUuid) ?? null);
   }
 
-  confirmedRowNumber(sampleUuid: string): Promise<number | null> {
+  confirmedRowNumber(sampleUuid: string, targetStage: Stage): Promise<number | null> {
+    this.record('confirmedRowNumber', sampleUuid, targetStage);
     return Promise.resolve(this.confirmedRow.get(sampleUuid) ?? null);
   }
 
-  confirmedProjectedRow(sampleUuid: string): Promise<readonly string[] | null> {
+  confirmedProjectedRow(sampleUuid: string, targetStage: Stage): Promise<readonly string[] | null> {
+    this.record('confirmedProjectedRow', sampleUuid, targetStage);
     return Promise.resolve(this.confirmedProjection.get(sampleUuid) ?? null);
   }
 
-  projectedRowsFor(sampleUuid: string): Promise<readonly (readonly string[])[]> {
+  projectedRowsFor(
+    sampleUuid: string,
+    targetStage: Stage,
+  ): Promise<readonly (readonly string[])[]> {
+    this.record('projectedRowsFor', sampleUuid, targetStage);
     return Promise.resolve(this.projections.get(sampleUuid) ?? []);
   }
 
@@ -1468,5 +1495,58 @@ describe('the hand-edit guard does not block the work it has to allow', () => {
         lastConfirmedRow: ours,
       }),
     ).toMatchObject({ action: 'update', reason: 'row_located' });
+  });
+});
+
+describe('delivery state is asked about ONE TAB, not one sample', () => {
+  /**
+   * ===========================================================================
+   * THE DEFECT THIS EXISTS TO STOP
+   * ===========================================================================
+   * Until the DGM master log, one sample meant one tab, and every question the
+   * worker asks about where a row has already been written was keyed by the
+   * sample alone. `rpc_read_sample_projected_rows` said so in its own header:
+   *
+   *     "A sample has one stage, so every projected_row in the result has the
+   *      same width and no per-stage filter is needed; the sample's own stage
+   *      is the only one it can have."
+   *
+   * A sieve test now produces TWO outbox events for one sample — its own tab,
+   * and `8 DGM` as the plant-wide log. `confirmedRowNumber` is the number the
+   * writer uses to decide WHICH ROW TO OVERWRITE, so keyed by sample alone the
+   * master-log event would be handed the row its source was confirmed on and
+   * would overwrite an unrelated record in the other tab. The first write
+   * would look like a success; the damage would be in a file nobody diffs.
+   *
+   * None of that is visible to a type: the store is an interface, and a call
+   * site that drops the second argument still compiles against an
+   * implementation that ignores it. This asserts the argument actually
+   * arrives, on every one of the four questions.
+   */
+  it('passes the event’s target stage to every delivery-state question', async () => {
+    const h = harness();
+    const ev = event({ sampleId: 'AP-2026-10-24-21' });
+    // A row already in the sheet, so the blocked/located path runs too and
+    // every one of the four is reached rather than short-circuited.
+    await processEvent(h.deps, ev);
+    h.store.lookups.length = 0;
+    await processEvent(h.deps, { ...ev, revision: ev.revision + 1 });
+
+    expect(h.store.lookups.length).toBeGreaterThan(0);
+    const asked = new Set(h.store.lookups.map((l) => l.fn));
+    expect(asked.has('confirmedRowNumber')).toBe(true);
+
+    for (const lookup of h.store.lookups) {
+      expect(lookup.targetStage, `${lookup.fn} was asked without a tab`).toBe(ev.stage);
+      expect(lookup.sampleUuid).toBe(ev.sampleUuid);
+    }
+  });
+
+  it('INSTRUMENT CHECK: the recorder would notice a missing tab', () => {
+    // A test that silently recorded nothing would pass the loop above
+    // vacuously, which is the one way this gate could be worthless.
+    const h = harness();
+    h.store.lookups.push({ fn: 'probe', sampleUuid: 'x', targetStage: undefined });
+    expect(h.store.lookups.some((l) => l.targetStage === undefined)).toBe(true);
   });
 });

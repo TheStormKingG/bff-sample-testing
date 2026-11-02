@@ -17,6 +17,7 @@ import { EmptyState } from './common';
 const ACTION_LABELS: Record<string, string> = {
   draft_created: 'Draft started',
   sample_registered: 'Sample registered',
+  dgm_master_log: 'Added to the DGM master log',
   results_entered: 'Test results entered',
   results_amended: 'Test results amended',
   correction_requested: 'Correction requested',
