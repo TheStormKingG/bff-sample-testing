@@ -180,6 +180,22 @@ function parseSqlFunctions(): SqlFunction[] {
 }
 
 const SQL_FUNCTIONS = parseSqlFunctions();
+
+/**
+ * A definition's `returns ...` clause, normalised.
+ *
+ * `create or replace` is refused by Postgres when the return type changes, so
+ * this is the one property that decides whether an in-place replacement can
+ * work at all. Read from the text between the argument list and the
+ * `language` keyword, which is where the clause always sits in these files;
+ * `null` when it cannot be found, which is treated as "cannot prove it is
+ * safe" and therefore still requires a drop.
+ */
+function returnsClause(def: { file: string; index: number }): string | null {
+  const src = readFileSync(join(MIGRATIONS_DIR, def.file), 'utf8').slice(def.index);
+  const match = /\)\s*(returns[\s\S]*?)\blanguage\b/i.exec(src);
+  return match === null ? null : match[1]!.replace(/\s+/g, ' ').trim().toLowerCase();
+}
 const SQL_BY_NAME = new Map(SQL_FUNCTIONS.map((f) => [f.name, f]));
 
 // --- the tests ---------------------------------------------------------------
@@ -247,7 +263,7 @@ describe('RPC contract: every called function is defined (review finding 1)', ()
     expect(orphans, `defined but never called: ${orphans.join(', ')}`).toEqual([]);
   });
 
-  it('redefines an rpc_* name only after explicitly dropping it', () => {
+  it('redefines an rpc_* name only after explicitly dropping it, or in place', () => {
     // Redefining a name is legitimate — a later migration may widen a return
     // type, which is the one change `create or replace` CANNOT make (Postgres
     // refuses with "cannot change return type of existing function", and a
@@ -258,6 +274,17 @@ describe('RPC contract: every called function is defined (review finding 1)', ()
     // So a duplicate is only a defect when that drop is absent. The first
     // version of this test flagged the duplicate itself and produced a false
     // finding against SQL that was already correct.
+    //
+    // AND `create or replace` IS THE OTHER SAFE IDIOM, which this test did
+    // not know and so reported as a defect the first time one was used —
+    // 0035, replacing two function bodies to correct an argument name with
+    // no change to the signature. That is the ordinary way to fix a body,
+    // the drop-and-recreate dance exists only for the cases `replace`
+    // refuses, and demanding a drop would have meant re-granting execute on
+    // a security-definer function for no reason. The rule the comment above
+    // describes is really about the RETURN TYPE, so that is what is checked:
+    // a replacement whose `returns` clause matches the previous definition's
+    // needs no drop, and one that differs still does.
     const byName = new Map<string, Array<{ file: string; index: number }>>();
     for (const f of SQL_FUNCTIONS) {
       byName.set(f.name, [...(byName.get(f.name) ?? []), { file: f.file, index: f.index }]);
@@ -268,11 +295,20 @@ describe('RPC contract: every called function is defined (review finding 1)', ()
       if (defs.length < 2) continue;
       // Every definition after the first needs a drop of that name earlier in
       // its own file.
-      for (const def of defs.slice(1)) {
+      for (const [ordinal, def] of defs.slice(1).entries()) {
         const src = readFileSync(join(MIGRATIONS_DIR, def.file), 'utf8');
         const dropRe = new RegExp(`drop\\s+function\\s+(?:if\\s+exists\\s+)?(?:public\\.)?${name}\\s*\\(`, 'gi');
         const hasPrecedingDrop = [...src.matchAll(dropRe)].some((m) => m.index! < def.index);
-        if (!hasPrecedingDrop) {
+        if (hasPrecedingDrop) continue;
+
+        const previous = defs[ordinal]!;
+        const replacesInPlace =
+          // `index` is the START of the `create ... function` match, so the
+          // keywords are read forward from it, not backward.
+          /^create\s+or\s+replace\s+function\b/i.test(src.slice(def.index, def.index + 40)) &&
+          returnsClause(def) !== null &&
+          returnsClause(def) === returnsClause(previous);
+        if (!replacesInPlace) {
           unprotected.push(
             `${name} is redefined in ${def.file} with no preceding "drop function ${name}(...)": on a fresh migration run this aborts, because an identical argument list cannot overload and a changed return type cannot be replaced`,
           );
