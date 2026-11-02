@@ -326,7 +326,9 @@ export const DASHBOARD_STAGES = [
   { stage: 'extruded_soya', title: 'Extruded Soya' },
   { stage: 'crumble', title: 'Crumble' },
   { stage: 'mash', title: 'Mash' },
-  { stage: 'dgm', title: 'DGM' },
+  // `8 DGM` is NOT here. Its form was retired once the sieve test moved inline
+  // onto Ground, Crumble and Mash; the stage, its records and its workbook tab
+  // all remain, but no card opens a blank one.
 ] as const;
 
 export const DASHBOARD_CARDS = DASHBOARD_STAGES.map((entry) => entry.title);

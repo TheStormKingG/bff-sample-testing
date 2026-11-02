@@ -21,7 +21,7 @@
  */
 
 import type { Stage } from '@/forms/types';
-import { DASHBOARD_ORDER, getSchema } from '@/forms/registry';
+import { RECORD_STAGE_ORDER, getSchema } from '@/forms/registry';
 import { PLANT_TIME_ZONE, plantLocalDate } from '@/lib/time';
 import type { CaptureState, Disposition } from '@/lib/workflow';
 
@@ -232,7 +232,7 @@ export function samplesTodayByStage(
   unavailableReason = 'The sample list could not be read, so today’s count is unknown.',
 ): readonly StageCount[] {
   if (facts === null) {
-    return DASHBOARD_ORDER.map((schema) => ({
+    return RECORD_STAGE_ORDER.map((schema) => ({
       stage: schema.stage,
       ordinal: schema.ordinal,
       title: schema.title,
@@ -244,7 +244,7 @@ export function samplesTodayByStage(
   const tally = new Map<Stage, number>();
   for (const f of today) tally.set(f.stage, (tally.get(f.stage) ?? 0) + 1);
 
-  return DASHBOARD_ORDER.map((schema) => ({
+  return RECORD_STAGE_ORDER.map((schema) => ({
     stage: schema.stage,
     ordinal: schema.ordinal,
     title: schema.title,
@@ -438,7 +438,7 @@ export function samplingAdherence(args: {
 
 /** Stages for which an adherence figure may legitimately be shown. */
 export function reportableAdherenceStages(): readonly Stage[] {
-  return DASHBOARD_ORDER.filter((s) => s.frequencyApproved).map((s) => s.stage);
+  return RECORD_STAGE_ORDER.filter((s) => s.frequencyApproved).map((s) => s.stage);
 }
 
 /** Stages for which adherence is deliberately withheld, with the reason. */
@@ -447,7 +447,7 @@ export function withheldAdherenceStages(): readonly {
   title: string;
   frequency: string;
 }[] {
-  return DASHBOARD_ORDER.filter((s) => !s.frequencyApproved).map((s) => ({
+  return RECORD_STAGE_ORDER.filter((s) => !s.frequencyApproved).map((s) => ({
     stage: s.stage,
     title: s.title,
     frequency: s.frequency,

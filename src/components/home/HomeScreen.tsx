@@ -9,6 +9,7 @@ import { STAGE_ICON } from '@/components/ui/statusMaps';
 import { SECONDARY_NAV } from '@/components/layout/navItems';
 import { useAccess } from '@/components/layout/accessContext';
 import { useOnline } from '@/components/layout/connectivity';
+import { BrandMark } from '@/components/ui/BrandMark';
 import { HomeTile } from '@/components/home/HomeTile';
 import { MoreSheet, type QueueCount } from '@/components/home/MoreSheet';
 
@@ -215,12 +216,23 @@ export function HomeScreen({
       )}
     >
       <div className="flex shrink-0 items-center justify-between gap-2">
-        <h1
-          id="home-heading"
-          className="shrink-0 whitespace-nowrap text-sm font-bold uppercase tracking-wide text-bff-800"
-        >
-          Sample testing
-        </h1>
+        {/*
+          The farm's mark, on the one screen that hides the app header to buy
+          the tile grid its height — without it this is the only screen in the
+          application with no branding at all. 28px: large enough to read as
+          the badge it is, small enough that the header row keeps the same
+          height and the grid loses none of the space the no-scroll promise
+          depends on.
+        */}
+        <div className="flex min-w-0 shrink-0 items-center gap-2">
+          <BrandMark size={28} />
+          <h1
+            id="home-heading"
+            className="shrink-0 whitespace-nowrap text-sm font-bold uppercase tracking-wide text-bff-800"
+          >
+            Sample testing
+          </h1>
+        </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           {/* Which day the tile figures are counting. A tablet left on across
               midnight then shows a dated number, not a silently wrong one. */}

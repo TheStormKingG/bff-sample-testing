@@ -11,7 +11,8 @@
  * been obtained legitimately. See e2e/README.md.
  *
  * Covers Master Prompt §2: one primary card per testing form, in a fixed
- * order — seven when it was written, eight since DGM was added,
+ * order — seven when it was written, briefly eight while DGM had its own
+ * form, and seven again now that the sieve test records inline,
  * large enough to hit, with secondary navigation kept out of that set.
  *
  * The cards are located by the route they link to (`#/stage/<id>`) rather than

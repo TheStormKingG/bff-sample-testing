@@ -9,6 +9,7 @@ import { CAPTURE_STATES, type CaptureState, type Disposition } from '@/lib/workf
 import { plantDayEnd, plantDayStart, plantLocalDate } from '@/lib/time';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/cn';
+import { BrandMark } from '@/components/ui/BrandMark';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { STAGE_ICON } from '@/components/ui/statusMaps';
 import { SecondaryNav } from '@/components/layout/SecondaryNav';
@@ -240,9 +241,18 @@ export function DashboardPage() {
   return (
     <div className="space-y-10">
       <section aria-labelledby="forms-heading">
-        <h1 id="forms-heading" className="text-2xl font-bold tracking-tight text-slate-900">
-          Sample testing
-        </h1>
+        {/*
+          The mark sits WITH the heading rather than above it, so the row
+          reads as one masthead over the grid of forms instead of a floating
+          image. It is decorative here: the words beside it, and the wordmark
+          in the header above, already name the company.
+        */}
+        <div className="flex items-center gap-3">
+          <BrandMark size={48} />
+          <h1 id="forms-heading" className="text-2xl font-bold tracking-tight text-slate-900">
+            Sample testing
+          </h1>
+        </div>
         <p className="mt-1 text-base text-slate-600">
           {mayRecord
             ? 'Choose the test you are doing.'

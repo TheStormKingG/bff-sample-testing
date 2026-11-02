@@ -113,7 +113,7 @@ describe('the tile grid', () => {
     // One per dashboard card, derived rather than hardcoded: `stageTiles` is
     // deliberately not sliced, so a form must never be able to go missing here.
     expect(links).toHaveLength(DASHBOARD_ORDER.length);
-    expect(links).toHaveLength(8);
+    expect(links).toHaveLength(7);
     expect(links.map((a) => a.getAttribute('href'))).toEqual(
       DASHBOARD_ORDER.map((schema) => `/stage/${schema.stage}`),
     );

@@ -32,7 +32,7 @@
 import { useMemo, useState } from 'react';
 import { CalendarDays, Download, FileSpreadsheet, Info, Ruler } from 'lucide-react';
 
-import { DASHBOARD_ORDER } from '@/forms/registry';
+import { RECORD_STAGE_ORDER } from '@/forms/registry';
 import {
   PLANT_TIME_ZONE,
   formatPlantDateTimeLabelled,
@@ -145,7 +145,7 @@ export default function ReportsPage() {
    */
   const adherence = useMemo(() => {
     const facts = operations.data?.todayFacts ?? null;
-    return DASHBOARD_ORDER.map((schema) => ({
+    return RECORD_STAGE_ORDER.map((schema) => ({
       schema,
       result: samplingAdherence({
         stage: schema.stage,
@@ -168,7 +168,7 @@ export default function ReportsPage() {
   // words — "four stages", "the other four" — and the eighth stage made
   // them wrong without breaking anything. tests/stageCountProse.test.ts
   // now refuses a stage count that is not read from the registry.
-  const stated = DASHBOARD_ORDER.length - withheld.length;
+  const stated = RECORD_STAGE_ORDER.length - withheld.length;
 
   async function runExport(plantDate: string) {
     setExporting(true);
@@ -344,13 +344,13 @@ export default function ReportsPage() {
             <div className="flex flex-col gap-4">
               <div
                 role="region"
-                aria-label={`Why ${withheld.length} of ${DASHBOARD_ORDER.length} stages have no adherence figure`}
+                aria-label={`Why ${withheld.length} of ${RECORD_STAGE_ORDER.length} stages have no adherence figure`}
                 className="rounded-md border-2 border-amber-400 bg-amber-50 p-4"
               >
                 <p className="flex items-center gap-2 text-base font-bold text-amber-900">
                   <Ruler aria-hidden className="h-5 w-5" />
                   No adherence or overdue figure is produced for {withheld.length} of{' '}
-                  {DASHBOARD_ORDER.length} stages
+                  {RECORD_STAGE_ORDER.length} stages
                 </p>
                 <p className="mt-1 text-base text-amber-900">
                   The workbook&rsquo;s <code>Read me</code> tab records the sampling frequency for

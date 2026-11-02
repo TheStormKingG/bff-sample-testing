@@ -22,6 +22,8 @@ import { describe, it, expect } from 'vitest';
 import {
   STAGE_SCHEMAS,
   DASHBOARD_ORDER,
+  RECORD_STAGE_ORDER,
+  RETIRED_STAGES,
   resolvePrefix,
   isFieldApplicable,
   fieldsRequiredAt,
@@ -250,21 +252,38 @@ describe('registry: workbook contract', () => {
 });
 
 describe('registry: dashboard', () => {
-  it('presents exactly eight cards in the order fixed by the PRD, then DGM', () => {
-    expect(DASHBOARD_ORDER).toHaveLength(8);
+  it('offers the seven forms fixed by the PRD, and not the retired one', () => {
+    expect(DASHBOARD_ORDER).toHaveLength(7);
     expect(DASHBOARD_ORDER.map((s) => s.title)).toEqual([
       'Raw Materials', 'Ground', 'Conditioned', 'Pellets',
-      'Extruded Soya', 'Crumble', 'Mash', 'DGM',
+      'Extruded Soya', 'Crumble', 'Mash',
     ]);
-    expect(DASHBOARD_ORDER.map((s) => s.ordinal)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(DASHBOARD_ORDER.map((s) => s.ordinal)).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
 
-  it('lists every stage exactly once — DASHBOARD_ORDER is not type-checked', () => {
+  it('still knows about every stage a record can belong to', () => {
+    // THE DISTINCTION THIS FILE NOW HAS TO HOLD. `DASHBOARD_ORDER` answers
+    // "which forms may somebody open"; `RECORD_STAGE_ORDER` answers "which
+    // stages may a record belong to". They stopped being the same list when
+    // `8 DGM` was retired with four samples already registered against it, and
+    // using the shorter one on a record screen would make those four
+    // unfilterable and drop them out of every report.
+    expect(RECORD_STAGE_ORDER).toHaveLength(8);
+    expect(RECORD_STAGE_ORDER.map((s) => s.ordinal)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect([...RECORD_STAGE_ORDER].map((s) => s.stage).sort()).toEqual([...STAGES].sort());
+  });
+
+  it('accounts for every stage as either offered or retired, never neither', () => {
     // `DASHBOARD_ORDER` is a plain array, not a `Record<Stage, …>`, so a stage
     // added to STAGE_SCHEMAS and forgotten here compiles and then vanishes from
-    // the dashboard and the phone home screen with no error. This is the only
-    // thing that notices.
-    expect([...DASHBOARD_ORDER].map((s) => s.stage).sort()).toEqual([...STAGES].sort());
+    // the dashboard and the phone home screen with no error. `RETIRED_STAGES`
+    // is derived from the same array, so the partition below is what notices:
+    // a forgotten stage shows up as retired, which is a loud and visible
+    // claim rather than a silent absence.
+    const offered = DASHBOARD_ORDER.map((s) => s.stage);
+    expect([...offered, ...RETIRED_STAGES].sort()).toEqual([...STAGES].sort());
+    expect(RETIRED_STAGES).toEqual(['dgm']);
+    expect(offered.filter((stage) => RETIRED_STAGES.includes(stage))).toEqual([]);
   });
 });
 

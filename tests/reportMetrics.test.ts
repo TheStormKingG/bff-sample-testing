@@ -38,7 +38,7 @@ import {
   withheldAdherenceStages,
   type SampleFact,
 } from '@/lib/reportMetrics';
-import { DASHBOARD_ORDER } from '@/forms/registry';
+import { RECORD_STAGE_ORDER } from '@/forms/registry';
 import { STAGES, type Stage } from '@/forms/types';
 
 // ---------------------------------------------------------------------------
@@ -349,9 +349,9 @@ describe('every metric declares how it is built', () => {
     expect(report.recentlyUpdated.definition.numerator).toContain('48');
   });
 
-  it('covers all seven dashboard stages in the day breakdown', () => {
+  it('covers every stage a record can belong to, retired ones included', () => {
     const rows = samplesTodayByStage([], '2026-10-24');
-    expect(rows.map((r) => r.stage)).toEqual(DASHBOARD_ORDER.map((s) => s.stage));
+    expect(rows.map((r) => r.stage)).toEqual(RECORD_STAGE_ORDER.map((s) => s.stage));
     expect(rows.map((r) => r.ordinal)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   });
 });

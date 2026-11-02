@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { cn } from '@/lib/cn';
 import type { FieldDef } from '@/forms/types';
 
 /**
@@ -96,7 +97,9 @@ export function PairedFields({ fields, renderField }: PairedFieldsProps): JSX.El
               // it. An odd count is the normal case — five of the eight tabs
               // have five sample-details columns — and a half-width control
               // with nothing beside it reads as a column that failed to load.
-              className={row.length === 1 ? 'min-[375px]:col-span-2' : undefined}
+              // `paired-cell` is read by `HelpHint`, which allows two lines
+              // of hint in this narrower column and one everywhere else.
+              className={cn('paired-cell', row.length === 1 && 'min-[375px]:col-span-2')}
             >
               {renderField(field)}
             </div>

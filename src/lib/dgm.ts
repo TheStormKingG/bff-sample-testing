@@ -98,6 +98,28 @@ export interface SievePosition {
   readonly uiGroup: UiGroup;
   /** The pan retains everything finer than the sieve above it. */
   readonly isPan: boolean;
+  /**
+   * What this sieve weighs empty, in grams — the lab's own calibration.
+   *
+   * A PROPERTY OF THE SIEVE, NOT OF THE SAMPLE, which is the only reason a
+   * default is defensible here at all. `FieldDef.defaultValue` carries a
+   * standing rule against pre-filling a measurement ("a pre-filled reading is
+   * a reading nobody took"), and a tare mass sits right on the line: the
+   * operator does put the sieve on the balance. But the number that comes
+   * back is the same every run for the same piece of steel, and re-keying
+   * seven identical figures before every test is where transcription errors
+   * come from.
+   *
+   * THE HAZARD THIS CREATES, STATED PLAINLY. Every retained mass is
+   * `gross − tare`, so a tare that does not match the sieve actually on the
+   * bench biases that sieve's share and therefore DGM, MF and the uniformity
+   * bands — silently, with a plausible-looking number. That is why the
+   * figures are ADMINISTRATOR-EDITABLE rather than fixed in this file: when a
+   * sieve is replaced or re-calibrated, the person who knows must be able to
+   * change the figure without a deployment. See the `sieve_series` row in
+   * `system_config`.
+   */
+  readonly tareDefaultGrams: number;
 }
 
 export interface SievePreset {
@@ -174,13 +196,13 @@ const ABNT_STANDARD: SievePreset = {
   label: 'ABNT 5 / 10 / 16 / 30 / 50 / 400 / Fundo',
   note: 'The standard series. MF, DGM and UI are calibrated to it.',
   positions: [
-    { abnt: '5', apertureMicrons: 4000, kj: 6, uiGroup: 'coarse', isPan: false },
-    { abnt: '10', apertureMicrons: 2000, kj: 5, uiGroup: 'coarse', isPan: false },
-    { abnt: '16', apertureMicrons: 1200, kj: 4, uiGroup: 'average', isPan: false },
-    { abnt: '30', apertureMicrons: 600, kj: 3, uiGroup: 'average', isPan: false },
-    { abnt: '50', apertureMicrons: 300, kj: 2, uiGroup: 'average', isPan: false },
-    { abnt: '400', apertureMicrons: 38, kj: 1, uiGroup: 'fine', isPan: false },
-    { abnt: 'Fundo', apertureMicrons: 37, kj: 0, uiGroup: 'fine', isPan: true },
+    { abnt: '5', apertureMicrons: 4000, kj: 6, uiGroup: 'coarse', isPan: false, tareDefaultGrams: 370 },
+    { abnt: '10', apertureMicrons: 2000, kj: 5, uiGroup: 'coarse', isPan: false, tareDefaultGrams: 398 },
+    { abnt: '16', apertureMicrons: 1200, kj: 4, uiGroup: 'average', isPan: false, tareDefaultGrams: 388 },
+    { abnt: '30', apertureMicrons: 600, kj: 3, uiGroup: 'average', isPan: false, tareDefaultGrams: 368 },
+    { abnt: '50', apertureMicrons: 300, kj: 2, uiGroup: 'average', isPan: false, tareDefaultGrams: 362 },
+    { abnt: '400', apertureMicrons: 38, kj: 1, uiGroup: 'fine', isPan: false, tareDefaultGrams: 330 },
+    { abnt: 'Fundo', apertureMicrons: 37, kj: 0, uiGroup: 'fine', isPan: true, tareDefaultGrams: 330 },
   ],
 };
 

@@ -16,6 +16,7 @@
  */
 
 import {
+  STAGES,
   type FieldDef,
   type Requiredness,
   type Stage,
@@ -259,6 +260,13 @@ const sieveMassFields = (startIndex: number, required: Requiredness): FieldDef[]
         columnLetter: indexToColumnLetter(startIndex + i * 2),
         sheetHeader: tareHeader,
         label: position.isPan ? 'Pan empty' : `${name} empty sieve`,
+        // Seeded from the series, because a sieve's empty weight is the same
+        // number every run — and NOT seeded on the gross field below, which
+        // is the actual reading. `defaultValue` is applied only to a blank new
+        // form, so a figure the operator clears or corrects stays corrected.
+        // See `SievePosition.tareDefaultGrams` for why this one measurement
+        // is allowed a default and what it costs if the figure is wrong.
+        defaultValue: String(position.tareDefaultGrams),
         help: `${aperture} Weigh the sieve before any sample is added.`,
       },
       {
@@ -1539,6 +1547,23 @@ export const STAGE_SCHEMAS: Readonly<Record<Stage, StageSchema>> = {
  * and the phone home screen with no error. `tests/registry.test.ts` compares
  * the two.
  */
+/**
+ * The forms an operator may open, in order.
+ *
+ * `8 DGM` IS DELIBERATELY ABSENT, and absent is not the same as deleted. The
+ * sieve test it existed to capture now sits inline on `2 Ground`, `6 Crumble`
+ * and `7 Mash`, where the sample it describes is already being recorded, so a
+ * standalone granulometry form would be a second place to put the same
+ * measurement.
+ *
+ * The STAGE itself stays: it is still in `STAGES`, still in `STAGE_SCHEMAS`,
+ * still in the `sample_stage` enum and still a tab in the workbook. Four
+ * records were registered against it — DG-261029-01 and DG-261030-01/02/03 —
+ * and this is a quality-management record set. A retired form must go on
+ * rendering the records it took, or those records become unreadable rows in a
+ * spreadsheet. `RETIRED_STAGES` is what `StageFormPage` refuses a NEW sample
+ * on; everything that READS a sample is untouched.
+ */
 export const DASHBOARD_ORDER: readonly StageSchema[] = [
   rawMaterials,
   ground,
@@ -1547,8 +1572,47 @@ export const DASHBOARD_ORDER: readonly StageSchema[] = [
   extrudedSoya,
   crumble,
   mash,
-  dgm,
 ];
+
+/**
+ * Stages whose form is closed to new samples but whose records remain.
+ *
+ * Derived FROM `DASHBOARD_ORDER` rather than listed again, so a stage can
+ * never be dropped from the dashboard while quietly staying reachable by URL.
+ */
+export const RETIRED_STAGES: readonly Stage[] = STAGES.filter(
+  (stage) => !DASHBOARD_ORDER.some((schema) => schema.stage === stage),
+);
+
+export function isRetiredStage(stage: Stage): boolean {
+  return RETIRED_STAGES.includes(stage);
+}
+
+/**
+ * Every stage in workbook order, RETIRED ONES INCLUDED.
+ *
+ * ===========================================================================
+ * WHY THIS IS NOT `DASHBOARD_ORDER`
+ * ===========================================================================
+ * `DASHBOARD_ORDER` answers "which forms may somebody open". This answers
+ * "which stages may a record belong to", and the two stopped being the same
+ * list the moment `8 DGM` was retired with four samples already registered
+ * against it.
+ *
+ * Everything that READS records uses this one: the Samples filter, the
+ * specification stage picker, the report breakdowns, the admin lists. Using
+ * the dashboard list there would have made four real samples unfilterable and
+ * dropped them out of every report — not by deleting anything, which would at
+ * least be visible, but by quietly narrowing the question being asked.
+ *
+ * A retired stage therefore shows up as a row that is usually zero. That is
+ * the correct cost: a figure that reads "0 today" is a true statement about a
+ * closed form, while its absence would be a false statement about the record
+ * set.
+ */
+export const RECORD_STAGE_ORDER: readonly StageSchema[] = [...STAGES]
+  .map((stage) => STAGE_SCHEMAS[stage])
+  .sort((a, b) => a.ordinal - b.ordinal);
 
 export function getSchema(stage: Stage): StageSchema {
   return STAGE_SCHEMAS[stage];

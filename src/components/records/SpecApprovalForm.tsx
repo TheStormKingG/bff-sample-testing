@@ -16,7 +16,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
 import { STAGES, type Stage } from '@/forms/types';
-import { DASHBOARD_ORDER } from '@/forms/registry';
+import { RECORD_STAGE_ORDER } from '@/forms/registry';
 import { isUnitConfirmed } from '@/lib/assessment';
 import { plantLocalDate } from '@/lib/time';
 import {
@@ -202,7 +202,7 @@ export function SpecApprovalForm({
             Process stage
           </label>
           <select id="spec-stage" className={`${INPUT_CLASS} mt-1`} {...register('stage')}>
-            {DASHBOARD_ORDER.map((s) => (
+            {RECORD_STAGE_ORDER.map((s) => (
               <option key={s.stage} value={s.stage}>
                 {s.ordinal}. {s.title}
               </option>

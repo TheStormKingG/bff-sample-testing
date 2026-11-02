@@ -47,7 +47,7 @@ import {
 } from 'lucide-react';
 
 import type { Stage } from '@/forms/types';
-import { DASHBOARD_ORDER } from '@/forms/registry';
+import { RECORD_STAGE_ORDER } from '@/forms/registry';
 import { describeBounds } from '@/lib/assessment';
 import { formatPlantDateTimeLabelled } from '@/lib/time';
 import type { SpecificationVersionRow } from '@/hooks/useSamples';
@@ -457,7 +457,7 @@ export default function SpecificationsPage() {
 
   const canPropose = allows('spec.propose');
   const canApprove = allows('spec.approve');
-  const firstStage = DASHBOARD_ORDER[0]?.stage;
+  const firstStage = RECORD_STAGE_ORDER[0]?.stage;
 
   const grouped = useMemo(() => {
     const entries = specs.data?.reference ?? [];

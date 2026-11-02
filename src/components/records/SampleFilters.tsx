@@ -10,7 +10,7 @@
 import { useEffect, useId, useState } from 'react';
 import { Search, X } from 'lucide-react';
 
-import { DASHBOARD_ORDER } from '@/forms/registry';
+import { RECORD_STAGE_ORDER } from '@/forms/registry';
 import type { Stage } from '@/forms/types';
 import { CAPTURE_STATES, CAPTURE_STATE_LABELS, type CaptureState } from '@/lib/workflow';
 import {
@@ -97,7 +97,7 @@ export function SampleFilters({
           evenly if a ninth is ever added.
         */}
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-4">
-          {DASHBOARD_ORDER.map((schema) => {
+          {RECORD_STAGE_ORDER.map((schema) => {
             const id = `${ids}-stage-${schema.stage}`;
             const checked = value.stages.includes(schema.stage);
             return (

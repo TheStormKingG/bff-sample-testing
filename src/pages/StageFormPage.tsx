@@ -32,7 +32,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { FileText, Trash2 } from 'lucide-react';
 
-import { STAGE_SCHEMAS } from '@/forms/registry';
+import { STAGE_SCHEMAS, isRetiredStage } from '@/forms/registry';
 import { STAGES, type Stage } from '@/forms/types';
 import { defaultStageValues, hydrateStageValues } from '@/forms/defaults';
 import type { StageFormValues } from '@/forms/zodSchema';
@@ -57,6 +57,7 @@ import {
 } from '@/hooks/useRegisterSample';
 import { formatPlantDateTimeLabelled } from '@/lib/time';
 import NotFoundPage from '@/pages/NotFoundPage';
+import { Link } from 'react-router-dom';
 
 function isStage(value: string | undefined): value is Stage {
   return value !== undefined && (STAGES as readonly string[]).includes(value);
@@ -76,9 +77,61 @@ export default function StageFormPage() {
   // reachable on one screen and unknown on another.
   if (!isStage(stage)) return <NotFoundPage />;
 
+  /*
+    A RETIRED stage is a closed form, not a wrong address — and the difference
+    matters to whoever lands here. `8 DGM` was retired when the sieve test
+    moved inline onto `2 Ground`, `6 Crumble` and `7 Mash`; its four existing
+    records still open and still read, and only the blank form is gone. A
+    bookmark or a typed URL reaches this, so the refusal lives here rather
+    than relying on the card being absent from the dashboard — a hidden
+    control is not a control (Master Prompt §1).
+  */
+  if (isRetiredStage(stage)) return <RetiredStageNotice stage={stage} />;
+
   // Keyed on the stage so switching forms rebuilds the screen from scratch
   // instead of carrying one stage's half-typed values into another.
   return <StageFormScreen key={stage} stage={stage} />;
+}
+
+/**
+ * What a retired form says instead of refusing outright.
+ *
+ * It names where the measurement went, because somebody who opened this
+ * expected to record something and needs to know where to record it now. It
+ * does NOT say the records are gone, because they are not.
+ */
+function RetiredStageNotice({ stage }: { readonly stage: Stage }): JSX.Element {
+  const schema = STAGE_SCHEMAS[stage];
+  return (
+    <div className="mx-auto max-w-xl px-4 py-10">
+      <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+        {schema.title} is no longer a separate form
+      </h1>
+      <p className="mt-3 text-base text-slate-700">
+        The sieve test this form recorded is now part of the Ground, Crumble and Mash forms, on
+        the sample it belongs to. Record it there.
+      </p>
+      <p className="mt-3 text-base text-slate-700">
+        Nothing already recorded here has been removed. Existing {schema.title} samples still
+        open from the Samples list, and the <span className="font-semibold">{schema.sheetTab}</span>{' '}
+        tab of the workbook still holds their rows.
+      </p>
+      <div className="mt-6 flex flex-wrap gap-3">
+        <Link
+          to="/"
+          className="inline-flex min-h-tap items-center rounded-xl bg-bff-700 px-4 py-2 font-bold text-white hover:bg-bff-800"
+        >
+          Back to the forms
+        </Link>
+        <Link
+          to="/samples"
+          className="inline-flex min-h-tap items-center rounded-xl bg-neu-base px-4 py-2 font-semibold text-slate-800 shadow-neu-sm"
+        >
+          Open the samples list
+        </Link>
+      </div>
+    </div>
+  );
 }
 
 function StageFormScreen({ stage }: { readonly stage: Stage }) {

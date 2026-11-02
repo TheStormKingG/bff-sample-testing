@@ -12,7 +12,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase, edgeErrorMessage } from '@/lib/supabase';
 import type { Stage } from '@/forms/types';
-import { DASHBOARD_ORDER } from '@/forms/registry';
+import { RECORD_STAGE_ORDER } from '@/forms/registry';
 import { expectedHeaders, type HeaderMismatch } from '@/forms/sheetMapping';
 import type { Permission, Role, UserStatus } from '@/lib/roles';
 import { plantDayEnd, plantDayStart } from '@/lib/time';
@@ -1057,7 +1057,7 @@ export function expectedHeaderContract(): readonly {
   columnCount: number;
   headers: readonly string[];
 }[] {
-  return DASHBOARD_ORDER.map((schema) => ({
+  return RECORD_STAGE_ORDER.map((schema) => ({
     stage: schema.stage,
     sheetTab: schema.sheetTab,
     columnCount: schema.columnCount,
