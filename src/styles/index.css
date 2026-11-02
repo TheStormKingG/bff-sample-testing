@@ -20,7 +20,16 @@
   }
 
   body {
-    @apply bg-white text-base text-slate-900 antialiased;
+    /*
+      The ground goes on the BODY as well as the shell.
+
+      The shell covers the body on every page, so this looks redundant and is
+      not: a phone rubber-bands past the end of the document, and what shows
+      in that gap is the body. White there, under a tinted page, reads as the
+      page having come loose. The print rule further down puts it back to
+      white for paper, where there is no ground at all.
+    */
+    @apply bg-neu-base text-base text-slate-900 antialiased;
     /* Keep a readable line length on a desktop monitor without forcing the
        layout narrow on a tablet held in portrait. */
     text-wrap: pretty;
