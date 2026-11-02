@@ -1,3 +1,4 @@
+import { BrandMark } from '@/components/ui/BrandMark';
 import { useState, type FormEvent } from 'react';
 import { AlertCircle, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -117,7 +118,13 @@ export function LoginPage({ authError, onDismissAuthError }: LoginPageProps) {
       <main className="flex flex-1 items-center justify-center px-4 py-10">
         <div className="w-full max-w-md">
           <div className="text-center">
-            <p className="text-sm font-semibold uppercase tracking-widest text-bff-700">
+            {/*
+              The mark carries its own alt text here and nowhere else: this is
+              the only screen where it is the first thing a person sees and
+              the words below it have not been read yet.
+            */}
+            <BrandMark size={96} labelled={false} className="mx-auto" />
+            <p className="mt-4 text-sm font-semibold uppercase tracking-widest text-bff-700">
               Bounty Farm Limited
             </p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">

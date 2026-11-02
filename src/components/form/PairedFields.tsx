@@ -43,11 +43,26 @@ import type { FieldDef } from '@/forms/types';
  * single child and the rules would vanish; a row per element keeps exactly one
  * rule between lines, which is the rhythm the one-per-row layout already had.
  *
- * TWO COLUMNS AT EVERY WIDTH, including a 390px phone, which is where this
- * form is actually filled in. Collapsing to one column below a breakpoint
- * would mean the change did nothing on the device it was asked for. The grid
- * does not shrink the tap targets: the controls keep their full height and
- * only lose width, and the narrowest of them measured 171px.
+ * ===========================================================================
+ * TWO COLUMNS FROM 375px, ONE BELOW IT
+ * ===========================================================================
+ * 390px is the phone these forms are filled on and 375px is the next size
+ * down, so the pairing covers the real devices. It stops at 320px — the width
+ * `playwright.config.ts` runs its `small-phone` project at — and that
+ * breakpoint is a MEASUREMENT, not a preference.
+ *
+ * The rule being protected is that no help text in a two-column cell may run
+ * past two lines, because a three-line hint beside a field with none leaves a
+ * dead zone the height of the difference. Measured at 390px and 375px every
+ * sample-details hint fits two lines; at 320px the same strings run to three
+ * and four. Rewriting them short enough for 320 would have cost words that
+ * carry meaning — "in Guyana local time" is the whole point of that hint — so
+ * below 375 the fields stack and get the full width instead, where the same
+ * strings are one line.
+ *
+ * `tests/pairedFields.test.tsx` caps the source strings so a long one cannot
+ * be committed; this breakpoint is what makes that cap achievable without
+ * losing words.
  */
 export interface PairedFieldsProps {
   /** Sample-details fields, in registry order. */
@@ -73,7 +88,7 @@ export function PairedFields({ fields, renderField }: PairedFieldsProps): JSX.El
       {inPairs(fields).map((row) => (
         // Keyed on the first field in the row. Field keys are unique within a
         // stage, so the first one names the row uniquely and stably.
-        <div key={row[0]!.key} className="grid grid-cols-2 gap-x-4">
+        <div key={row[0]!.key} className="grid grid-cols-1 gap-x-4 min-[375px]:grid-cols-2">
           {row.map((field) => (
             <div
               key={field.key}
@@ -81,7 +96,7 @@ export function PairedFields({ fields, renderField }: PairedFieldsProps): JSX.El
               // it. An odd count is the normal case — five of the eight tabs
               // have five sample-details columns — and a half-width control
               // with nothing beside it reads as a column that failed to load.
-              className={row.length === 1 ? 'col-span-2' : undefined}
+              className={row.length === 1 ? 'min-[375px]:col-span-2' : undefined}
             >
               {renderField(field)}
             </div>

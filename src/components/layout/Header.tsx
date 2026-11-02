@@ -2,6 +2,7 @@ import { useCallback, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
 import { CloudOff, LogOut, Wifi, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { BrandMark } from '@/components/ui/BrandMark';
 import { StatusChip } from '@/components/ui/StatusChip';
 import { ROLE_LABELS } from '@/lib/roles';
 import { signOut } from '@/lib/supabase';
@@ -54,17 +55,25 @@ export function Header({ compact = false }: HeaderProps = {}) {
         <div className="flex items-center justify-between gap-3">
           <Link
             to="/"
-            /*
+            className="flex min-w-0 items-center gap-2 rounded sm:gap-3"
+          >
+            <BrandMark size={36} className="sm:hidden" />
+            <BrandMark size={44} className="hidden sm:block" />
+            {/*
               `truncate` rather than wrap. At 320px — the narrowest phone this
               app is likely to meet — the brand broke onto two lines and took
               the header with it. The brand may be clipped because the page's
               own title sits directly below it and says where you are; a
               CONTROL's label may not be clipped, which is why Sign out beside
               it keeps its full width and this gives way first.
-            */
-            className="min-w-0 truncate rounded text-lg font-bold tracking-tight text-bff-800 sm:text-2xl"
-          >
-            BFF Sample Testing
+
+              The mark is `shrink-0`, so the WORDS give way before the logo
+              does — a squashed logo reads as a broken image, a clipped
+              wordmark reads as a narrow screen.
+            */}
+            <span className="min-w-0 truncate text-lg font-bold tracking-tight text-bff-800 sm:text-2xl">
+              BFF Sample Testing
+            </span>
           </Link>
           <Button
             variant="ghost"

@@ -85,7 +85,8 @@ describe('sample details, two fields to a line', () => {
     const rows = rowsOf(renderFields(fields));
     const last = rows[rows.length - 1]!;
     expect(last.children.length).toBe(1);
-    expect((last.children[0] as HTMLElement).className).toContain('col-span-2');
+    // Spans both columns only where there ARE two columns.
+    expect((last.children[0] as HTMLElement).className).toContain('min-[375px]:col-span-2');
   });
 
   it('leaves the cells of a full row at half width', () => {
@@ -111,5 +112,61 @@ describe('sample details, two fields to a line', () => {
     const container = renderFields(sampleDetailsOf('raw_materials'));
     expect(container.querySelectorAll('input, select, textarea').length).toBe(0);
     expect(screen.getAllByText('Sampled by').length).toBe(1);
+  });
+});
+
+describe('help text in the two-column layout', () => {
+  /**
+   * MEASURED, NOT GUESSED. The binding width is 375px, the narrowest screen
+   * that still gets two columns: a cell there is ~131px and the help renders
+   * at ~18 characters per line, so two lines is about 36 characters.
+   * Confirmed against the running app at 375 and 390 — every string below the
+   * cap rendered on two lines, and "The date the sample was taken, in Guyana
+   * local time." (52 characters) wrapped to THREE and left a 220px dead zone
+   * beside "Material or feed type", which has no help at all.
+   *
+   * The cap is on the SOURCE STRING rather than on the rendered height,
+   * because a rendered-height assertion needs a real browser and this suite
+   * has jsdom, which reports every element as zero-sized. `e2e` measures the
+   * real thing; this stops a long string being committed in the first place.
+   */
+  const TWO_LINE_LIMIT = 36;
+
+  it('keeps every sample-details hint inside two lines', () => {
+    const tooLong: string[] = [];
+    for (const stage of STAGES) {
+      for (const field of STAGE_SCHEMAS[stage].fields) {
+        // `system` fields never render an input, so their help never shows.
+        if (field.section !== 'sample_details' || field.type === 'system') continue;
+        if (field.help === undefined) continue;
+        if (field.help.length > TWO_LINE_LIMIT) {
+          tooLong.push(`${stage}.${field.key} (${field.help.length}): ${field.help}`);
+        }
+      }
+    }
+    expect(tooLong, 'sample-details help longer than two lines at 375px').toEqual([]);
+  });
+
+  it('INSTRUMENT CHECK: the rule would catch a long string', () => {
+    // Without this, a rule that silently stopped reading the registry would
+    // report the same clean result as a rule that worked.
+    const sampled = STAGE_SCHEMAS.ground.fields.filter(
+      (f) => f.section === 'sample_details' && f.type !== 'system' && f.help !== undefined,
+    );
+    expect(sampled.length, 'the sweep found no help to check').toBeGreaterThan(2);
+    expect('The date the sample was taken, in Guyana local time.'.length).toBeGreaterThan(
+      TWO_LINE_LIMIT,
+    );
+  });
+
+  it('leaves the test-results hints alone', () => {
+    // The cap applies ONLY to the band that goes two to a line. A measurement
+    // gets the full width of the screen, and its help explains what GSD or
+    // urease mean to an operator who may never have met the word — that is
+    // exactly the text this project refuses to hide or abbreviate.
+    const longOnes = STAGE_SCHEMAS.raw_materials.fields.filter(
+      (f) => f.section === 'test_results' && (f.help?.length ?? 0) > TWO_LINE_LIMIT,
+    );
+    expect(longOnes.length).toBeGreaterThan(0);
   });
 });

@@ -1,3 +1,4 @@
+import { BrandMark } from '@/components/ui/BrandMark';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Clock, KeyRound, LogOut, RefreshCw } from 'lucide-react';
@@ -109,6 +110,7 @@ export function PendingAccessPage({
     <div className="flex min-h-screen flex-col bg-white">
       <main className="flex flex-1 items-center justify-center px-4 py-10">
         <div className="w-full max-w-md text-center">
+          <BrandMark size={72} labelled={false} className="mx-auto mb-6" />
           <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
             <Clock aria-hidden="true" className="h-7 w-7 text-amber-800" />
           </span>

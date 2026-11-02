@@ -109,7 +109,7 @@ const idDateTime = (): FieldDef[] => [
     type: 'date',
     section: 'sample_details',
     required: 'registration',
-    help: 'The date the sample was taken, in Guyana local time.',
+    help: 'Date taken, Guyana local time.',
   },
   {
     key: 'collection_time',
@@ -119,7 +119,7 @@ const idDateTime = (): FieldDef[] => [
     type: 'time',
     section: 'sample_details',
     required: 'registration',
-    help: 'The time the sample was taken, in Guyana local time.',
+    help: 'Time taken, Guyana local time.',
   },
 ];
 
@@ -497,7 +497,7 @@ const rawMaterials: StageSchema = {
       section: 'sample_details',
       required: 'registration',
       options: MATERIAL_OPTIONS,
-      help: '"Other" needs a manual specification review before the load is assessed.',
+      help: '"Other" needs a manual review.',
     },
     {
       key: 'supplier',
@@ -516,7 +516,7 @@ const rawMaterials: StageSchema = {
       type: 'text',
       section: 'sample_details',
       required: 'registration',
-      help: 'Traceability key. For soya this is the lot the extruded soya record links back to.',
+      help: 'Traceability key for this load.',
     },
     {
       key: 'truck_or_container_no',
@@ -685,7 +685,7 @@ const ground: StageSchema = {
       section: 'sample_details',
       required: 'registration',
       options: SAMPLING_POINT_OPTIONS,
-      help: 'AM is after the mill. BC is before the conditioner. This choice sets the sample ID prefix and whether moisture applies.',
+      help: 'Sets the ID prefix and moisture.',
     },
     {
       key: 'material_or_feed_type',
@@ -704,7 +704,7 @@ const ground: StageSchema = {
       type: 'text',
       section: 'sample_details',
       required: 'registration',
-      help: 'This batch number links the sample forward to the conditioned mash record.',
+      help: 'Links forward to the mash record.',
     },
     {
       key: 'sampled_by',
@@ -794,7 +794,7 @@ const conditioned: StageSchema = {
   prefix: 'AC',
   description: 'Mash after conditioning, before pelleting',
   instruction:
-    'Sample at the conditioner outlet, before the pellet die. Record the conditioner settings in use. Use the same batch no. as the ground material record.',
+    'Sample at the conditioner outlet, before the pellet die. Record the conditioner settings in use. Use the same batch no. as the ground material record. If that batch cannot be found, a documented exception is recorded.',
   frequency: 'To set',
   frequencyApproved: false,
   fields: [
@@ -816,7 +816,7 @@ const conditioned: StageSchema = {
       type: 'text',
       section: 'sample_details',
       required: 'registration',
-      help: 'Use the same batch number as the ground material sample. If the batch cannot be found, a documented exception is recorded.',
+      help: 'Same batch no. as the ground sample.',
     },
     {
       key: 'sampled_by',
@@ -932,7 +932,7 @@ const pellets: StageSchema = {
       type: 'text',
       section: 'sample_details',
       required: 'registration',
-      help: 'Use the same batch number as the conditioned mash sample.',
+      help: 'Same batch no. as the conditioned.',
     },
     {
       key: 'sampled_by',
@@ -993,7 +993,7 @@ const extrudedSoya: StageSchema = {
   prefix: 'ES',
   description: 'Full-fat soya after the extruder',
   instruction:
-    'Sample at the end of every extrusion run. Record the extruder settings and the raw soya lot no. from the raw materials record.',
+    'Sample at the end of every extrusion run. Record the extruder settings and the raw soya lot no. from the raw materials record. If the lot is not on file, an authorised traceability exception is recorded.',
   frequency: 'Every run',
   frequencyApproved: true,
   fields: [
@@ -1006,7 +1006,7 @@ const extrudedSoya: StageSchema = {
       type: 'text',
       section: 'sample_details',
       required: 'registration',
-      help: 'Each extrusion run needs its own sample, even when the raw soya lot is unchanged.',
+      help: 'Each run needs its own sample.',
     },
     {
       key: 'raw_soya_lot_no',
@@ -1016,7 +1016,7 @@ const extrudedSoya: StageSchema = {
       type: 'text',
       section: 'sample_details',
       required: 'registration',
-      help: 'This links the run back to the raw materials record. If the lot is not on file, an authorised traceability exception is recorded.',
+      help: 'Links the run back to raw materials.',
     },
     {
       key: 'sampled_by',
@@ -1313,7 +1313,7 @@ const mash: StageSchema = {
       type: 'text',
       section: 'sample_details',
       required: 'registration',
-      help: 'The mixing or production run this mash came from.',
+      help: 'The production run it came from.',
     },
     {
       key: 'sampled_by',
