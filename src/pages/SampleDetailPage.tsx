@@ -39,6 +39,7 @@ import {
 import { HoldBanner } from '@/components/records/HoldBanner';
 import { MeasurementTable } from '@/components/records/MeasurementTable';
 import { DerivedResultsTable } from '@/components/form/DerivedResultsTable';
+import { useDgmTargets } from '@/hooks/useDgmTargets';
 import { LinkedSamples } from '@/components/records/LinkedSamples';
 import { AuditTimeline } from '@/components/records/AuditTimeline';
 import { LabelDialog } from '@/components/records/LabelDialog';
@@ -142,6 +143,8 @@ export default function SampleDetailPage() {
   const detail = useSampleDetail(id);
   const { authority, allows } = useAuthority();
   const action = useSampleAction();
+  // Before the early returns below, because it is a hook.
+  const dgmTargets = useDgmTargets();
 
   const [labelOpen, setLabelOpen] = useState(false);
   const [dispositionOpen, setDispositionOpen] = useState(false);
@@ -344,7 +347,11 @@ export default function SampleDetailPage() {
         */}
         {Object.keys(data.derived).length > 0 && (
           <Card title="Calculated results">
-            <DerivedResultsTable stage={data.sample.stage} derived={data.derived} />
+            <DerivedResultsTable
+              stage={data.sample.stage}
+              derived={data.derived}
+              target={dgmTargets.data?.document.ranges[data.sample.stage] ?? null}
+            />
           </Card>
         )}
 

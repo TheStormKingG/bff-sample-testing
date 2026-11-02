@@ -35,6 +35,7 @@ import {
   KeyRound,
   ListChecks,
   Ruler,
+  Target,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
@@ -99,6 +100,7 @@ import { AuditTimeline } from '@/components/records/AuditTimeline';
 import { Pagination } from '@/components/records/Pagination';
 import { SchemaVerificationPanel } from '@/components/records/SchemaVerificationPanel';
 import { SieveSeriesPanel } from '@/components/records/SieveSeriesPanel';
+import { DgmTargetPanel } from '@/components/records/DgmTargetPanel';
 import { SyncHealthTable } from '@/components/records/SyncHealthTable';
 
 /**
@@ -298,13 +300,30 @@ function TemporaryPasswordPanel({
   );
 }
 
-type AdminTab = 'access' | 'delegations' | 'lists' | 'equipment' | 'sync' | 'schema' | 'audit';
+type AdminTab =
+  | 'access'
+  | 'delegations'
+  | 'lists'
+  | 'equipment'
+  | 'targets'
+  | 'sync'
+  | 'schema'
+  | 'audit';
 
 const TABS: readonly { id: AdminTab; label: string; icon: typeof Users }[] = [
   { id: 'access', label: 'Users and access', icon: Users },
   { id: 'delegations', label: 'Delegated authority', icon: ShieldCheck },
   { id: 'lists', label: 'Controlled lists', icon: ListChecks },
   { id: 'equipment', label: 'Sieve table', icon: Ruler },
+  /*
+    Its OWN tab, not a second card under "Sieve table". The sieve table
+    describes the equipment on the bench and decides what a figure means;
+    this decides what a figure is measured against. They are the only two
+    settings in the system that touch a quality record and they are not the
+    same kind of thing, so an administrator should not reach one while
+    looking for the other.
+  */
+  { id: 'targets', label: 'DGM targets', icon: Target },
   { id: 'sync', label: 'Google Sheets sync health', icon: RefreshCw },
   { id: 'schema', label: 'Workbook schema check', icon: TableProperties },
   { id: 'audit', label: 'Audit query', icon: FileSearch },
@@ -2217,6 +2236,10 @@ export default function AdminPage() {
       ) : null}
 
       {tab === 'lists' ? <ListsTab onRequest={request} /> : null}
+
+      {tab === 'targets' ? (
+        <DgmTargetPanel onRequest={request} mayEdit={canManageUsers} />
+      ) : null}
 
       {tab === 'equipment' ? (
         <EquipmentTab onRequest={request} mayEdit={canManageUsers} />

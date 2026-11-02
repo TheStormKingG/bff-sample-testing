@@ -9,6 +9,7 @@ import { SHEET_SYNC_LABELS, type SheetSyncState } from './saveState';
 import { DerivedResultsTable } from './DerivedResultsTable';
 import { ParticleSizeChart } from './ParticleSizeChart';
 import type { SieveSeriesDocument } from '@/lib/sieveSeries';
+import type { DgmTargetRange } from '@/lib/dgmTargets';
 
 export interface RegistrationConfirmationProps {
   readonly stage: Stage;
@@ -34,6 +35,11 @@ export interface RegistrationConfirmationProps {
   readonly submittedValues?: Readonly<Record<string, string>>;
   /** The lab's sieve table — the same one the server computed from. */
   readonly sieveSeries?: SieveSeriesDocument | null;
+  /**
+   * The DGM range this form is aiming at, when an administrator has set one.
+   * Shown around the sample's own figure and as a band on the chart.
+   */
+  readonly dgmTarget?: DgmTargetRange | null;
   /** Continue to results entry, when the actor may enter them. */
   readonly onEnterResults?: () => void;
   readonly onRegisterAnother?: () => void;
@@ -67,6 +73,7 @@ export function RegistrationConfirmation({
   derived,
   submittedValues,
   sieveSeries = null,
+  dgmTarget = null,
   onEnterResults,
   onRegisterAnother,
   onDone,
@@ -173,19 +180,45 @@ export function RegistrationConfirmation({
         </div>
 
         {derived !== undefined && Object.keys(derived).length > 0 && (
-          <DerivedResultsTable stage={stage} derived={derived} className="mt-5" />
+          <DerivedResultsTable
+            stage={stage}
+            derived={derived}
+            target={dgmTarget}
+            className="mt-5"
+          />
         )}
 
         {submittedValues !== undefined && (
-          <ParticleSizeChart values={submittedValues} series={sieveSeries} className="mt-6" />
+          <ParticleSizeChart
+            values={submittedValues}
+            series={sieveSeries}
+            target={dgmTarget}
+            className="mt-6"
+          />
         )}
 
-        <div className="mt-5 flex flex-wrap gap-2">
+        {/*
+          ONE ROW, WHATEVER THE WIDTH.
+
+          These wrapped on a phone, which put "Back to forms" alone on a
+          second line directly under the primary action — a stacked pair in
+          which the destructive-to-your-work option sat where the thumb
+          already was. They are equal thirds now (`flex-1 basis-0`), and the
+          row never wraps.
+
+          The labels are NOT shortened to make that fit. Three buttons share
+          about 342px on a 390px screen, so a label that needs two lines takes
+          two lines INSIDE its own button and every button grows to match —
+          which costs a few pixels of height and keeps the words that say
+          what each one does. `min-w-0` is what lets a flex item be narrower
+          than its text and is the reason the row can hold its shape at all.
+        */}
+        <div className="mt-5 flex flex-nowrap items-stretch gap-2">
           {onEnterResults !== undefined ? (
             <button
               type="button"
               onClick={onEnterResults}
-              className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-md bg-blue-700 px-4 py-2 text-base font-bold text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2"
+              className="inline-flex min-h-[44px] min-w-0 flex-1 basis-0 items-center justify-center rounded-md bg-blue-700 px-2 py-2 text-center text-sm font-bold leading-tight text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2 min-[420px]:text-base"
             >
               Enter test results
             </button>
@@ -194,7 +227,7 @@ export function RegistrationConfirmation({
             <button
               type="button"
               onClick={onRegisterAnother}
-              className="inline-flex min-h-[44px] items-center justify-center rounded-md border-2 border-slate-400 bg-white px-4 py-2 text-base font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2"
+              className="inline-flex min-h-[44px] min-w-0 flex-1 basis-0 items-center justify-center rounded-md border-2 border-slate-400 bg-white px-2 py-2 text-center text-sm font-semibold leading-tight text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2 min-[420px]:text-base"
             >
               Register another
             </button>
@@ -203,7 +236,7 @@ export function RegistrationConfirmation({
             <button
               type="button"
               onClick={onDone}
-              className="inline-flex min-h-[44px] items-center justify-center rounded-md border-2 border-slate-400 bg-white px-4 py-2 text-base font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2"
+              className="inline-flex min-h-[44px] min-w-0 flex-1 basis-0 items-center justify-center rounded-md border-2 border-slate-400 bg-white px-2 py-2 text-center text-sm font-semibold leading-tight text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2 min-[420px]:text-base"
             >
               Back to forms
             </button>

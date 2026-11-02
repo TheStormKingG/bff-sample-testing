@@ -9,6 +9,7 @@
  */
 
 import type { SieveSeriesDocument } from '@/lib/sieveSeries';
+import type { DgmTargetDocument } from '@/lib/dgmTargets';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase, edgeErrorMessage } from '@/lib/supabase';
@@ -275,6 +276,8 @@ export type AdminActionKind =
   | 'upsert_controlled_value'
   /** Migration 0032: the lab's sieve table — designations, apertures, empty weights. */
   | 'set_sieve_series'
+  /** Migration 0034: the DGM range each sieve form is aiming at. */
+  | 'set_dgm_target_ranges'
   /** Migration 0019: an administrator makes an account with a temporary password. */
   | 'create_account'
   /** Migration 0019: an administrator replaces a forgotten password with a temporary one. */
@@ -292,6 +295,8 @@ export interface AdminActionInput {
   readonly listKey?: string;
   /** `set_sieve_series` only: the whole table, replaced in one call. */
   readonly table?: SieveSeriesDocument;
+  /** `set_dgm_target_ranges` only: every form's target, replaced in one call. */
+  readonly document?: DgmTargetDocument;
   readonly value?: string;
   readonly label?: string;
   readonly active?: boolean;
@@ -378,6 +383,7 @@ export function adminActionBody(
   if (input.delegationId !== undefined) body['delegationId'] = input.delegationId;
   if (input.listKey !== undefined) body['listKey'] = input.listKey;
   if (input.table !== undefined) body['table'] = input.table;
+  if (input.document !== undefined) body['document'] = input.document;
   if (input.value !== undefined) body['value'] = input.value;
   if (input.label !== undefined) body['label'] = input.label;
   if (input.active !== undefined) body['active'] = input.active;

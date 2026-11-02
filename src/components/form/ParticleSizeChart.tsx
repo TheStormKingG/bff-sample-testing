@@ -5,6 +5,12 @@ import {
   type SieveReading,
 } from '@/lib/dgm';
 import { applySieveSeries, type SieveSeriesDocument } from '@/lib/sieveSeries';
+import {
+  apertureIndex,
+  dgmStanding,
+  DGM_STANDING_LABELS,
+  type DgmTargetRange,
+} from '@/lib/dgmTargets';
 
 /**
  * Where this sample's mass fell across the sieve stack.
@@ -31,12 +37,37 @@ import { applySieveSeries, type SieveSeriesDocument } from '@/lib/sieveSeries';
  * on the plot itself rather than left to be read off an axis, because that
  * number is why the chart is here.
  *
- * NOTHING HERE IS A VERDICT. No limit on the workbook's `Limits` tab is
- * approved, so there is no band to shade, no target line to draw and no colour
- * that may mean good or bad. The accent is the project's informational blue,
- * never red, amber or green, and the title reports WHERE the mass sat, never
- * whether that is acceptable. A chart is the easiest place in an application
- * to imply an assessment nobody made.
+ * THERE IS ONE BAND, AND IT IS THE ONLY THING ON THIS CHART THAT CAME FROM A
+ * DECISION RATHER THAN FROM THE WEIGHINGS. This comment said, for as long as
+ * there was no target: "no band to shade, no target line to draw and no
+ * colour that may mean good or bad." That held while every limit in the
+ * workbook was unapproved. A DGM target has since been set — stored,
+ * administrator-written and audited, see `src/lib/dgmTargets.ts` — so the
+ * band is drawn, and these are the limits on it:
+ *
+ *   IT IS DRAWN ONLY WHEN A TARGET IS PASSED IN. A form with no stored range
+ *   renders exactly the chart it rendered before, with no green anywhere.
+ *
+ *   IT SAYS WHERE THE MEAN SHOULD SIT, NOT WHERE THE MASS SHOULD SIT, and the
+ *   chart has to make that distinction or it lies. The curve is a
+ *   distribution; the target is on its geometric mean. So the band is drawn
+ *   WITH a marker at this sample's own DGM — the one figure the band is about
+ *   — because a green region on a distribution with nothing in it to compare
+ *   invites the reader to judge the curve against a limit that was never
+ *   about the curve.
+ *
+ *   IT IS STILL NOT A VERDICT. Nothing here releases, rejects or holds. The
+ *   sample's own mark stays the informational blue it has always been, even
+ *   when it falls outside: a coarse grind is information for the miller, and
+ *   turning the mark red would be a disposition nobody gave. Green marks the
+ *   region that was aimed at; no colour anywhere means bad.
+ *
+ *   THE X AXIS IS A SIEVE STACK, NOT A RULER. Positions are evenly spaced on
+ *   the plot but their apertures are roughly geometric, so a micrometre
+ *   figure is placed by interpolating on the LOG of the apertures either side
+ *   of it — see `apertureToX`. Interpolating linearly would put 1050 µm
+ *   visibly off-centre between the 1200 and 600 sieves and quietly misreport
+ *   where the band's edge is.
  *
  * ===========================================================================
  * WHY IT RECOMPUTES RATHER THAN BEING SENT THE PERCENTAGES
@@ -58,6 +89,12 @@ export interface ParticleSizeChartProps {
    * would draw a different distribution from the one the record holds.
    */
   readonly series?: SieveSeriesDocument | null;
+  /**
+   * The DGM range this form is aiming at, when an administrator has set one.
+   * `null` — the default, and the state of a form with no stored target —
+   * draws no band at all.
+   */
+  readonly target?: DgmTargetRange | null;
 }
 
 /*
@@ -71,7 +108,15 @@ export interface ParticleSizeChartProps {
  * comically large instead.
  */
 const WIDTH = 360;
-const HEIGHT = 250;
+/**
+ * The figure without a target band. A band adds `BAND_LANE` to the bottom for
+ * the marker's own label, rather than squeezing it between the aperture
+ * labels and the axis title, where it would collide with both. The plot area
+ * itself is the same height either way, so adding a target does not redraw
+ * the curve at a different scale.
+ */
+const BASE_HEIGHT = 250;
+const BAND_LANE = 18;
 const PAD = { top: 22, right: 16, bottom: 46, left: 34 };
 
 function massAt(values: Readonly<Record<string, string>>, key: string): number | null {
@@ -85,6 +130,7 @@ export function ParticleSizeChart({
   values,
   className,
   series = null,
+  target = null,
 }: ParticleSizeChartProps): JSX.Element | null {
   const preset = applySieveSeries(
     sievePresetById(values['sieve_series'] ?? '') ?? DEFAULT_SIEVE_PRESET,
@@ -121,9 +167,39 @@ export function ParticleSizeChart({
   const ceiling = Math.max(10, Math.ceil(Math.max(...points.map((p) => p.percent)) / 10) * 10);
 
   const plotW = WIDTH - PAD.left - PAD.right;
-  const plotH = HEIGHT - PAD.top - PAD.bottom;
+  const plotH = BASE_HEIGHT - PAD.top - PAD.bottom;
   const x = (i: number) => PAD.left + (plotW * i) / Math.max(1, points.length - 1);
   const y = (percent: number) => PAD.top + plotH - (plotH * percent) / ceiling;
+
+  /*
+    The target band, and the one mark the band is about.
+
+    DRAWN ONLY IF IT IS ON THE STACK. A target whose whole range lies above
+    the coarsest sieve or below the pan has nowhere honest to go: clamping it
+    would paint a sliver against the frame that reads as a band at the edge of
+    the chart rather than as a band off the end of it. Nothing is drawn, and
+    the sentence under the heading still states the range in words.
+  */
+  const apertures = preset.positions.map((p) => p.apertureMicrons);
+  const coarsest = apertures[0]!;
+  const finest = apertures[apertures.length - 1]!;
+  const onStack =
+    target !== null && target.lowerMicrons < coarsest && target.upperMicrons > finest;
+  const bandLeft = onStack ? apertureIndex(apertures, target.upperMicrons) : null;
+  const bandRight = onStack ? apertureIndex(apertures, target.lowerMicrons) : null;
+  const band =
+    bandLeft === null || bandRight === null
+      ? null
+      : { x1: x(bandLeft), x2: x(bandRight) };
+
+  const sampleDgm = result.dgmMicrons;
+  const dgmIndex =
+    band === null || sampleDgm === null ? null : apertureIndex(apertures, sampleDgm);
+  const dgmX = dgmIndex === null ? null : x(dgmIndex);
+  const standing = target === null || sampleDgm === null ? null : dgmStanding(sampleDgm, target);
+
+  const HEIGHT = BASE_HEIGHT + (band === null ? 0 : BAND_LANE);
+  const labelRow = BASE_HEIGHT - PAD.bottom + 18;
 
   const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i)} ${y(p.percent)}`).join(' ');
   const peakIndex = points.indexOf(peak);
@@ -138,6 +214,15 @@ export function ParticleSizeChart({
       </h3>
       <p className="mt-0.5 text-sm text-slate-600">
         Percentage of the retained mass left on each sieve, coarsest first.
+        {target !== null && standing !== null ? (
+          <>
+            {' '}
+            The green band is the range this form is aiming at for the average particle
+            size — {target.lowerMicrons} to {target.upperMicrons} µm — and the dashed mark is
+            where this sample&rsquo;s average fell:{' '}
+            <span className="font-semibold">{DGM_STANDING_LABELS[standing].toLowerCase()}</span>.
+          </>
+        ) : null}
       </p>
 
       <svg
@@ -147,13 +232,37 @@ export function ParticleSizeChart({
         aria-labelledby="psd-heading psd-desc"
       >
         <desc id="psd-desc">
-          {points
-            .map(
+          {[
+            ...points.map(
               (p) =>
                 `${p.position.isPan ? 'Pan' : `${p.position.apertureMicrons} micrometres`}: ${p.percent.toFixed(1)} per cent`,
-            )
-            .join('. ')}
+            ),
+            // The band and the mark are information, not decoration, so they
+            // are described rather than left to the sighted reader alone.
+            ...(target !== null && standing !== null && sampleDgm !== null
+              ? [
+                  `Target range ${target.lowerMicrons} to ${target.upperMicrons} micrometres`,
+                  `This sample's average particle size ${Math.round(sampleDgm)} micrometres, ` +
+                    DGM_STANDING_LABELS[standing].toLowerCase(),
+                ]
+              : []),
+          ].join('. ')}
         </desc>
+
+        {/*
+          The target band, behind everything. A pale fill rather than two
+          edge lines: the region is the point, and two more lines on a figure
+          whose whole discipline is removal would compete with the curve.
+        */}
+        {band !== null ? (
+          <rect
+            x={Math.min(band.x1, band.x2)}
+            y={PAD.top}
+            width={Math.abs(band.x2 - band.x1)}
+            height={plotH}
+            className="fill-green-100"
+          />
+        ) : null}
 
         {/* Two reference values only — zero and the ceiling. Gridlines every
             5% would be eleven lines competing with one. */}
@@ -205,11 +314,40 @@ export function ParticleSizeChart({
           {peak.percent.toFixed(1)}%
         </text>
 
+        {/*
+          This sample's own geometric mean, which is the figure the band is
+          about. Dashed, so it cannot be mistaken for the data line, and
+          BLUE rather than red or amber even when it falls outside the band:
+          the mark says where the mean is, and the words say where that sits
+          against the target. See the header — nothing here is a verdict.
+        */}
+        {dgmX !== null && sampleDgm !== null ? (
+          <g>
+            <line
+              x1={dgmX}
+              y1={PAD.top}
+              x2={dgmX}
+              y2={y(0)}
+              className="stroke-blue-900"
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+            />
+            <text
+              x={Math.min(Math.max(dgmX, PAD.left + 30), WIDTH - PAD.right - 30)}
+              y={labelRow + 18}
+              textAnchor="middle"
+              className="fill-blue-900 text-[11px] font-semibold tabular"
+            >
+              DGM {Math.round(sampleDgm)} µm
+            </text>
+          </g>
+        ) : null}
+
         {points.map((p, i) => (
           <text
             key={p.position.abnt}
             x={x(i)}
-            y={HEIGHT - PAD.bottom + 18}
+            y={labelRow}
             textAnchor="middle"
             className={
               i === peakIndex

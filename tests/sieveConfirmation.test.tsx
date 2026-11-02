@@ -78,7 +78,10 @@ describe.each(SIEVE_STAGES)('%s: a weighed sample shows its results', (stage) =>
     const card = heading.closest('section');
     expect(card).not.toBeNull();
     // The two the operator came for, at the values the workbook gives.
-    expect(within(card as HTMLElement).getByText('1472.6131')).toBeInTheDocument();
+    // DGM is no longer a row in the list: it is lifted into its own block at
+    // the top of the card, where it reads as a figure with a unit so that it
+    // can sit beside a target. The STRING is still the stored one, untouched.
+    expect(within(card as HTMLElement).getByText('1472.6131 µm')).toBeInTheDocument();
     expect(within(card as HTMLElement).getByText('3.821782')).toBeInTheDocument();
   });
 

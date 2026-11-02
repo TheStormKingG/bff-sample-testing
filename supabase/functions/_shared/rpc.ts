@@ -104,6 +104,7 @@ export const RPC = {
   setUserRoles: 'rpc_set_user_roles',
   upsertControlledValue: 'rpc_upsert_controlled_value',
   setSieveSeries: 'rpc_set_sieve_series',
+  setDgmTargetRanges: 'rpc_set_dgm_target_ranges',
   grantDelegation: 'rpc_grant_delegation',
   revokeDelegation: 'rpc_revoke_delegation',
   recordAdminPasswordSet: 'rpc_record_admin_password_set',
@@ -548,7 +549,12 @@ export interface ControlledValueArgs extends RpcActorArgs {
   readonly p_reason: string;
 }
 
-/** `rpc_set_sieve_series`. The stored table, as it now stands. */
+/**
+ * `rpc_set_sieve_series` and `rpc_set_dgm_target_ranges`. The stored row, as
+ * it now stands. One shape, because both write one `system_config` value and
+ * return the same three columns; a second identical interface would be two
+ * names for one contract.
+ */
 export interface SieveSeriesResult {
   readonly key: string;
   readonly value: string;

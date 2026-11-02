@@ -64,21 +64,47 @@ describe('a complete set of calculated results', () => {
     render(<DerivedResultsTable stage="dgm" derived={COMPUTED} />);
     // Driven off the registry, not off a list in the test: this fails if the
     // component stops rendering a column that the tab carries.
+    //
+    // `dgm_um` is excluded from the ROW sweep and asserted separately below,
+    // because it is no longer a row. It was lifted into its own block at the
+    // top of the card — it is the figure the miller changes the mill for and
+    // the only one with a range to be read against. Excluding it here without
+    // the assertion that follows would let it vanish silently.
     const expected = STAGE_SCHEMAS.dgm.fields.filter(
-      (f) => f.type === 'system' && f.key !== 'sample_id' && f.key !== 'gsd_basis',
+      (f) =>
+        f.type === 'system' &&
+        f.key !== 'sample_id' &&
+        f.key !== 'gsd_basis' &&
+        f.key !== 'dgm_um',
     );
-    expect(expected.length).toBe(8);
+    expect(expected.length).toBe(7);
     for (const field of expected) {
       expect(screen.getByText(field.label), `missing row for ${field.key}`).toBeInTheDocument();
     }
+  });
+
+  it('lifts DGM out of the list into its own block at the top', () => {
+    const { container } = render(<DerivedResultsTable stage="dgm" derived={COMPUTED} />);
+    const block = screen.getByRole('heading', { name: /Average particle size \(DGM\)/ });
+    expect(within(block.parentElement as HTMLElement).getByText('1472.6131 µm'))
+      .toBeInTheDocument();
+
+    // ...and it is FIRST. A block that rendered after the list would not be
+    // the change that was asked for, and no assertion above would notice.
+    const heading = screen.getByRole('heading', { name: /Calculated results/ });
+    const sections = [...container.querySelectorAll('h4, dl')];
+    expect(sections[0]?.tagName.toLowerCase()).toBe('h4');
+    expect(heading.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
   });
 
   it('shows the values exactly as stored, without reformatting them', () => {
     render(<DerivedResultsTable stage="dgm" derived={COMPUTED} />);
     // The stored string IS the record — it is the same text that went into the
     // spreadsheet cell. Re-rounding it here would put a third number into
-    // circulation.
-    expect(screen.getByText('1472.6131')).toBeInTheDocument();
+    // circulation. That holds for DGM in its new block too: it gains a unit
+    // and not a single digit of rounding.
+    expect(screen.getByText('1472.6131 µm')).toBeInTheDocument();
     expect(screen.getByText('3.821782')).toBeInTheDocument();
     expect(screen.getByText('0.0000')).toBeInTheDocument();
   });
@@ -98,7 +124,7 @@ describe('a complete set of calculated results', () => {
     expect(screen.getByText(/Nobody types these/i)).toBeInTheDocument();
   });
 
-  it('passes no judgement on any value', () => {
+  it('passes no judgement on any value when no target has been set', () => {
     const { container } = render(<DerivedResultsTable stage="dgm" derived={COMPUTED} />);
 
     // THE ASSERTION THAT MATTERS MOST IN THIS FILE — and it was written from

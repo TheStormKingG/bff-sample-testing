@@ -36,6 +36,7 @@ import { STAGE_SCHEMAS, isRetiredStage } from '@/forms/registry';
 import { STAGES, type Stage } from '@/forms/types';
 import { defaultStageValues, hydrateStageValues } from '@/forms/defaults';
 import { useSieveSeries } from '@/hooks/useSieveSeries';
+import { useDgmTargets } from '@/hooks/useDgmTargets';
 import type { StageFormValues } from '@/forms/zodSchema';
 
 import {
@@ -167,6 +168,10 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
   */
   const sieveSeries = useSieveSeries();
   const series = sieveSeries.data?.document ?? null;
+  // `?? null` twice over: the query may not have resolved, and a form with no
+  // stored target is the ordinary case rather than a fault.
+  const dgmTargets = useDgmTargets();
+  const dgmTarget = dgmTargets.data?.document.ranges[stage] ?? null;
 
   const [initialValues, setInitialValues] = useState<StageFormValues | null>(null);
   const [restoredDraftAt, setRestoredDraftAt] = useState<string | null>(null);
@@ -377,6 +382,7 @@ function StageFormScreen({ stage }: { readonly stage: Stage }) {
     return (
       <RegistrationConfirmation
         sieveSeries={series}
+        dgmTarget={dgmTarget}
         stage={stage}
         sampleId={result.sampleId}
         registeredAt={result.recordedAt}
