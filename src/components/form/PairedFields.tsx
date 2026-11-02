@@ -4,23 +4,16 @@ import { cn } from '@/lib/cn';
 import type { FieldDef } from '@/forms/types';
 
 /**
- * Sample details, two fields to a line.
+ * Sample details and machine settings, two fields to a line.
  *
  * ===========================================================================
- * WHY THESE SIX FIELDS AND NOT THE WHOLE FORM
+ * WHY THESE TWO BANDS AND NOT THE WHOLE FORM
  * ===========================================================================
- * The sample-details band is the only one whose fields are all SHORT and all
- * ADMINISTRATIVE: a date, a time, a point, a material, a batch number, a name.
- * None of them is a measurement, none carries a unit, and none is the thing
- * the operator walked to the bench to record. Stacked one per row they filled
- * most of a phone screen before the form's actual subject appeared, so the
- * reading this layout acts on is that they are the paperwork at the top, not
- * the work.
- *
- * Test results are deliberately left alone. A measurement wants the full width
- * of the screen, its unit beside it and nothing competing for the same glance;
- * halving that to fit two numbers on a line would be optimising the part of
- * the form that should be slowest to fill.
+ * See `PAIRED_SECTIONS` below for the rule. In short: these are the bands
+ * whose fields are all SHORT and none of which is a measurement — the
+ * paperwork at the top and the machine's state, not the work. Stacked one per
+ * row they filled most of a phone screen before the form's actual subject
+ * appeared.
  *
  * ===========================================================================
  * WHY PAIRS IN REGISTRY ORDER RATHER THAN A NAMED LAYOUT
@@ -65,6 +58,23 @@ import type { FieldDef } from '@/forms/types';
  * be committed; this breakpoint is what makes that cap achievable without
  * losing words.
  */
+/**
+ * The bands that go two fields to a line.
+ *
+ * `sample_details` was the first and the reasoning above is written about it.
+ * `settings` joined it at the owner's instruction and it fits the same
+ * description: how the machine was set — a screen size, a roll gap, a drum
+ * speed, a frequency, a vibration time, the stack in use — is short, is a
+ * setting rather than a reading, and is not the thing the operator walked to
+ * the bench to record.
+ *
+ * `test_results` is deliberately NOT here. A measurement wants the full width
+ * of the screen, its unit beside it, and nothing competing for the same
+ * glance; halving that to fit two numbers on a line would be optimising the
+ * part of the form that should be slowest to fill.
+ */
+export const PAIRED_SECTIONS: ReadonlySet<string> = new Set(['sample_details', 'settings']);
+
 export interface PairedFieldsProps {
   /** Sample-details fields, in registry order. */
   readonly fields: readonly FieldDef[];

@@ -73,7 +73,7 @@ import {
 import { ErrorSummary, type SummarisedError } from './ErrorSummary';
 import { FieldRenderer } from './FieldRenderer';
 import { SieveGrid, isSieveMassField } from './SieveGrid';
-import { PairedFields } from './PairedFields';
+import { PairedFields, PAIRED_SECTIONS } from './PairedFields';
 import { fieldIds } from './FieldShell';
 import { FormSection } from './FormSection';
 import { ImplausibleValueDialog } from './ImplausibleValueDialog';
@@ -599,16 +599,17 @@ export function StageForm({
             fieldCount={sectionFields.length}
           >
             {/*
-              Two bands depart from one-field-per-row, and both do it the same
-              way: by ARRANGING `FieldRenderer`s, never by replacing them.
-              Sieve masses are seven pairs and become a table; sample details
-              are short administrative fields and go two to a line. The inputs
+              Three bands depart from one-field-per-row, and all three do it
+              the same way: by ARRANGING `FieldRenderer`s, never by replacing
+              them. Sieve masses are seven pairs and become a table; sample
+              details and the settings band are short fields and go two to a
+              line (`PAIRED_SECTIONS`). The inputs
               are identical in every layout, so error routing, `revealField`
               and the per-section error count go on finding these fields by
               key — which is exactly what a hand-rolled `<input>` in either
               component would have broken.
             */}
-            {section === 'sample_details' ? (
+            {PAIRED_SECTIONS.has(section) ? (
               <PairedFields
                 fields={sectionFields}
                 renderField={(field) => (

@@ -91,6 +91,8 @@ import {
   requirePermission,
 } from '../_shared/adapters/authorize.ts';
 import { SupabaseSyncStore, WORKBOOK_KEY } from '../_shared/adapters/store.ts';
+import { readSieveSeries } from '../_shared/adapters/sieveSeries.ts';
+import { repairSieveHeaders } from '../_shared/headerRepair.ts';
 import { GoogleSheetsApiAdapter } from '../_shared/adapters/googleSheets.ts';
 import { readInteger } from '../_shared/adapters/mutation.ts';
 import {
@@ -247,7 +249,20 @@ async function handler(ctx: RequestContext): Promise<Response> {
     // happens either way before any cell is written.
     const wasDue = needsVerification(verification, stages, new Date());
     const read = await adapter.verifyWorkbook(stages);
-    const schema = verifySchema(read.reading, stages);
+    // The lab's sieve table decides what row 4 must say in the sieve columns.
+    // Read once per pass and handed to both the repair and the verification,
+    // so the two cannot disagree about which table is current.
+    const sieveSeries = await readSieveSeries(admin, (message: string) =>
+      log({ event: 'sieve_series_read', message }),
+    );
+    const repair = await repairSieveHeaders(
+      adapter,
+      read.reading,
+      sieveSeries,
+      stages,
+      (message, detail) => log({ event: 'sieve_headings_repaired', message, detail }),
+    );
+    const schema = verifySchema(repair.reading, stages, sieveSeries);
 
     if (!schema.ok) {
       await store.markSchemaDrifted({ claim, problems: schema.problems });
@@ -302,6 +317,7 @@ async function handler(ctx: RequestContext): Promise<Response> {
         // first, and locating before deciding is the whole anti-duplication
         // design — a saved read is not worth a second operational row.
         allowAppendWithoutLocate: false,
+        sieveSeries,
       },
       events,
     );

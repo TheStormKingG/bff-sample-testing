@@ -70,6 +70,8 @@ import {
   requirePermission,
 } from '../_shared/adapters/authorize.ts';
 import { SupabaseSyncStore, WORKBOOK_KEY } from '../_shared/adapters/store.ts';
+import { readSieveSeries } from '../_shared/adapters/sieveSeries.ts';
+import { repairSieveHeaders } from '../_shared/headerRepair.ts';
 import { GoogleSheetsApiAdapter } from '../_shared/adapters/googleSheets.ts';
 import { readInteger } from '../_shared/adapters/mutation.ts';
 import { DEFAULT_LEASE_TTL_MS, validateFence, type FenceClaim } from '../_shared/lease.ts';
@@ -226,7 +228,9 @@ async function handler(ctx: RequestContext): Promise<Response> {
   try {
     // 1. Headers. Nothing is compared against a workbook whose columns moved.
     const read = await adapter.verifyWorkbook(stages);
-    const schema = verifySchema(read.reading, stages);
+    const sieveSeries = await readSieveSeries(admin);
+    const repair = await repairSieveHeaders(adapter, read.reading, sieveSeries, stages);
+    const schema = verifySchema(repair.reading, stages, sieveSeries);
     if (!schema.ok) {
       if (claim !== null) {
         await store.markSchemaDrifted({ claim, problems: schema.problems });

@@ -121,6 +121,9 @@ function parseValue(raw: string): SqlValue {
   return Number.isNaN(n) ? text : n;
 }
 
+/** A statement's effect on the modelled rows, applied in place. */
+type Mutation = (rows: Array<Record<string, SqlValue>>) => void;
+
 /**
  * Every row of every `insert into public.<table> (cols) values (...), (...);`
  * across all migrations, as objects keyed by the INSERT's own column list.
@@ -130,9 +133,22 @@ function parseValue(raw: string): SqlValue {
  * wrong field.
  */
 function insertedRows(table: string): Array<Record<string, SqlValue>> {
-  const rows: Array<Record<string, SqlValue>> = [];
+  return insertStatements(table).flatMap((statement) => statement.rows);
+}
+
+interface InsertStatement {
+  /** Offset in `SQL`, so inserts can be ordered against updates and deletes. */
+  readonly at: number;
+  /** Does it carry `on conflict (...) do update`? */
+  readonly upsert: boolean;
+  readonly rows: Array<Record<string, SqlValue>>;
+}
+
+function insertStatements(table: string): InsertStatement[] {
+  const statements: InsertStatement[] = [];
   const re = new RegExp(`insert\\s+into\\s+public\\.${table}\\s*\\(([^)]*)\\)\\s*values`, 'gi');
   for (const match of SQL.matchAll(re)) {
+    const rows: Array<Record<string, SqlValue>> = [];
     const columns = match[1]!.split(',').map((c) => c.trim());
     // Walk forward from the end of `values` to the statement's `;`, tracking
     // depth and quotes so a `;` inside a string cannot end it early.
@@ -155,7 +171,17 @@ function insertedRows(table: string): Array<Record<string, SqlValue>> {
       else if (c === ';' && depth === 0) break;
     }
     const body = SQL.slice(start, i);
-    for (const tuple of splitTopLevel(body)) {
+    // `on conflict (...) do update` after the values list. Anything else that
+    // follows — `do nothing`, or a conflict target this does not recognise —
+    // is NOT treated as an upsert, so its rows will collide in
+    // `collapseUpserts` and fail there rather than be silently merged.
+    const isUpsert = /on\s+conflict\s*\([^)]*\)\s*do\s+update/i.test(body);
+    // The values list ends where the conflict clause begins. Without this cut
+    // the clause is parsed as part of the final tuple and that row's last
+    // column reads `null)\non conflict (stage` — a wrong value in a model
+    // whose whole job is to be right about values.
+    const valuesBody = body.split(/\bon\s+conflict\b/i)[0]!;
+    for (const tuple of splitTopLevel(valuesBody)) {
       const trimmed = tuple.trim();
       if (!trimmed.startsWith('(')) continue;
       const values = splitTopLevel(trimmed.slice(1, -1)).map(parseValue);
@@ -165,8 +191,9 @@ function insertedRows(table: string): Array<Record<string, SqlValue>> {
       });
       rows.push(row);
     }
+    statements.push({ at: match.index!, upsert: isUpsert, rows });
   }
-  return rows;
+  return statements;
 }
 
 /**
@@ -186,7 +213,8 @@ function insertedRows(table: string): Array<Record<string, SqlValue>> {
  * because silently skipping an UPDATE it could not read would restore exactly
  * the blindness this function exists to remove.
  */
-function applyUpdates(table: string, rows: Array<Record<string, SqlValue>>): void {
+function updateStatements(table: string): Array<{ at: number; apply: Mutation }> {
+  const out: Array<{ at: number; apply: Mutation }> = [];
   const re = new RegExp(`update\\s+public\\.${table}\\s+set\\s`, 'gi');
   for (const match of SQL.matchAll(re)) {
     const end = SQL.indexOf(';', match.index!);
@@ -208,32 +236,38 @@ function applyUpdates(table: string, rows: Array<Record<string, SqlValue>>): voi
     };
     const sets = splitTopLevel(setPart).map(assignment);
     const conditions = wherePart.split(/\sand\s/i).map(assignment);
-    for (const row of rows) {
-      const matches = conditions.every(([col, want]) => row[col] === want);
-      if (!matches) continue;
-      for (const [col, value] of sets) row[col] = value;
-    }
+    out.push({
+      at: match.index!,
+      apply: (rows) => {
+        for (const row of rows) {
+          if (!conditions.every(([col, want]) => row[col] === want)) continue;
+          for (const [col, value] of sets) row[col] = value;
+        }
+      },
+    });
   }
+  return out;
 }
 
 /**
  * Apply every `delete from public.<table> where ...` over the inserted rows.
  *
- * WHY THIS IS NOT OPTIONAL, for exactly the reason `applyUpdates` is not. The
- * seed is its INSERTs, its UPDATEs **and its DELETEs**: migration 0029
- * removes five `stage_fields` rows when the sieve test replaces the typed-in
- * particle-size columns on three tabs. Without this, those five rows stay in
- * the model forever and "seeds no column the registry does not declare" fails
- * against a database state that stopped being true — reporting a stale seed
- * that is not stale, and, far worse, concealing a genuinely stale one behind
- * the noise.
+ * WHY THIS IS NOT OPTIONAL, for exactly the reason updates are not. The seed
+ * is its INSERTs, its UPDATEs **and its DELETEs**: 0029 removes five
+ * `stage_fields` rows when the sieve test replaces the typed-in particle-size
+ * columns on three tabs, and 0033 removes two more. Without this, those rows
+ * stay in the model forever and "seeds no column the registry does not
+ * declare" fails against a database state that stopped being true —
+ * reporting a stale seed that is not stale, and, far worse, concealing a
+ * genuinely stale one behind the noise.
  *
  * FAILS CLOSED in the same way: only `where col = literal [and ...]` is
  * understood, and anything else THROWS rather than being skipped. A DELETE
  * this parser quietly ignored would leave rows in the model that the database
  * no longer has, which is the blindness it exists to remove.
  */
-function applyDeletes(table: string, rows: Array<Record<string, SqlValue>>): void {
+function deleteStatements(table: string): Array<{ at: number; apply: Mutation }> {
+  const out: Array<{ at: number; apply: Mutation }> = [];
   // Anchored at the start of a line, so the word "delete" inside a migration
   // comment is not read as a statement.
   const re = new RegExp(`(?:^|\\n)[ \\t]*delete\\s+from\\s+public\\.${table}\\b`, 'gi');
@@ -256,10 +290,82 @@ function applyDeletes(table: string, rows: Array<Record<string, SqlValue>>): voi
       if (at === -1) throw new Error(`unreadable condition in delete from ${table}: ${text}`);
       return [text.slice(0, at).trim(), parseValue(text.slice(at + 1).trim())] as const;
     });
-    for (let i = rows.length - 1; i >= 0; i--) {
-      if (conditions.every(([col, want]) => rows[i]![col] === want)) rows.splice(i, 1);
-    }
+    out.push({
+      at: match.index!,
+      apply: (rows) => {
+        for (let i = rows.length - 1; i >= 0; i--) {
+          if (conditions.every(([col, want]) => rows[i]![col] === want)) rows.splice(i, 1);
+        }
+      },
+    });
   }
+  return out;
+}
+
+/**
+ * The table as the migrations leave it: every statement, in the order the
+ * corpus states them.
+ *
+ * ===========================================================================
+ * WHY THE ORDER IS THE WHOLE POINT
+ * ===========================================================================
+ * This used to be three passes — collect every INSERT, then apply every
+ * UPDATE, then apply every DELETE — and that was sound only while no INSERT
+ * ever came after an UPDATE that touched the same row. 0033 broke it: it
+ * re-states four whole tabs as an upsert, and 0029's earlier
+ * `update ... set column_letter = 'AL' where field_key = 'action_taken'` was
+ * then applied AFTERWARDS, dragging a column the newer migration had already
+ * moved back to the letter it held two migrations ago.
+ *
+ * The model reported a database nobody had: `2 Ground` with a column at AN on
+ * a tab that ends at AM. It FAILED, which is the only reason this was found
+ * at all — but a three-pass model is equally capable of agreeing with the
+ * registry for a wrong reason, and that one nobody finds.
+ *
+ * So statements are sorted by their offset in the concatenated corpus, which
+ * is migration order because the corpus is built in filename order, and
+ * applied one after another like a database would.
+ */
+function modelTable(
+  table: string,
+  keyColumns: readonly string[],
+): Array<Record<string, SqlValue>> {
+  const keyOf = (row: Record<string, SqlValue>): string =>
+    keyColumns.map((c) => String(row[c])).join('\u001f');
+
+  const steps: Array<{ at: number; apply: Mutation }> = [
+    ...insertStatements(table).map((statement) => ({
+      at: statement.at,
+      apply: (rows: Array<Record<string, SqlValue>>) => {
+        for (const row of statement.rows) {
+          const index = rows.findIndex((existing) => keyOf(existing) === keyOf(row));
+          if (index === -1) {
+            rows.push({ ...row });
+            continue;
+          }
+          if (!statement.upsert) {
+            throw new Error(
+              `${table} is seeded twice at ${keyOf(row)} by a statement with no ` +
+                `ON CONFLICT DO UPDATE; that INSERT could not run against the real ` +
+                `database either.`,
+            );
+          }
+          // `do update set <every column> = excluded.<column>` is the only
+          // conflict action this models, and it is the only one 0033 uses. A
+          // partial SET would need parsing; if one is ever written, this
+          // over-writes columns the database would have left alone and the
+          // comparison fails loudly rather than quietly.
+          rows[index] = { ...rows[index], ...row };
+        }
+      },
+    })),
+    ...updateStatements(table),
+    ...deleteStatements(table),
+  ].sort((a, b) => a.at - b.at);
+
+  const rows: Array<Record<string, SqlValue>> = [];
+  for (const step of steps) step.apply(rows);
+  return rows;
 }
 
 /** Enum labels, from the CREATE plus every later ADD VALUE. */
@@ -274,28 +380,8 @@ function stageEnumLabels(): string[] {
   return labels;
 }
 
-const STAGE_FIELD_ROWS = insertedRows('stage_fields');
-// The seed is its INSERTs PLUS every later UPDATE and DELETE. Without these
-// the file compares the registry against a database state that stopped being
-// true the first time a migration corrected or removed a seeded column.
-//
-// DELETES LAST, and that order is load-bearing: 0029 deletes
-// `ground.avg_particle_size_um` and then inserts twenty-seven new ground
-// columns. `insertedRows` has already flattened every INSERT in the corpus
-// into one list with no notion of when each ran, so a delete applied before
-// the model held those inserts would still be correct here — but an UPDATE
-// applied after a delete would silently match nothing where the real database
-// had already moved the row. Running updates over the full set and then
-// removing the deleted rows models the end state either way round.
-applyUpdates('stage_fields', STAGE_FIELD_ROWS);
-applyDeletes('stage_fields', STAGE_FIELD_ROWS);
-const STAGE_DEFINITION_ROWS = insertedRows('stage_definitions');
-// Same reasoning as `stage_fields`, and it became load-bearing with 0029:
-// that migration widens three tabs by UPDATING `last_column` and
-// `column_count` rather than by re-seeding the row. Until this line existed
-// the file read the 0002 values and reported a drift that had been fixed.
-applyUpdates('stage_definitions', STAGE_DEFINITION_ROWS);
-applyDeletes('stage_definitions', STAGE_DEFINITION_ROWS);
+const STAGE_FIELD_ROWS = modelTable('stage_fields', ['stage', 'field_key']);
+const STAGE_DEFINITION_ROWS = modelTable('stage_definitions', ['stage']);
 const PREFIX_ROWS = insertedRows('sample_prefixes');
 
 describe('the instrument works before anything it says is believed', () => {
@@ -309,13 +395,22 @@ describe('the instrument works before anything it says is believed', () => {
   });
 
   it('parsed every seeded column row, not some of them', () => {
-    // 209: 98 across the original seven tabs, + 35 for DGM, + 81 inserted and
-    // 5 deleted by 0029 when the sieve test moved onto three of those seven.
-    // Stated as the arithmetic so a change names which side moved — and it is
-    // also the positive control for `applyDeletes`, since a parser that read
-    // no DELETEs would land on 214.
-    expect(98 + 35 + 81 - 5).toBe(209);
-    expect(STAGE_FIELD_ROWS).toHaveLength(209);
+    // 239, stated as the arithmetic so a change names which side moved:
+    //
+    //    98  the original seven tabs
+    //  + 35  `8 DGM`
+    //  + 81  inserted by 0029 when the sieve test moved onto three tabs
+    //  -  5  deleted by 0029: the typed-in particle-size columns it replaced
+    //  + 32  NET from 0033, which upserts 156 rows across four tabs: 30 new
+    //        columns on `4 Pellets` (11 -> 41) and 2 on `6 Crumble` (39 ->
+    //        41), the other 124 being moves of columns that already existed
+    //  -  2  deleted by 0033: the drum speed on Ground and on Mash
+    //
+    // It is also the positive control for the DELETE parser: one that read
+    // no DELETEs would land on 246, and one that mistook the upsert for a
+    // plain insert would land on 363.
+    expect(98 + 35 + 81 - 5 + 32 - 2).toBe(239);
+    expect(STAGE_FIELD_ROWS).toHaveLength(239);
     expect(STAGE_DEFINITION_ROWS).toHaveLength(8);
     expect(PREFIX_ROWS).toHaveLength(9);
   });

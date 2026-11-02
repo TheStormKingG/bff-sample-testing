@@ -48,6 +48,8 @@ import {
 } from './outbox.ts';
 import { validateFence, type FenceClaim, type LeaseRejection, type LeaseState } from './lease.ts';
 import { classifySheetsError, type GoogleSheetsAdapter } from './sheets.ts';
+import { repairSieveHeaders } from './headerRepair.ts';
+import type { SieveSeriesDocument } from '../../../src/lib/sieveSeries.ts';
 import { DEFAULT_BACKOFF, type BackoffPolicy } from './backoff.ts';
 
 /** Everything the worker needs from the database, as narrow methods. */
@@ -154,6 +156,15 @@ export interface WorkerDeps {
    * which is not worth that.
    */
   readonly allowAppendWithoutLocate?: boolean;
+  /**
+   * The lab's sieve table, as `system_config.sieve_series` holds it.
+   *
+   * Twelve of the fourteen sieve mass headings are named after a sieve's ABNT
+   * designation, so this decides what row 4 must say on the four tabs that
+   * carry a sieve test. Omitted or null means the shipped preset, which is
+   * what those tabs were created with.
+   */
+  readonly sieveSeries?: SieveSeriesDocument | null;
 }
 
 export interface ProcessResult {
@@ -234,7 +245,24 @@ export async function processEvent(
     //    periodically after that.
     if (needsVerification(verification, [event.stage], deps.now())) {
       const read = await deps.adapter.verifyWorkbook([event.stage]);
-      const result = verifySchema(read.reading, [event.stage]);
+      /*
+        Let the workbook catch up with a re-designated sieve before judging
+        it. This rewrites row-4 cells in the sieve columns ONLY, and only
+        where they disagree with the stored table; everything else is left
+        alone and still latches the workbook below. See `headerRepair.ts` for
+        why the correction happens here rather than at the moment the setting
+        is saved.
+      */
+      const series = deps.sieveSeries ?? null;
+      const repair = await repairSieveHeaders(
+        deps.adapter,
+        read.reading,
+        series,
+        [event.stage],
+        (message, detail) =>
+          deps.log?.({ event: 'sieve_headings_repaired', stage: event.stage, message, detail }),
+      );
+      const result = verifySchema(repair.reading, [event.stage], series);
       if (!result.ok) {
         await deps.store.markSchemaDrifted({ claim: deps.claim, problems: result.problems });
         deps.log?.({

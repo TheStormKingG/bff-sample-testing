@@ -27,7 +27,7 @@ import {
   STAGE_SCHEMAS,
 } from '../../../src/forms/registry.ts';
 import { STAGES, type Stage } from '../../../src/forms/types.ts';
-import { expectedHeaders } from '../../../src/forms/sheetMapping.ts';
+import { columnLetterToIndex, expectedHeaders } from '../../../src/forms/sheetMapping.ts';
 import { assertWritableRange } from './headerCheck.ts';
 import type { LocatedRecord } from './projection.ts';
 import {
@@ -42,10 +42,12 @@ import {
   type UpsertRequest,
   type UpsertResult,
   type VerifyWorkbookResult,
+  type HeaderCellWrite,
 } from './sheets.ts';
 
 export type FakeOperation =
   | 'verifyWorkbook'
+  | 'writeHeaderCells'
   | 'locateRecord'
   | 'upsertOperationalRow'
   | 'readForReconciliation'
@@ -322,6 +324,32 @@ export class FakeGoogleSheetsAdapter implements GoogleSheetsAdapter {
           status: fault.status ?? 403,
         });
     }
+  }
+
+  async writeHeaderCells(tab: string, cells: readonly HeaderCellWrite[]): Promise<void> {
+    if (cells.length === 0) return await Promise.resolve();
+    this.count('writeHeaderCells', 1);
+    const fault = this.take('writeHeaderCells');
+    if (fault !== null) FakeGoogleSheetsAdapter.raise(fault, 'writeHeaderCells');
+
+    const stage = STAGES.find((s) => STAGE_SCHEMAS[s].sheetTab === tab);
+    if (stage === undefined) {
+      throw new SheetsError(`No such tab "${tab}"`, { retryable: false, status: 400 });
+    }
+    for (const cell of cells) {
+      // `columnLetterToIndex` is ZERO-based here — `columnLetterToIndex('A')`
+      // is 0, which is how `toSheetRow`'s callers index a row. The SQL
+      // function of the same name is ONE-based, because PostgreSQL arrays
+      // are. Subtracting one here wrote every heading into the column to its
+      // left, which showed up as three mismatches where two were expected.
+      this.workbook.setCell(
+        stage,
+        PROTECTED_HEADER_ROWS,
+        columnLetterToIndex(cell.columnLetter),
+        cell.value,
+      );
+    }
+    return await Promise.resolve();
   }
 
   async verifyWorkbook(stages: readonly Stage[] = STAGES): Promise<VerifyWorkbookResult> {

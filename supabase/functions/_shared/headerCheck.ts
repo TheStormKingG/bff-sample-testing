@@ -23,6 +23,7 @@ import {
 } from '../../../src/forms/registry.ts';
 import { STAGES, type Stage } from '../../../src/forms/types.ts';
 import { diffHeaders, type HeaderMismatch } from '../../../src/forms/sheetMapping.ts';
+import type { SieveSeriesDocument } from '../../../src/lib/sieveSeries.ts';
 
 /** What the caller read from the workbook, per stage. */
 export interface StageHeaderReading {
@@ -90,10 +91,18 @@ function mismatchProblem(m: HeaderMismatch): SchemaProblem {
  * `requiredStages` lets a worker verify only the tabs it is about to write,
  * which keeps the periodic re-check inside the Sheets read quota, while the
  * admin screen and the cutover checklist pass all seven.
+ *
+ * `series` is the lab's sieve table, which twelve of the fourteen sieve mass
+ * headings are named after. Callers that can read it pass it; a caller that
+ * passes `null` is asserting the shipped preset, which is what the tabs were
+ * created with. A caller that passes nothing where a table IS stored will see
+ * every re-designated sieve column as drift — correctly, in the sense that
+ * the heading does not match, but uselessly, so every call site reads it.
  */
 export function verifySchema(
   reading: WorkbookReading,
   requiredStages: readonly Stage[] = STAGES,
+  series: SieveSeriesDocument | null = null,
 ): SchemaVerification {
   const problems: SchemaProblem[] = [];
   const verifiedStages: Stage[] = [];
@@ -140,7 +149,11 @@ export function verifySchema(
       continue;
     }
 
-    const mismatches = diffHeaders(stage, read.headerRow);
+    // The expected headings for the fourteen sieve mass columns come from
+    // the lab's own table, not from the shipped preset: a re-designated sieve
+    // changes what row 4 must say. `null` means "no stored table", which
+    // yields the preset's spelling — the same strings the registry carries.
+    const mismatches = diffHeaders(stage, read.headerRow, series);
     columnsCompared += schema.columnCount;
 
     if (read.a5Formula != null && read.a5Formula.trimStart().startsWith('=')) {

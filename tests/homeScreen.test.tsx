@@ -73,7 +73,6 @@ function profileWith(roles: readonly Role[]): Profile {
 const BASE: HomeScreenProps = {
   plantDate: '2026-10-27',
   mayRecord: true,
-  todayByStage: undefined,
   awaitingResults: undefined,
   readyForReview: undefined,
   onHold: undefined,
@@ -205,29 +204,44 @@ describe('the sampling-frequency gap is stated, not dropped', () => {
   });
 });
 
-describe('counts are a number or an honest dash, never a placeholder zero', () => {
-  it('shows the figure when it is known, including a real zero', () => {
-    renderHome(['quality_officer'], {
-      todayByStage: { raw_materials: 3, ground: 0 },
-    });
-
+describe('a stage tile carries its number and its name, and nothing else', () => {
+  it('shows no collected-today figure, because the second line was removed', async () => {
+    // The owner asked for one piece of text per tile with the icon beside it.
+    // The per-stage figure went with the second line. It is NOT gone from the
+    // app — the wide dashboard still renders it from the same query — so this
+    // asserts the phone tile's content exactly rather than asserting the
+    // figure is nowhere.
+    renderHome(['quality_officer']);
     const raw = stageLinks().find((a) => a.getAttribute('href') === '/stage/raw_materials');
-    expect(raw?.textContent).toContain('3');
-    expect(raw?.textContent).toContain('collected today');
-
-    // A genuine zero is a figure, and must read as one — not as "unknown".
-    const ground = stageLinks().find((a) => a.getAttribute('href') === '/stage/ground');
-    expect(ground?.textContent).toContain('0');
-    expect(ground?.textContent).not.toContain('Count not available');
+    // The visible ordinal badge, then the name. The ordinal appears twice in
+    // the text: once seen (aria-hidden) and once spoken as "Form 1:", so the
+    // reading order matches the seen order without a screen reader saying
+    // "1 1". Nothing follows the name.
+    expect(raw?.textContent).toBe('1Form 1: Raw Materials');
+    for (const link of stageLinks()) {
+      expect(link.textContent).not.toContain('today');
+      expect(link.textContent).not.toContain('Count not available');
+    }
   });
 
-  it('says the count is not available rather than showing zero', () => {
-    renderHome(['quality_officer'], { todayByStage: undefined });
-    const raw = stageLinks().find((a) => a.getAttribute('href') === '/stage/raw_materials');
-    expect(raw?.textContent).toContain('Count not available');
-    // The dash, not a zero. A failed query that renders "0 today" reads as a
-    // quiet morning instead of a broken screen (PRD §12).
-    expect(raw?.textContent).toContain('—');
+  it('still reports an unknown queue figure as a dash inside More', async () => {
+    // PRD §12 — never a placeholder zero — is unchanged; it moved to where
+    // the figures still are. A failed query that renders "0" reads as a quiet
+    // morning instead of a broken screen.
+    const user = userEvent.setup();
+    renderHome(['quality_officer'], {
+      awaitingResults: undefined,
+      readyForReview: 4,
+      onHold: undefined,
+    });
+    await user.click(screen.getByRole('button', { name: /More/ }));
+
+    const dialog = screen.getByRole('dialog');
+    // Two unknown figures, one known. The known one is a figure; neither
+    // unknown one became a zero.
+    expect(within(dialog).getAllByText('Count not available')).toHaveLength(2);
+    expect(within(dialog).getByText('4')).toBeInTheDocument();
+    expect(within(dialog).queryByText('0')).toBeNull();
   });
 });
 

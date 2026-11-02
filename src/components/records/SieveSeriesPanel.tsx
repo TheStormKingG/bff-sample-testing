@@ -35,12 +35,16 @@ import {
  *   administrator who changes an aperture and watches DGM stand still has to
  *   have been told first, or they will change it again.
  *
- *   DESIGNATION. The workbook's row-4 headings are authored in the registry
- *   and `verifyWorkbook()` compares them character for character before any
- *   write. They do not move with this table. A changed designation therefore
- *   shows here and on the form while the spreadsheet keeps the heading it was
- *   created with, and somebody has to close that by hand — so the screen
- *   names the headings as soon as a designation is edited.
+ *   DESIGNATION. The workbook's row-4 headings FOLLOW it. `expectedHeaders`
+ *   derives the twelve sieve headings from this table, and the sync worker
+ *   rewrites those cells in the live sheet on its next pass — the four tabs
+ *   that carry a sieve test, those columns only. Nothing has to be retyped.
+ *   The screen still names what is about to change, because the rewrite
+ *   happens a moment later on a machine the administrator cannot see, and a
+ *   heading changing in a quality record without warning is worse than a
+ *   heading changing with one. The pan's heading is the exception and says
+ *   so: it reads "Pan", not a designation, because the workbook's own
+ *   conversion table has not settled whether the pan is ABNT 400.
  *
  * ===========================================================================
  * IT SAVES WHOLE OR NOT AT ALL
@@ -224,12 +228,13 @@ export function SieveSeriesPanel({ onRequest, mayEdit }: SieveSeriesPanelProps):
         {renames.length > 0 ? (
           <InfoNote tone="warning">
             <span>
-              The workbook keeps the column headings it was created with. After this is saved,{' '}
+              The workbook's column headings will change to match. After this is saved,{' '}
               {renames
-                .map((r) => `position ${r.position} will read ${r.to} here and "ABNT ${r.from}" in the workbook`)
+                .map((r) => `position ${r.position} becomes ${r.to}, where it reads "ABNT ${r.from}" now`)
                 .join('; ')}
-              . The row-4 headings on tabs 2, 6, 7 and 8 have to be changed by hand to match, and
-              until they are the two will disagree.
+              . The row-4 headings on tabs 2, 4, 6, 7 and 8 are rewritten the next time the
+              spreadsheet is synchronised, which is usually within a minute. Nothing has to be
+              retyped, and the figures already recorded are untouched.
             </span>
           </InfoNote>
         ) : null}

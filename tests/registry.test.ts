@@ -54,7 +54,7 @@ const VERIFIED_HEADERS: Record<Stage, { tab: string; headers: string[] }> = {
       'Sample ID', 'Date', 'Time', 'Sampling point', 'Material or feed type',
       'Batch or bin no.', 'Sampled by', 'Mill screen size (mm)',
       'Hammer distance from screen (mm)',
-      'Durability tester RPM', 'Sieve shaker frequency (Hz)',
+      'Sieve shaker frequency (Hz)',
       'Vibration time (min)', 'Sieve series',
       'Moisture (%) at BC',
       'ABNT 5 empty sieve (g)', 'ABNT 5 sieve + sample (g)',
@@ -82,8 +82,22 @@ const VERIFIED_HEADERS: Record<Stage, { tab: string; headers: string[] }> = {
     tab: '4 Pellets',
     headers: [
       'Sample ID', 'Date', 'Time', 'Feed type', 'Batch no.', 'Sampled by',
-      'Pellet temperature (°C)', 'Pellet diameter (mm)', 'Action taken',
-      'Tested by (QO)', 'Comments',
+      'Durability tester RPM', 'Sieve shaker frequency (Hz)',
+      'Vibration time (min)', 'Sieve series',
+      'Pellet temperature (°C)', 'Pellet diameter (mm)',
+      'Sample before tumbling (g)', 'Whole pellets after tumbling (g)',
+      'Pellet durability (PDI, %)',
+      'ABNT 5 empty sieve (g)', 'ABNT 5 sieve + sample (g)',
+      'ABNT 10 empty sieve (g)', 'ABNT 10 sieve + sample (g)',
+      'ABNT 16 empty sieve (g)', 'ABNT 16 sieve + sample (g)',
+      'ABNT 30 empty sieve (g)', 'ABNT 30 sieve + sample (g)',
+      'ABNT 50 empty sieve (g)', 'ABNT 50 sieve + sample (g)',
+      'ABNT 400 empty sieve (g)', 'ABNT 400 sieve + sample (g)',
+      'Pan empty (g)', 'Pan + sample (g)',
+      'Total retained (g)', 'Fineness module (MF)', 'DGM (µm)',
+      'UI coarse (%)', 'UI average (%)', 'UI fine (%)',
+      'DPG legacy index', 'Geometric standard deviation', 'GSD basis',
+      'Action taken', 'Tested by (QO)', 'Comments',
     ],
   },
   extruded_soya: {
@@ -102,7 +116,9 @@ const VERIFIED_HEADERS: Record<Stage, { tab: string; headers: string[] }> = {
       'Crumbler roll gap (mm)',
       'Durability tester RPM', 'Sieve shaker frequency (Hz)',
       'Vibration time (min)', 'Sieve series',
-      'Moisture (%)', 'Pellet durability (PDI, %)', 'Crumble size (mm)',
+      'Moisture (%)',
+      'Sample before tumbling (g)', 'Whole pellets after tumbling (g)',
+      'Pellet durability (PDI, %)', 'Crumble size (mm)',
       'ABNT 5 empty sieve (g)', 'ABNT 5 sieve + sample (g)',
       'ABNT 10 empty sieve (g)', 'ABNT 10 sieve + sample (g)',
       'ABNT 16 empty sieve (g)', 'ABNT 16 sieve + sample (g)',
@@ -120,7 +136,7 @@ const VERIFIED_HEADERS: Record<Stage, { tab: string; headers: string[] }> = {
     tab: '7 Mash',
     headers: [
       'Sample ID', 'Date', 'Time', 'Feed type', 'Batch no.', 'Sampled by',
-      'Durability tester RPM', 'Sieve shaker frequency (Hz)',
+      'Sieve shaker frequency (Hz)',
       'Vibration time (min)', 'Sieve series',
       'Moisture (%)',
       'ABNT 5 empty sieve (g)', 'ABNT 5 sieve + sample (g)',
@@ -187,31 +203,43 @@ describe('registry: workbook contract', () => {
     expect(columnLetterToIndex(s.lastColumn)).toBe(s.columnCount - 1);
   });
 
-  it('total verified columns across the eight tabs is 209', () => {
+  it('total verified columns across the eight tabs is 239', () => {
     // Stated as the sum of its parts rather than as one number, so a change
-    // names which side moved.
+    // names which side moved. Each line below is one tab's own arithmetic
+    // against the width it was last verified at, so a stage that moves for an
+    // unrelated reason cannot hide inside the total.
     //
     // The original seven were 98 when they were transcribed on 2026-10-24.
-    // They are 174 now, because `2 Ground`, `6 Crumble` and `7 Mash` each
-    // traded their typed-in particle-size columns for the sieve test: 27
-    // columns added and two (one on Crumble) removed, so +25, +26 and +25.
-    // The four untouched tabs still account for exactly their original width.
-    const FOUR_UNTOUCHED: readonly Stage[] = [
-      'raw_materials',
-      'conditioned',
-      'pellets',
-      'extruded_soya',
-    ];
-    const untouched = FOUR_UNTOUCHED.reduce((n, s) => n + STAGE_SCHEMAS[s].columnCount, 0);
-    expect(untouched).toBe(19 + 13 + 11 + 16);
+    // THREE UNTOUCHED TABS still account for exactly their original width —
+    // `4 Pellets` left that group when it gained the sieve test.
+    const THREE_UNTOUCHED: readonly Stage[] = ['raw_materials', 'conditioned', 'extruded_soya'];
+    const untouched = THREE_UNTOUCHED.reduce((n, s) => n + STAGE_SCHEMAS[s].columnCount, 0);
+    expect(untouched).toBe(19 + 13 + 16);
 
-    expect(STAGE_SCHEMAS.ground.columnCount).toBe(15 + 25);
-    expect(STAGE_SCHEMAS.crumble.columnCount).toBe(13 + 26);
-    expect(STAGE_SCHEMAS.mash.columnCount).toBe(11 + 25);
+    // The sieve test is 27 columns wherever it lands: 4 settings, 14 masses,
+    // 9 computed — minus the drum speed on the two tabs whose product is
+    // never tumbled, which is why Ground and Mash carry 26.
+    const SIEVE_BLOCK = 4 + 14 + 9;
+    expect(SIEVE_BLOCK).toBe(27);
+
+    // 2 Ground: 15 transcribed, two analyser columns traded for the sieve
+    // block, and no drum speed (ground meal is not tumbled).
+    expect(STAGE_SCHEMAS.ground.columnCount).toBe(15 - 2 + SIEVE_BLOCK - 1);
+    // 7 Mash: 11 transcribed, same two traded, same missing drum speed.
+    expect(STAGE_SCHEMAS.mash.columnCount).toBe(11 - 2 + SIEVE_BLOCK - 1);
+    // 6 Crumble: 13 transcribed, one analyser column traded for the sieve
+    // block, and PDI went from one typed-in column to two weighings plus the
+    // computed percentage, so +2.
+    expect(STAGE_SCHEMAS.crumble.columnCount).toBe(13 - 1 + SIEVE_BLOCK + 2);
+    // 4 Pellets: 11 transcribed, the whole sieve block added with its drum
+    // speed, plus the three durability columns.
+    expect(STAGE_SCHEMAS.pellets.columnCount).toBe(11 + SIEVE_BLOCK + 3);
+    // 8 DGM is unchanged: it is the master log the other four write into, and
+    // nothing in this round moved a column on it.
     expect(STAGE_SCHEMAS.dgm.columnCount).toBe(35);
 
     const total = STAGES.reduce((n, s) => n + STAGE_SCHEMAS[s].columnCount, 0);
-    expect(total).toBe(209);
+    expect(total).toBe(239)
   });
 
   it.each(STAGES)('%s: field keys are unique', (stage) => {

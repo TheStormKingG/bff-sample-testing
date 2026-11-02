@@ -11,7 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
-import { PairedFields } from '@/components/form/PairedFields';
+import { PairedFields, PAIRED_SECTIONS } from '@/components/form/PairedFields';
 import { STAGE_SCHEMAS } from '@/forms/registry';
 import { STAGES } from '@/forms/types';
 import type { FieldDef } from '@/forms/types';
@@ -132,28 +132,33 @@ describe('help text in the two-column layout', () => {
    */
   const TWO_LINE_LIMIT = 36;
 
-  it('keeps every sample-details hint inside two lines', () => {
+  it('keeps every paired-band hint inside two lines', () => {
     const tooLong: string[] = [];
     for (const stage of STAGES) {
       for (const field of STAGE_SCHEMAS[stage].fields) {
         // `system` fields never render an input, so their help never shows.
-        if (field.section !== 'sample_details' || field.type === 'system') continue;
+        if (!PAIRED_SECTIONS.has(field.section) || field.type === 'system') continue;
         if (field.help === undefined) continue;
         if (field.help.length > TWO_LINE_LIMIT) {
           tooLong.push(`${stage}.${field.key} (${field.help.length}): ${field.help}`);
         }
       }
     }
-    expect(tooLong, 'sample-details help longer than two lines at 375px').toEqual([]);
+    expect(tooLong, 'paired-band help longer than two lines at 375px').toEqual([]);
   });
 
   it('INSTRUMENT CHECK: the rule would catch a long string', () => {
     // Without this, a rule that silently stopped reading the registry would
     // report the same clean result as a rule that worked.
     const sampled = STAGE_SCHEMAS.ground.fields.filter(
-      (f) => f.section === 'sample_details' && f.type !== 'system' && f.help !== undefined,
+      (f) => PAIRED_SECTIONS.has(f.section) && f.type !== 'system' && f.help !== undefined,
     );
     expect(sampled.length, 'the sweep found no help to check').toBeGreaterThan(2);
+    // Both bands are actually in the sweep, not just the first one. A set
+    // that quietly lost `settings` would still pass the line above.
+    const sections = new Set(sampled.map((f) => f.section));
+    expect(sections.has('sample_details')).toBe(true);
+    expect(sections.has('settings')).toBe(true);
     expect('The date the sample was taken, in Guyana local time.'.length).toBeGreaterThan(
       TWO_LINE_LIMIT,
     );

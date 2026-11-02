@@ -2,7 +2,6 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ChevronRight, LayoutGrid, Wifi, WifiOff } from 'lucide-react';
 import { DASHBOARD_ORDER } from '@/forms/registry';
-import type { Stage } from '@/forms/types';
 import { cn } from '@/lib/cn';
 import { StatusChip } from '@/components/ui/StatusChip';
 import { STAGE_ICON } from '@/components/ui/statusMaps';
@@ -17,12 +16,6 @@ export interface HomeScreenProps {
   /** The plant-local calendar date the per-stage figures belong to. */
   readonly plantDate: string;
   readonly mayRecord: boolean;
-  /**
-   * Per-stage figures for the plant-local day. `undefined` for the whole
-   * object, or for a single stage, means "not known" — never a placeholder
-   * zero (PRD §12).
-   */
-  readonly todayByStage: Readonly<Partial<Record<Stage, number>>> | undefined;
   readonly awaitingResults: number | undefined;
   readonly readyForReview: number | undefined;
   readonly onHold: number | undefined;
@@ -98,7 +91,6 @@ interface Cell {
 export function HomeScreen({
   plantDate,
   mayRecord,
-  todayByStage,
   awaitingResults,
   readyForReview,
   onHold,
@@ -141,8 +133,7 @@ export function HomeScreen({
         label="More"
         icon={LayoutGrid}
         onClick={() => setMoreOpen(true)}
-        meta={needsAttention ? 'Needs attention' : 'Records, limits, sign out'}
-        metaTone={needsAttention ? 'warn' : 'normal'}
+        flag={needsAttention ? 'Needs attention' : undefined}
       />
     ),
   };
@@ -164,35 +155,18 @@ export function HomeScreen({
       node: <HomeTile label={item.label} icon={item.icon} to={item.to} />,
     }));
 
-  const stageTiles: Cell[] = DASHBOARD_ORDER.map((schema) => {
-    const count = todayByStage?.[schema.stage];
-    return {
-      key: schema.stage,
-      node: (
-        <HomeTile
-          ordinal={schema.ordinal}
-          label={schema.title}
-          icon={STAGE_ICON[schema.stage]}
-          to={`/stage/${schema.stage}`}
-          meta={
-            count === undefined ? (
-              <>
-                <span aria-hidden="true">— today</span>
-                <span className="sr-only">Count not available</span>
-              </>
-            ) : (
-              <span className="tabular">
-                {count}
-                <span aria-hidden="true"> today</span>
-                <span className="sr-only"> collected today</span>
-              </span>
-            )
-          }
-          flag={schema.frequencyApproved ? undefined : 'Sampling frequency not yet set'}
-        />
-      ),
-    };
-  });
+  const stageTiles: Cell[] = DASHBOARD_ORDER.map((schema) => ({
+    key: schema.stage,
+    node: (
+      <HomeTile
+        ordinal={schema.ordinal}
+        label={schema.title}
+        icon={STAGE_ICON[schema.stage]}
+        to={`/stage/${schema.stage}`}
+        flag={schema.frequencyApproved ? undefined : 'Sampling frequency not yet set'}
+      />
+    ),
+  }));
 
   const cells = mayRecord ? [...stageTiles, moreTile] : [...recordTiles, moreTile];
   // Clamped, but the clamp must never bite: a cell beyond the explicit rows
@@ -252,10 +226,13 @@ export function HomeScreen({
           carries only the dated figure and the connection chip. */}
       <div className="flex shrink-0 items-center justify-end gap-2">
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {/* Which day the tile figures are counting. A tablet left on across
-              midnight then shows a dated number, not a silently wrong one. */}
+          {/* The plant-local date. It used to be captioned "Counts for",
+              naming the per-tile figures; those figures left with the tiles'
+              second line, so the caption did too rather than pointing at
+              nothing. A tablet left on across midnight still shows which day
+              this screen belongs to. */}
           <span className="tabular text-xs font-medium text-slate-600">
-            <span className="sr-only">Counts for </span>
+            <span className="sr-only">Plant date: </span>
             {plantDate}
           </span>
           <StatusChip

@@ -65,6 +65,9 @@ const DECIMALS: Readonly<Record<string, number>> = {
   ui_fine_pct: 4,
   dpg_legacy_index: 6,
   gsd: 6,
+  // One place, which is what the column it replaces carried as a typed-in
+  // figure and what every published durability table prints.
+  pellet_durability_pdi_pct: 1,
 };
 
 /** A number as it will appear in the cell, or '' when there is no answer. */
@@ -115,7 +118,6 @@ function deriveSieveTest(
   values: CleanValues,
   series: SieveSeriesDocument | null,
 ): Record<string, string> {
-  const schema = STAGE_SCHEMAS[stage];
   const readings: SieveReading[] = [];
   for (let n = 1; n <= SIEVE_COUNT; n++) {
     const tareKey = `sieve${n}_tare_g`;
@@ -154,9 +156,24 @@ function deriveSieveTest(
     gsd_basis: result.geometricStandardDeviation === null ? '' : result.gsdBasis,
   };
 
-  // Every key must be a real column on the tab, or `toSheetRow` would ignore
-  // it and the value would vanish with no error anywhere. Checked against the
-  // registry rather than against this file's own list.
+  return assertComputedColumns(stage, out);
+}
+
+/**
+ * Every computed key must be a real `system` column on the tab.
+ *
+ * A key that is not a column is silently dropped by `toSheetRow` and the
+ * value vanishes with no error anywhere; a key that is a column but is not
+ * `system` is one an operator could submit and the server would overwrite
+ * without saying so. Checked against the registry rather than against any
+ * list kept in this file, so a column that moves tab cannot leave a stale
+ * copy behind here.
+ */
+function assertComputedColumns(
+  stage: Stage,
+  out: Record<string, string>,
+): Record<string, string> {
+  const schema = STAGE_SCHEMAS[stage];
   for (const key of Object.keys(out)) {
     const field = schema.fields.find((f) => f.key === key);
     if (field === undefined) {
@@ -173,11 +190,66 @@ function deriveSieveTest(
 }
 
 /**
+ * Pellet durability, from the two weighings.
+ *
+ *     PDI (%) = whole pellets after tumbling / sample before tumbling x 100
+ *
+ * `{}` when either weighing is absent, for the same reason `deriveSieveTest`
+ * returns `{}`: requiredness is the validator's job and it has already run,
+ * so arriving here without both weights means a phase or a sample that does
+ * not carry this test.
+ *
+ * TWO THINGS THIS DELIBERATELY DOES NOT DO.
+ *
+ * It does not clamp. A result above 100% is impossible — nothing leaves a
+ * tumbler heavier than it entered — so it means one of the two weighings is
+ * wrong, and the useful thing to put in front of the operator is the
+ * contradiction, beside the two numbers that produced it, not a tidy 100.0
+ * that hides which figure to re-check.
+ *
+ * It does not guess at a missing "before". The method's 500 g is seeded as a
+ * DEFAULT on the input, where the operator can see it and change it, rather
+ * than assumed here, where they could not. A blank before-weight yields no
+ * percentage at all, which is the honest answer to "divided by what?".
+ */
+function derivePdi(stage: Stage, values: CleanValues): Record<string, string> {
+  if (values['pdi_before_g'] === undefined || values['pdi_after_g'] === undefined) return {};
+  const before = numberAt(values, 'pdi_before_g');
+  const after = numberAt(values, 'pdi_after_g');
+  // Not an error: 0 g in is a mis-keyed field, and a division by it would
+  // produce Infinity, which `cell` renders as ''. Returning nothing says the
+  // same thing without relying on that.
+  if (before <= 0) return {};
+  return assertComputedColumns(stage, {
+    pellet_durability_pdi_pct: cell('pellet_durability_pdi_pct', (after / before) * 100),
+  });
+}
+
+/**
+ * Both tests on one tab.
+ *
+ * `4 Pellets` and `6 Crumble` carry the sieve test AND the durability test,
+ * and the two are independent: a sample can be tumbled without the stack
+ * being weighed, or weighed without being tumbled. Merging two derivers that
+ * each return `{}` on their own missing inputs gives exactly that, and keeps
+ * each piece of arithmetic in one place.
+ */
+function deriveSieveAndPdi(
+  stage: Stage,
+  values: CleanValues,
+  series: SieveSeriesDocument | null,
+): Record<string, string> {
+  return { ...deriveSieveTest(stage, values, series), ...derivePdi(stage, values) };
+}
+
+/**
  * The stages whose columns the server fills in.
  *
- * All four carry the same sieve test and therefore the same nine computed
+ * All five carry the same sieve test and therefore the same nine computed
  * columns, so they share one implementation parameterised by stage rather
- * than four copies that could disagree about what a fineness module is. The
+ * than five copies that could disagree about what a fineness module is. Two
+ * of them also carry the durability test, which is a separate measurement
+ * with its own inputs, so they get the pair. The
  * per-stage lookup is still a TABLE and not a `switch` in the validator:
  * `validation.ts` states in its own header that "nothing here enumerates
  * fields", and a `switch` on stage there would be the first exception to that
@@ -190,7 +262,8 @@ const DERIVERS: Partial<
   >
 > = {
   ground: deriveSieveTest,
-  crumble: deriveSieveTest,
+  pellets: deriveSieveAndPdi,
+  crumble: deriveSieveAndPdi,
   mash: deriveSieveTest,
   dgm: deriveSieveTest,
 };

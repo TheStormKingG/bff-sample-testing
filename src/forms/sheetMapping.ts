@@ -13,6 +13,13 @@
  * Keeping them apart avoids two competing sources of truth for a limit.
  */
 
+import { DEFAULT_SIEVE_PRESET } from '../lib/dgm.ts';
+import {
+  applySieveSeries,
+  sieveMassHeaders,
+  sieveMassKey,
+  type SieveSeriesDocument,
+} from '../lib/sieveSeries.ts';
 import {
   STAGE_SCHEMAS,
   isFieldApplicable,
@@ -82,9 +89,56 @@ export function rangeForIdColumn(stage: Stage): string {
   return `${quoteTabName(s.sheetTab)}!A${PROTECTED_HEADER_ROWS + 1}:A`;
 }
 
-/** The row-4 header contract for a stage, in column order. */
-export function expectedHeaders(stage: Stage): string[] {
-  return STAGE_SCHEMAS[stage].fields.map((f) => f.sheetHeader);
+/**
+ * The row-4 header contract for a stage, in column order.
+ *
+ * ===========================================================================
+ * THE CONTRACT FOLLOWS THE LAB'S SIEVE TABLE
+ * ===========================================================================
+ * Twelve of the fourteen sieve mass columns are named after a sieve's ABNT
+ * designation, and an administrator may change those designations — the lab
+ * re-calibrates, or replaces a sieve with the nearest one it has. Before this
+ * parameter existed the designation reached the arithmetic and the screen but
+ * NOT the workbook, so a stack re-designated to ABNT 18 kept a column headed
+ * `ABNT 16 empty sieve (g)` until somebody retyped it by hand — a heading
+ * that contradicted the figures underneath it on an ISO 9001 record.
+ *
+ * So `series` is the stored table and the contract is derived from it. Pass
+ * `null` and you get the shipped preset's spelling, which is what the four
+ * tabs were created with and what the registry's static `sheetHeader`
+ * strings say. The two agree by construction: both call `sieveMassHeaders`.
+ *
+ * ONLY THE SIEVE COLUMNS MOVE. Every other heading is a fixed string in the
+ * registry and is unaffected by any setting — see `seriesDerivedColumns`,
+ * which is the set the sync worker is allowed to rewrite in the live sheet.
+ */
+export function expectedHeaders(
+  stage: Stage,
+  series: SieveSeriesDocument | null = null,
+): string[] {
+  const positions = applySieveSeries(DEFAULT_SIEVE_PRESET, series).positions;
+  return STAGE_SCHEMAS[stage].fields.map((field) => {
+    const sieve = sieveMassKey(field.key);
+    if (sieve === null) return field.sheetHeader;
+    const position = positions[sieve.position - 1];
+    if (position === undefined) return field.sheetHeader;
+    return sieveMassHeaders(position.abnt, position.isPan)[sieve.kind];
+  });
+}
+
+/**
+ * The columns of a stage whose heading is derived from the sieve table.
+ *
+ * This is the repair surface, and it is deliberately narrow: these are the
+ * only cells the sync worker may rewrite in row 4 of a live tab, so a
+ * mismatch anywhere else still fences the workbook off as it always did.
+ */
+export function seriesDerivedColumns(stage: Stage): ReadonlySet<string> {
+  return new Set(
+    STAGE_SCHEMAS[stage].fields
+      .filter((field) => sieveMassKey(field.key) !== null)
+      .map((field) => field.columnLetter),
+  );
 }
 
 /**
@@ -218,16 +272,22 @@ export interface HeaderMismatch {
  * Trailing blanks beyond the legacy range are ignored, but a difference
  * inside it — including a changed space or accent — is a mismatch.
  */
-export function diffHeaders(stage: Stage, actualRow: readonly string[]): HeaderMismatch[] {
+export function diffHeaders(
+  stage: Stage,
+  actualRow: readonly string[],
+  series: SieveSeriesDocument | null = null,
+): HeaderMismatch[] {
   const schema = STAGE_SCHEMAS[stage];
+  const expected = expectedHeaders(stage, series);
   const mismatches: HeaderMismatch[] = [];
   schema.fields.forEach((field, i) => {
     const actual = (actualRow[i] ?? '').trim();
-    if (actual !== field.sheetHeader) {
+    const want = expected[i]!;
+    if (actual !== want) {
       mismatches.push({
         stage,
         columnLetter: field.columnLetter,
-        expected: field.sheetHeader,
+        expected: want,
         actual,
       });
     }

@@ -160,6 +160,12 @@ export interface ReconciliationRead {
   readonly apiCalls: number;
 }
 
+/** One row-4 cell to correct. */
+export interface HeaderCellWrite {
+  readonly columnLetter: string;
+  readonly value: string;
+}
+
 export interface SheetsHealth {
   readonly reachable: boolean;
   /** Round-trip time of the probe, in milliseconds. */
@@ -184,6 +190,18 @@ export interface GoogleSheetsAdapter {
     stage: Stage,
     options?: { readonly limit?: number; readonly fromRow?: number },
   ): Promise<ReconciliationRead>;
+
+  /**
+   * Rewrite named cells of row 4 on one tab.
+   *
+   * The ONLY write this interface offers outside the data region, and it is
+   * bounded on both axes: row 4 by construction, and to the columns whose
+   * heading is derived from the lab's sieve table by
+   * `assertHeaderRepairCells`, which every caller runs first. See
+   * `_shared/headerRepair.ts` for why the workbook is allowed to be corrected
+   * rather than merely fenced off when a sieve is re-designated.
+   */
+  writeHeaderCells(tab: string, cells: readonly HeaderCellWrite[]): Promise<void>;
 
   /** Cheap liveness probe. Must not write and must not read a data region. */
   healthCheck(): Promise<SheetsHealth>;

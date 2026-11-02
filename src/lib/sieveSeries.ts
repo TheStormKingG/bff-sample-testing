@@ -207,13 +207,61 @@ export function applySieveSeries(
 }
 
 /**
+ * A sieve position's two row-4 headings.
+ *
+ * ===========================================================================
+ * THE ONE PLACE A SIEVE COLUMN IS NAMED
+ * ===========================================================================
+ * The same two strings are needed in two places that must never disagree:
+ * `sieveMassFields` in the registry builds the DEFAULT contract from the
+ * shipped preset, and `expectedHeaders(stage, series)` builds the LIVE
+ * contract from whatever table the lab has configured. If those two spelled a
+ * heading differently by a single space, every sieve column on four tabs
+ * would read as drifted forever. They both call this.
+ *
+ * THE PAN IS NOT NAMED BY ITS DESIGNATION, and that is deliberate rather than
+ * an oversight in the follow-the-designation rule. The workbook's own
+ * conversion table puts ABNT 400 at 37 µm and marks it the pan, while the DGM
+ * sheet uses 38 µm for ABNT 400 and 37 µm for `Fundo` — possibly the pan
+ * counted twice. Until the lab settles that, the last position's heading says
+ * what is physically there. Its designation is still editable and still
+ * reaches the arithmetic; it just does not reach the heading, because the
+ * heading does not claim a mesh.
+ */
+export function sieveMassHeaders(
+  designation: string,
+  isPan: boolean,
+): { readonly tare: string; readonly gross: string } {
+  if (isPan) return { tare: 'Pan empty (g)', gross: 'Pan + sample (g)' };
+  return {
+    tare: `ABNT ${designation} empty sieve (g)`,
+    gross: `ABNT ${designation} sieve + sample (g)`,
+  };
+}
+
+/**
+ * Is this field key one of the fourteen sieve mass columns, and which?
+ *
+ * Returns the 1-based position in the stack and which of the pair it is, or
+ * null for every other field. The regex is the single definition of that
+ * naming convention; nothing else may re-derive it.
+ */
+export function sieveMassKey(
+  key: string,
+): { readonly position: number; readonly kind: 'tare' | 'gross' } | null {
+  const m = /^sieve(\d+)_(tare|gross)_g$/.exec(key);
+  if (m === null) return null;
+  return { position: Number(m[1]), kind: m[2] as 'tare' | 'gross' };
+}
+
+/**
  * The row-4 headings that would no longer describe the stack after this edit.
  *
- * Shown to the administrator BEFORE they save, because the workbook keeps the
- * headings it was created with and `verifyWorkbook()` compares them character
- * for character. Nothing breaks — the headings are labels and the column
- * identity is its position — but a spreadsheet that says ABNT 5 while the lab
- * uses ABNT 6 is a divergence somebody has to close by hand.
+ * Shown to the administrator BEFORE they save, so the change is not a
+ * surprise. The workbook's own headings DO follow — the sync worker rewrites
+ * those cells on its next pass, see `_shared/headerRepair.ts` — but that
+ * happens a moment later and on a machine the administrator cannot see, so
+ * the screen says which headings are about to change.
  */
 export function renamedPositions(
   before: SieveSeriesDocument,

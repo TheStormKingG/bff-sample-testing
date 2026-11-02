@@ -249,13 +249,15 @@ describe('StageForm — section bands', () => {
         ).length,
       0,
     );
-    // 98 across the original seven tabs plus 35 for `8 DGM`.
-    expect(columns).toBe(209);
+    // 239: see `tests/registry.test.ts` for the per-tab arithmetic.
+    expect(columns).toBe(239);
     // Was 7 — one column A per stage. Then 17, when DGM added nine
-    // server-computed columns. Now 44: eight column As, plus nine computed
-    // columns on each of the FOUR tabs that carry a sieve test. All of them
-    // are `system` precisely so they never render as an operator input.
-    expect(systemColumns).toBe(8 + 9 * 4);
+    // server-computed columns. Then 44, when three more tabs gained the sieve
+    // test. Now 54: eight column As, nine computed columns on each of the
+    // FIVE tabs that carry a sieve test, and the computed PDI on the two that
+    // carry the durability test. All of them are `system` precisely so they
+    // never render as an operator input.
+    expect(systemColumns).toBe(8 + 9 * 5 + 1 * 2);
     expect(notApplicable).toBe(1);
     expect(checked).toBe(columns - systemColumns - notApplicable);
   });
@@ -353,12 +355,16 @@ describe('StageForm — units', () => {
     // quantity still exists — as the computed `gsd` column, which is equally
     // dimensionless — but a `system` column never renders as an input, so it
     // cannot carry this assertion.
-    const values = { ...defaultStageValues('ground'), sampling_point: 'BC' };
-    renderStage('ground', values);
+    const values = defaultStageValues('crumble');
+    renderStage('crumble', values);
 
-    const gsd = STAGE_SCHEMAS.ground.fields.find(
+    // On `6 Crumble`, not `2 Ground`: ground meal is never tumbled, so that
+    // tab lost its drum speed in 0033. The property under test — a field with
+    // no unit at all — is unchanged.
+    const gsd = STAGE_SCHEMAS.crumble.fields.find(
       (field) => field.key === 'durability_tester_rpm',
     );
+    expect(gsd, 'durability_tester_rpm is not on 6 Crumble').toBeDefined();
     expect(gsd?.unit).toBeUndefined();
     expect(gsd?.unitConfirmed).toBeUndefined();
     // The label is the label and nothing else: no invented unit, and no

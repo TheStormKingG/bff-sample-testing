@@ -229,7 +229,6 @@ export function DashboardPage() {
         <HomeScreen
           plantDate={plantDate}
           mayRecord={mayRecord}
-          todayByStage={data?.todayByStage}
           awaitingResults={data?.awaitingResults}
           readyForReview={data?.readyForReview}
           onHold={data?.onHold}

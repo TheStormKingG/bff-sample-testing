@@ -292,9 +292,10 @@ describe('UAT-02: AM and BC compose differently all the way to the sheet', () =>
     expect(parsed.values).not.toHaveProperty('moisture_pct_bc');
 
     const row = toSheetRow('ground', 'AM-261024-01', parsed.values);
-    // N, not L: the sieve test took J..M when it replaced the two
-    // analyser-reading columns.
-    expect(row[columnLetterToIndex('N')]).toBe('');
+    // M, not L: the sieve test took J..L when it replaced the two
+    // analyser-reading columns, and `2 Ground` carries three settings rather
+    // than four because ground meal never goes in the durability tester.
+    expect(row[columnLetterToIndex('M')]).toBe('');
 
     // And it assesses as Not Applicable — distinct from Not Tested.
     const assessments = assessAll('ground', parsed.values, NO_APPROVED_RULES, instant);
@@ -319,7 +320,7 @@ describe('UAT-02: AM and BC compose differently all the way to the sheet', () =>
     expect(complete.ok).toBe(true);
     if (!complete.ok) return;
     const row = toSheetRow('ground', 'BC-261024-01', complete.values);
-    expect(row[columnLetterToIndex('N')]).toBe('12.4');
+    expect(row[columnLetterToIndex('M')]).toBe('12.4');
   });
 
   it('the two points write to the same tab but never to each other\'s columns', () => {
@@ -333,8 +334,8 @@ describe('UAT-02: AM and BC compose differently all the way to the sheet', () =>
 
     const amRow = toSheetRow('ground', 'AM-261024-01', am.values);
     const bcRow = toSheetRow('ground', 'BC-261024-01', bc.values);
-    expect(amRow).toHaveLength(40);
-    expect(bcRow).toHaveLength(40);
+    expect(amRow).toHaveLength(39);
+    expect(bcRow).toHaveLength(39);
     expect(amRow[columnLetterToIndex('D')]).toBe('AM after mill');
     expect(bcRow[columnLetterToIndex('D')]).toBe('BC before conditioning');
   });
@@ -438,7 +439,9 @@ describe('the soft implausibility guard never becomes a limit', () => {
 
     // Once confirmed, it is written exactly as typed.
     const row = toSheetRow('mash', 'MS-261024-01', parsed.values);
-    expect(row[columnLetterToIndex('M')]).toBe('99999');
+    // L: `7 Mash`'s first sieve weight, one column left of where it stood
+    // before the drum speed was removed from this tab.
+    expect(row[columnLetterToIndex('L')]).toBe('99999');
   });
 
   it('a physically impossible percentage IS rejected', () => {

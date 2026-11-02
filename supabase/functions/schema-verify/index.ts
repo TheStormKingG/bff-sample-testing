@@ -93,6 +93,8 @@ import {
 } from '../_shared/adapters/authorize.ts';
 import { SupabaseSyncStore, WORKBOOK_KEY } from '../_shared/adapters/store.ts';
 import { GoogleSheetsApiAdapter } from '../_shared/adapters/googleSheets.ts';
+import { readSieveSeries } from '../_shared/adapters/sieveSeries.ts';
+import { repairSieveHeaders } from '../_shared/headerRepair.ts';
 import { verifySchema, type SchemaProblem } from '../_shared/headerCheck.ts';
 import { runDriftRecovery } from '../_shared/driftRecovery.ts';
 import { can } from '../../../src/lib/roles.ts';
@@ -234,9 +236,38 @@ async function handler(ctx: RequestContext): Promise<Response> {
   const admin = adminClient();
   const store = new SupabaseSyncStore(admin);
 
+  const adapter = GoogleSheetsApiAdapter.fromEnvironment();
+  const sieveSeries = await readSieveSeries(admin);
   let reading;
   try {
-    reading = await GoogleSheetsApiAdapter.fromEnvironment().verifyWorkbook(STAGES);
+    const read = await adapter.verifyWorkbook(STAGES);
+    /*
+      Let the sieve headings catch up before judging them — but only for a
+      caller who could also LATCH on what they see.
+
+      Repairing is a write to a live quality record, and the same reasoning
+      that splits this endpoint's two permissions applies to it: `sync.view`
+      is enough to ASK what the headers say, and the answer a view-only
+      caller gets is the unvarnished one. Correcting the workbook is an act
+      with consequences, so it needs the role that is accountable for the
+      other one. Nothing is lost by withholding it: the scheduled worker
+      repairs on its next pass regardless of who looked.
+    */
+    reading = mayLatch
+      ? (
+          await repairSieveHeaders(adapter, read.reading, sieveSeries, STAGES, (message, detail) =>
+            console.info(
+              JSON.stringify({
+                fn: 'schema-verify',
+                correlationId: ctx.correlationId,
+                event: 'sieve_headings_repaired',
+                message,
+                detail,
+              }),
+            ),
+          )
+        ).reading
+      : read.reading;
   } catch (error) {
     // The adapter's own message goes to the server log against this request's
     // correlation id; the caller gets a fixed sentence and NO claim about the
@@ -273,7 +304,7 @@ async function handler(ctx: RequestContext): Promise<Response> {
     );
   }
 
-  const schema = verifySchema(reading.reading, STAGES);
+  const schema = verifySchema(reading, STAGES, sieveSeries);
   const checkedAt = new Date().toISOString();
   const previous = await store.readVerificationState();
 

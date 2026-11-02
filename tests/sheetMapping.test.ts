@@ -101,7 +101,7 @@ describe('toSheetRow: width and isolation', () => {
 
   it('ignores unknown keys instead of appending them', () => {
     const row = toSheetRow('mash', 'MS-261024-01', { injected_column: 'boom' });
-    expect(row).toHaveLength(36);
+    expect(row).toHaveLength(35);
     expect(row).not.toContain('boom');
   });
 
@@ -163,7 +163,15 @@ describe('toSheetRow: zero is not blank (Master Prompt §10, PRD §6.1)', () => 
     // That is why Ground went 4 -> 19 and Mash 3 -> 18 (each +17 and -2, for
     // the two analyser-reading columns the test replaced) while Crumble went
     // 5 -> 21 (+17, -1: it never had a GSD column).
-    expect(checked).toBe(93);
+    //
+    // 0033 then moved it to 111. Ground and Mash each lost the drum speed
+    // (-1 twice); `6 Crumble` traded its typed-in PDI for two weighings and a
+    // computed percentage (+1, since the percentage is `system` and so is not
+    // in this sweep); and `4 Pellets` gained the whole editable half of the
+    // sieve test plus the two weighings: 3 settings that take a number, the
+    // sieve-series select, 14 masses and 2 weights, so +18 on a tab that had
+    // 2. 93 - 1 - 1 + 1 + 19 = 111.
+    expect(checked).toBe(111);
   });
 });
 
@@ -233,7 +241,8 @@ describe('toSheetRow: non-applicable fields', () => {
       sampling_point: 'AM',
       moisture_pct_bc: 12.4, // stale value from a switched point
     });
-    expect(row[columnLetterToIndex('L')]).toBe('');
+    // K since the sieve test took J..L on `2 Ground` and the drum speed left.
+    expect(row[columnLetterToIndex('M')]).toBe('');
   });
 
   it('writes BC moisture at BC', () => {
@@ -241,8 +250,9 @@ describe('toSheetRow: non-applicable fields', () => {
       sampling_point: 'BC',
       moisture_pct_bc: 12.4,
     });
-    // N since the sieve test took J..M on `2 Ground`.
-    expect(row[columnLetterToIndex('N')]).toBe('12.4');
+    // M since the sieve test took J..L on `2 Ground`: three settings, not
+    // four — ground meal never goes in the durability tester's drum.
+    expect(row[columnLetterToIndex('M')]).toBe('12.4');
   });
 });
 
@@ -295,7 +305,7 @@ describe('toSheetRow: no cross-tab or cross-column bleed', () => {
       ['conditioned', 'J'],
       ['extruded_soya', 'L'],
       ['crumble', 'L'],
-      ['mash', 'K'],
+      ['mash', 'J'],
     ];
     const idColumn = columnLetterToIndex('A');
     for (const [stage, letter] of expectations) {

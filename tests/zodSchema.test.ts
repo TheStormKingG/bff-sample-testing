@@ -622,7 +622,7 @@ describe('the schema is generated, not hand-written per stage', () => {
       expect(new Set(actualKeys).size, stage).toBe(actualKeys.length);
       for (const key of expectedKeys) expect(actualKeys, `${stage} missing ${key}`).toContain(key);
     }
-    // 93 number fields + 11 controlled-code fields across the eight tabs.
+    // 111 number fields + 12 controlled-code fields across the eight tabs.
     //
     // The numbers were 47 before the sieve test moved onto `2 Ground`,
     // `6 Crumble` and `7 Mash`: each tab gained 17 numeric sieve columns and
@@ -632,11 +632,18 @@ describe('the schema is generated, not hand-written per stage', () => {
     // The controlled codes were 8: raw materials `material`, `mould_seen`,
     // `insects_seen`, `foreign_matter_seen`, `bad_smell`; ground
     // `sampling_point` and `mill_screen_size_mm`; DGM `sieve_series`. They are
-    // 11 now because `sieve_series` is a select and three more tabs carry one.
+    // 11 then, because `sieve_series` is a select and three more tabs carried
+    // one; 12 now that `4 Pellets` carries one too.
+    //
+    // 0033 moved the numbers from 93 to 111: Ground and Mash each lost the
+    // durability tester's drum speed (-1 twice); `6 Crumble` traded one
+    // typed-in PDI percentage for two weighings (+1, the computed percentage
+    // being `system` and so outside this sweep); and `4 Pellets` gained 2
+    // numeric settings, 14 masses and the 2 weighings (+18).
     //
     // Asserted so that a registry change dropping fields out of the sweep
     // fails here rather than passing quietly with less coverage than claimed.
-    expect(checked).toBe(93 + 11);
+    expect(checked).toBe(111 + 12);
   });
 
   it('never emits a key the registry does not define for the stage', () => {

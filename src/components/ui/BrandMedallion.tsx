@@ -24,19 +24,24 @@ import { cn } from '@/lib/cn';
  * ===========================================================================
  * HOW THE COIN IS BUILT
  * ===========================================================================
- * Three layers inside one `preserve-3d` box, which the browser then sorts by
+ * Two layers inside one `preserve-3d` box, which the browser then sorts by
  * depth for free:
  *
- *   front   translateZ(+3px)                  the logo
- *   rim     at z = 0, scaled a hair larger    a brushed-metal disc
- *   back    rotateY(180deg) translateZ(+3px)  the logo again, so it reads
- *                                             mirrored from behind, as it
- *                                             does in the reference
+ *   front   (no transform)          the logo
+ *   back    rotateY(180deg)         the logo again, so it reads mirrored
+ *                                   from behind, as it does in the reference
  *
- * The rim is hidden behind whichever face is toward the viewer and shows as a
- * silver crescent at the edge as the coin turns — which is what gives it
- * thickness without modelling a cylinder. `backface-visibility: hidden` on
- * both faces stops the front bleeding through once it has turned past 90°.
+ * `backface-visibility: hidden` on both faces stops the front bleeding
+ * through once it has turned past 90°.
+ *
+ * THERE IS NO RIM. An earlier build put a brushed-metal disc between the two
+ * faces at z = 0, scaled 3% larger, to read as the coin's edge. Because it
+ * was larger than the logo it was not only an edge: it stood proud of the
+ * badge as a silver ring at EVERY angle, including face-on, where the mark
+ * should be the logo and nothing else. Removed at the owner's instruction.
+ * The faces are consequently coplanar, so the coin passes through a moment of
+ * invisibility at exactly 90° — which is what a turning card does, and is the
+ * honest reading of a two-sided mark with no thickness.
  *
  * ===========================================================================
  * IT STOPS WHEN ASKED
@@ -68,10 +73,11 @@ export function BrandMedallion({ size = 120, className }: BrandMedallionProps): 
         // THE SHADOW LIVES HERE, ON THE STATIC WRAPPER, and that is not a
         // style choice. A `filter` makes its element a containing block and
         // FLATTENS `transform-style: preserve-3d` to `flat`. Putting the
-        // drop-shadow on the spinning box collapsed the three layers into
-        // paint order, so the rim — the middle child — covered the logo and
-        // the coin rendered as a plain silver disc. Caught in a screenshot,
-        // not in a type.
+        // drop-shadow on the spinning box collapsed the layers into paint
+        // order, so the back face sat on top of the front one and the coin
+        // stopped turning in depth. Caught in a screenshot, not in a type.
+        // The rule outlives the rim it was found with: a `filter` anywhere on
+        // the `preserve-3d` element flattens it.
         filter: 'drop-shadow(0 6px 10px rgb(15 23 42 / 0.18))',
       }}
       // Decorative: every screen that uses this also renders the company name
@@ -84,28 +90,13 @@ export function BrandMedallion({ size = 120, className }: BrandMedallionProps): 
           alt=""
           draggable={false}
           className={cn(face, 'select-none')}
-          style={{ transform: 'translateZ(3px)' }}
-        />
-        {/*
-          The edge. A flat disc at z = 0 between the two faces: invisible
-          head-on, a silver crescent at a three-quarter turn. The gradient runs
-          across the coin rather than around it, which is what brushed metal
-          does under one light.
-        */}
-        <div
-          className="absolute inset-0 rounded-full"
-          style={{
-            transform: 'scale(1.03)',
-            background:
-              'linear-gradient(100deg, #6b7280 0%, #e5e7eb 28%, #9ca3af 52%, #f3f4f6 74%, #6b7280 100%)',
-          }}
         />
         <img
           src={BRAND_LOGO_SRC}
           alt=""
           draggable={false}
           className={cn(face, 'select-none')}
-          style={{ transform: 'rotateY(180deg) translateZ(3px)' }}
+          style={{ transform: 'rotateY(180deg)' }}
         />
       </div>
     </div>

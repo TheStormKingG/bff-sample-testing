@@ -31,6 +31,7 @@ import {
   rangeForRow,
 } from '../../../../src/forms/sheetMapping.ts';
 import { assertWritableRange, type StageHeaderReading } from '../headerCheck.ts';
+import { HEADER_ROW } from '../headerRepair.ts';
 import type { LocatedRecord } from '../projection.ts';
 import {
   SHEETS_VALUE_INPUT_OPTION,
@@ -45,6 +46,7 @@ import {
   type UpsertRequest,
   type UpsertResult,
   type VerifyWorkbookResult,
+  type HeaderCellWrite,
 } from '../sheets.ts';
 import { DEFAULT_READ_BUDGET, DEFAULT_WRITE_BUDGET, QuotaLedger } from '../quota.ts';
 import { GoogleTokenProvider, parseServiceAccount } from './googleAuth.ts';
@@ -358,6 +360,31 @@ export class GoogleSheetsApiAdapter implements GoogleSheetsAdapter {
       duplicateRows: matches.slice(1),
       rowsScanned: matches.length,
     };
+  }
+
+  async writeHeaderCells(tab: string, cells: readonly HeaderCellWrite[]): Promise<void> {
+    if (cells.length === 0) return;
+    /*
+      One `values:batchUpdate`, not one call per cell: a re-designated stack
+      can move all fourteen headings on four tabs at once, and fifty-six
+      separate writes would blow the quota this class is built to respect.
+
+      Each range names ONE cell in row 4. `HEADER_ROW` is the only row number
+      this method can produce — it is not a parameter and there is no path
+      that computes one — so no range built here can reach the data region.
+      The caller has already run `assertHeaderRepairCells` over the columns.
+    */
+    const quoted = quoteTabName(tab);
+    const data = cells.map((cell) => ({
+      range: `${quoted}!${cell.columnLetter}${HEADER_ROW}:${cell.columnLetter}${HEADER_ROW}`,
+      majorDimension: 'ROWS' as const,
+      values: [[cell.value]],
+    }));
+    await this.call('write', '/values:batchUpdate', {
+      method: 'POST',
+      operation: 'values.batchUpdate',
+      body: JSON.stringify({ valueInputOption: SHEETS_VALUE_INPUT_OPTION, data }),
+    });
   }
 
   async upsertOperationalRow(request: UpsertRequest): Promise<UpsertResult> {

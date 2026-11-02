@@ -32,6 +32,7 @@ import { DEFAULT_SIEVE_PRESET, SIEVE_PRESETS } from '../lib/dgm.ts';
 // generated from where it starts rather than typed out as letters. Its own
 // module because `sheetMapping.ts`, which held it, imports this file.
 import { indexToColumnLetter } from './columns.ts';
+import { sieveMassHeaders } from '../lib/sieveSeries.ts';
 
 const MATERIAL_OPTIONS = [
   { value: 'corn', label: 'Corn' },
@@ -235,8 +236,14 @@ const sieveMassFields = (startIndex: number, required: Requiredness): FieldDef[]
   DEFAULT_SIEVE_PRESET.positions.flatMap((position, i): FieldDef[] => {
     const n = i + 1;
     const name = position.isPan ? 'Pan' : `ABNT ${position.abnt}`;
-    const tareHeader = position.isPan ? 'Pan empty (g)' : `${name} empty sieve (g)`;
-    const grossHeader = position.isPan ? 'Pan + sample (g)' : `${name} sieve + sample (g)`;
+    // Spelled by `sieveMassHeaders`, not here: `expectedHeaders(stage, series)`
+    // builds the same two strings from the lab's configured table, and a
+    // single space of difference between the two spellings would read as
+    // permanent drift on fourteen columns of four tabs.
+    const { tare: tareHeader, gross: grossHeader } = sieveMassHeaders(
+      position.abnt,
+      position.isPan,
+    );
     const aperture = `Aperture ${position.apertureMicrons} µm.`;
     const common = {
       type: 'number',
@@ -306,78 +313,178 @@ const sieveMassFields = (startIndex: number, required: Requiredness): FieldDef[]
  * IS shared, because that name was right the first time — and because it is
  * the one key the arithmetic in `derived.ts` reads by name.
  */
-const sieveTestSettings = (startIndex: number, seriesRequired: Requiredness): FieldDef[] => [
-  {
-    key: 'durability_tester_rpm',
-    columnLetter: indexToColumnLetter(startIndex),
-    sheetHeader: 'Durability tester RPM',
-    label: 'Durability tester RPM',
-    type: 'number',
-    section: 'settings',
-    required: 'optional',
-    min: 0,
-    implausibleAbove: 10000,
-    decimals: 0,
-    // Deliberately NOT made conditional on a separate yes/no column. A filled
-    // RPM already means "the Particle Durability Tester was used" and a blank
-    // one means it was not, so the record answers the question without a
-    // second field that could contradict it.
-    help:
-      'Only when the Particle Durability Tester was used: the drum speed for that run. ' +
-      'Leave blank for an ordinary sieve test.',
-  },
-  {
-    key: 'sieve_shaker_hz',
-    columnLetter: indexToColumnLetter(startIndex + 1),
-    sheetHeader: 'Sieve shaker frequency (Hz)',
-    label: 'Sieve shaker frequency',
-    type: 'number',
-    unit: 'Hz',
-    unitConfirmed: true,
-    section: 'settings',
-    required: 'optional',
-    min: 0,
-    implausibleAbove: 200,
-    decimals: 0,
-    defaultValue: '8',
-    help: 'The frequency the sieve stack was shaken at. 8 Hz unless the method says otherwise.',
-  },
-  {
-    key: 'sieve_vibration_min',
-    columnLetter: indexToColumnLetter(startIndex + 2),
-    sheetHeader: 'Vibration time (min)',
-    // NOT grind time. This is how long the stack ran in the vibrator, which
-    // is a property of the sieve test and not of how the product was made.
-    label: 'Vibration time',
-    type: 'number',
-    unit: 'min',
-    unitConfirmed: true,
-    section: 'settings',
-    required: 'optional',
-    min: 0,
-    implausibleAbove: 240,
-    decimals: 0,
-    defaultValue: '10',
-    help: 'How long the sieve stack ran in the vibrator. 10 minutes unless the method says otherwise.',
-  },
-  {
-    key: 'sieve_series',
-    columnLetter: indexToColumnLetter(startIndex + 3),
-    sheetHeader: 'Sieve series',
-    label: 'Sieve series',
-    type: 'select',
-    section: 'settings',
-    required: seriesRequired,
+interface SieveSettingsOptions {
+  /**
+   * Include the Particle Durability Tester's drum speed.
+   *
+   * It is on the tabs whose product is TUMBLED before the stack is weighed —
+   * `4 Pellets` and `6 Crumble` — and on `8 DGM`, which is the master log
+   * those two also write to and therefore has to be able to hold the figure.
+   * It is NOT on `2 Ground` or `7 Mash`: ground meal and finished mash are
+   * never put in the tester's drum, so a drum-speed box on those two forms is
+   * a question with no answer, and a blank one on a quality record reads as a
+   * step that was skipped rather than one that does not exist.
+   */
+  readonly durabilityTester: boolean;
+}
+
+const sieveTestSettings = (
+  startIndex: number,
+  seriesRequired: Requiredness,
+  { durabilityTester }: SieveSettingsOptions,
+): FieldDef[] => {
+  const settings: Omit<FieldDef, 'columnLetter'>[] = [];
+  if (durabilityTester) {
+    settings.push({
+      key: 'durability_tester_rpm',
+      sheetHeader: 'Durability tester RPM',
+      label: 'Durability tester RPM',
+      type: 'number',
+      section: 'settings',
+      required: 'optional',
+      min: 0,
+      implausibleAbove: 10000,
+      decimals: 0,
+      // Deliberately NOT made conditional on a separate yes/no column. A
+      // filled RPM already means "the Particle Durability Tester was used"
+      // and a blank one means it was not, so the record answers the question
+      // without a second field that could contradict it.
+      help: 'Blank unless the tester was used.',
+    });
+  }
+  settings.push(
+    {
+      key: 'sieve_shaker_hz',
+      sheetHeader: 'Sieve shaker frequency (Hz)',
+      label: 'Sieve shaker frequency',
+      type: 'number',
+      unit: 'Hz',
+      unitConfirmed: true,
+      section: 'settings',
+      required: 'optional',
+      min: 0,
+      implausibleAbove: 200,
+      decimals: 0,
+      defaultValue: '8',
+      help: 'Usually 8 Hz.',
+    },
+    {
+      key: 'sieve_vibration_min',
+      sheetHeader: 'Vibration time (min)',
+      // NOT grind time. This is how long the stack ran in the vibrator, which
+      // is a property of the sieve test and not of how the product was made.
+      label: 'Vibration time',
+      type: 'number',
+      unit: 'min',
+      unitConfirmed: true,
+      section: 'settings',
+      required: 'optional',
+      min: 0,
+      implausibleAbove: 240,
+      decimals: 0,
+      defaultValue: '10',
+      help: 'Usually 10 minutes.',
+    },
+    {
+      key: 'sieve_series',
+      sheetHeader: 'Sieve series',
+      label: 'Sieve series',
+      type: 'select',
+      section: 'settings',
+      required: seriesRequired,
     // Derived from the arithmetic module rather than re-listed, so a preset
     // can never exist in one file and not the other. Individual apertures are
     // deliberately NOT editable: Kj is assigned by POSITION in the stack and
     // 104.14 is calibrated to this exact series, so a changed aperture would
     // move no number while silently changing what the number means. Changing
     // the stack is adding a preset, which is a code change.
-    options: SIEVE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label })),
-    help: 'The stack of sieves used. The apertures are fixed by the series and are shown on each weight below.',
-  },
-];
+      options: SIEVE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label })),
+      // The apertures are not restated here: every weight below is labelled
+      // with its own, which is where an operator is looking when the question
+      // arises. Short enough for a two-column cell — see `pairedFields`.
+      help: 'The sieve stack used.',
+    },
+  );
+  // Addressed by POSITION in the band, so a tab that carries the tester and a
+  // tab that does not both get a contiguous run of columns from `startIndex`
+  // with no gap where the omitted field would have been.
+  return settings.map((field, i) => ({
+    ...field,
+    columnLetter: indexToColumnLetter(startIndex + i),
+  })) as FieldDef[];
+};
+
+/**
+ * The pellet durability test: two weights in, one percentage out.
+ *
+ * ===========================================================================
+ * WHY PDI IS NO LONGER TYPED IN
+ * ===========================================================================
+ * `6 Crumble` carried `Pellet durability (PDI, %)` as a number the operator
+ * keyed, which made the record hold a conclusion with no trace of what
+ * produced it: a PDI of 97.6 said nothing about whether 500 g or 480 g went
+ * into the drum, and nothing could be recomputed or checked afterwards. The
+ * method is a ratio of two weighings —
+ *
+ *     PDI (%) = whole pellets after tumbling / sample before tumbling x 100
+ *
+ * — so the two weighings are what the operator records and the percentage is
+ * what the system works out, exactly as the sieve test's nine columns are.
+ * The figure on the record is then always the arithmetic of the figures
+ * beside it, and a transcription slip has nowhere to hide.
+ *
+ * A RESULT ABOVE 100% IS WRITTEN, NOT SUPPRESSED. It is physically
+ * impossible — nothing comes out of a tumbler heavier than it went in — so it
+ * means one of the two weighings is wrong. Blanking it would hide the fault
+ * and leave the operator to wonder why the column is empty; writing it puts
+ * the contradiction on the screen beside the two numbers that caused it,
+ * where it can be corrected.
+ */
+const pdiFields = (startIndex: number): FieldDef[] => {
+  const at = (offset: number): string => indexToColumnLetter(startIndex + offset);
+  const common = {
+    type: 'number',
+    section: 'test_results',
+    // Optional, like the sieve masses beside them: a tab that carries the
+    // durability test does not carry it on every sample, and a required pair
+    // would block a record of the other measurements on the same form.
+    required: 'optional',
+    unit: 'g',
+    unitConfirmed: true,
+    min: 0,
+    implausibleAbove: 5000,
+    decimals: 2,
+  } as const;
+  return [
+    {
+      ...common,
+      key: 'pdi_before_g',
+      columnLetter: at(0),
+      sheetHeader: 'Sample before tumbling (g)',
+      label: 'Sample before tumbling',
+      // 500 g is the method's figure and the one the lab weighs out, so it is
+      // seeded — and, like every default here, only onto a blank new form, so
+      // an operator who weighs 498.4 and types it keeps 498.4.
+      defaultValue: '500',
+      help: 'Weighed whole pellets, before the drum.',
+    },
+    {
+      ...common,
+      key: 'pdi_after_g',
+      columnLetter: at(1),
+      sheetHeader: 'Whole pellets after tumbling (g)',
+      label: 'Whole pellets after tumbling',
+      help: 'What was left whole on the screen.',
+    },
+    derivedField(
+      'pellet_durability_pdi_pct',
+      at(2),
+      'Pellet durability (PDI, %)',
+      'Pellet durability (PDI)',
+      `${HELP.pdi} The two weights above as a percentage, worked out by the system.`,
+    ),
+  ];
+};
 
 /** One server-computed column. */
 const derivedField = (
@@ -667,15 +774,15 @@ const rawMaterials: StageSchema = {
 };
 
 // ---------------------------------------------------------------------------
-// F02 — 2 Ground, A:AN (40 columns), prefix AM or BC from the point code
+// F02 — 2 Ground, A:AM (39 columns), prefix AM or BC from the point code
 // ---------------------------------------------------------------------------
 const ground: StageSchema = {
   stage: 'ground',
   ordinal: 2,
   title: 'Ground',
   sheetTab: '2 Ground',
-  lastColumn: 'AN',
-  columnCount: 40,
+  lastColumn: 'AM',
+  columnCount: 39,
   prefix: null, // resolved from sampling_point — see resolvePrefix()
   description: 'Ground material, before conditioning',
   instruction:
@@ -734,7 +841,7 @@ const ground: StageSchema = {
       unit: 'mm',
       unitConfirmed: true,
       options: MILL_SCREEN_OPTIONS,
-      help: 'The screen fitted to the mill when the sample was taken. 5 or 7 mm, as in the source log.',
+      help: '5 or 7 mm, as fitted when sampled.',
     },
     {
       key: 'hammer_distance_mm',
@@ -751,19 +858,24 @@ const ground: StageSchema = {
       decimals: 1,
       parameterKey: 'ground.hammer_distance',
     },
-    // J..M. The sieve test replaces what used to be J and K: an `Average
+    // J..L. The sieve test replaces what used to be J and K: an `Average
     // particle size (µm)` and a `Size spread (GSD)` typed in from an analyser
     // reading, both `testing` and therefore unreachable on a registration-only
     // form — across every Ground sample ever registered, neither column ever
     // held a value. Both quantities are still recorded, as `DGM (µm)` and
     // `Geometric standard deviation` in the computed block below, and now they
     // come from the stack the operator actually weighed.
-    ...sieveTestSettings(9, 'optional'),
+    //
+    // THREE settings, not four. Ground meal never goes in the durability
+    // tester's drum, so the drum-speed column was a question this tab could
+    // not answer; it was removed at the owner's instruction and everything
+    // right of it moved one column left.
+    ...sieveTestSettings(9, 'optional', { durabilityTester: false }),
     {
       key: 'moisture_pct_bc',
       // Kept FIRST in the results band, ahead of the weights, because it is
       // the one result on this tab that is not part of the sieve test.
-      columnLetter: 'N',
+      columnLetter: 'M',
       sheetHeader: 'Moisture (%) at BC',
       label: 'Moisture at BC',
       type: 'number',
@@ -780,12 +892,12 @@ const ground: StageSchema = {
       appliesWhen: { field: 'sampling_point', equals: ['BC'] },
       help: HELP.moisture,
     },
-    // O..AB
-    ...sieveMassFields(14, 'optional'),
-    // AC..AK
-    ...sieveDerivedFields(28),
-    actionTaken('AL'),
-    ...testedByAndComments('AM', 'AN'),
+    // N..AA
+    ...sieveMassFields(13, 'optional'),
+    // AB..AJ
+    ...sieveDerivedFields(27),
+    actionTaken('AK'),
+    ...testedByAndComments('AL', 'AM'),
   ],
 };
 
@@ -802,7 +914,7 @@ const conditioned: StageSchema = {
   prefix: 'AC',
   description: 'Mash after conditioning, before pelleting',
   instruction:
-    'Sample at the conditioner outlet, before the pellet die. Record the conditioner settings in use. Use the same batch no. as the ground material record. If that batch cannot be found, a documented exception is recorded.',
+    'Sample at the conditioner outlet, before the pellet die. Record the conditioner settings in use. Use the same batch no. as the ground material record. If that batch cannot be found, a documented exception is recorded. The unit for the steam pressure reading is not yet confirmed (bar or kg/cm²), so that value is recorded but never assessed against a limit.',
   frequency: 'To set',
   frequencyApproved: false,
   fields: [
@@ -851,7 +963,13 @@ const conditioned: StageSchema = {
       implausibleAbove: 100,
       decimals: 2,
       parameterKey: 'conditioned.steam_pressure',
-      help: 'The unit for this reading is not yet confirmed (bar or kg/cm²), so the value is recorded but never assessed against a limit.',
+      // The full sentence moved to the stage instruction when the settings
+      // band went to two columns: a cell there is about 131px wide and this
+      // ran to six lines in it, leaving a dead zone beside the field next to
+      // it. Nothing is lost — `unitConfirmed: false` is what actually stops
+      // the engine assessing it, and the instruction above the form says why
+      // in full. This keeps the caveat where the figure is typed.
+      help: 'Unit not confirmed; not assessed.',
     },
     {
       key: 'water_added_pct',
@@ -906,19 +1024,27 @@ const conditioned: StageSchema = {
 };
 
 // ---------------------------------------------------------------------------
-// F04 — 4 Pellets, A:K (11 columns), prefix AP
+// F04 — 4 Pellets, A:AO (41 columns), prefix AP
+//
+// THE SIEVE TEST AND THE DURABILITY TEST BOTH LIVE HERE NOW. The tab held
+// four measurements — temperature, diameter, an action and a comment — and
+// nothing about particle size, while the pellet is the product the plant
+// actually sells and the one the durability tester was bought for. It now
+// carries the same sieve block as `2 Ground`, `6 Crumble` and `7 Mash`, from
+// the same generators, plus the drum speed and the two weighings the PDI is
+// computed from.
 // ---------------------------------------------------------------------------
 const pellets: StageSchema = {
   stage: 'pellets',
   ordinal: 4,
   title: 'Pellets',
   sheetTab: '4 Pellets',
-  lastColumn: 'K',
-  columnCount: 11,
+  lastColumn: 'AO',
+  columnCount: 41,
   prefix: 'AP',
   description: 'Pellets after the die, before crumbling',
   instruction:
-    'Sample at the pellet die outlet, before the crumbler. Use the same batch no. as the conditioned mash record.',
+    'Sample at the pellet die outlet, before the crumbler. Use the same batch no. as the conditioned mash record. For durability, weigh the sample, tumble it, then weigh what is left whole; for particle size, weigh each empty sieve and weigh it again with what stayed on it.',
   frequency: 'To set',
   frequencyApproved: false,
   fields: [
@@ -951,9 +1077,11 @@ const pellets: StageSchema = {
       section: 'sample_details',
       required: 'registration',
     },
+    // G..J
+    ...sieveTestSettings(6, 'optional', { durabilityTester: true }),
     {
       key: 'pellet_temperature_c',
-      columnLetter: 'G',
+      columnLetter: 'K',
       sheetHeader: 'Pellet temperature (°C)',
       label: 'Pellet temperature',
       type: 'number',
@@ -969,7 +1097,7 @@ const pellets: StageSchema = {
     },
     {
       key: 'pellet_diameter_mm',
-      columnLetter: 'H',
+      columnLetter: 'L',
       sheetHeader: 'Pellet diameter (mm)',
       label: 'Pellet diameter',
       type: 'number',
@@ -983,8 +1111,14 @@ const pellets: StageSchema = {
       parameterKey: 'pellets.pellet_diameter',
       help: HELP.size,
     },
-    actionTaken('I'),
-    ...testedByAndComments('J', 'K'),
+    // M..O
+    ...pdiFields(12),
+    // P..AC
+    ...sieveMassFields(15, 'optional'),
+    // AD..AL
+    ...sieveDerivedFields(29),
+    actionTaken('AM'),
+    ...testedByAndComments('AN', 'AO'),
   ],
 };
 
@@ -1163,15 +1297,15 @@ const extrudedSoya: StageSchema = {
 };
 
 // ---------------------------------------------------------------------------
-// F06 — 6 Crumble, A:AM (39 columns), prefix CR
+// F06 — 6 Crumble, A:AO (41 columns), prefix CR
 // ---------------------------------------------------------------------------
 const crumble: StageSchema = {
   stage: 'crumble',
   ordinal: 6,
   title: 'Crumble',
   sheetTab: '6 Crumble',
-  lastColumn: 'AM',
-  columnCount: 39,
+  lastColumn: 'AO',
+  columnCount: 41,
   prefix: 'CR',
   description: 'Finished crumble',
   instruction:
@@ -1222,8 +1356,9 @@ const crumble: StageSchema = {
       decimals: 2,
       parameterKey: 'crumble.roll_gap',
     },
-    // H..K
-    ...sieveTestSettings(7, 'optional'),
+    // H..K. The drum speed belongs on this tab more than on any other: the
+    // tester's drum is what crumbles are tumbled in before they are weighed.
+    ...sieveTestSettings(7, 'optional', { durabilityTester: true }),
     {
       key: 'moisture_pct',
       columnLetter: 'L',
@@ -1243,28 +1378,16 @@ const crumble: StageSchema = {
     // `avg_particle_size_um` stood at I: a figure typed in from an analyser
     // reading, `testing` and therefore unreachable on a registration-only
     // form — no Crumble sample ever carried a value for it. It is now
-    // computed, as `DGM (µm)`, from the weights below. The durability tester
-    // belongs on this tab more than on any other: its drum is what crumbles
-    // are tumbled in before the stack is weighed.
-    {
-      key: 'pellet_durability_pdi_pct',
-      columnLetter: 'M',
-      sheetHeader: 'Pellet durability (PDI, %)',
-      label: 'Pellet durability (PDI)',
-      type: 'number',
-      section: 'test_results',
-      required: 'testing',
-      unit: '%',
-      unitConfirmed: true,
-      min: 0,
-      max: 100,
-      decimals: 1,
-      parameterKey: 'crumble.pellet_durability_pdi',
-      help: HELP.pdi,
-    },
+    // computed, as `DGM (µm)`, from the weights below.
+    //
+    // M..O. `Pellet durability (PDI, %)` stood alone at M as a percentage the
+    // operator keyed. It is still at the same place in the reading order but
+    // it is now the THIRD of three columns: the two weighings that produce
+    // it, then the percentage itself, computed. See `pdiFields`.
+    ...pdiFields(12),
     {
       key: 'crumble_size_mm',
-      columnLetter: 'N',
+      columnLetter: 'P',
       sheetHeader: 'Crumble size (mm)',
       label: 'Crumble size',
       type: 'number',
@@ -1278,24 +1401,24 @@ const crumble: StageSchema = {
       parameterKey: 'crumble.crumble_size',
       help: HELP.size,
     },
-    // O..AB
-    ...sieveMassFields(14, 'optional'),
-    // AC..AK
-    ...sieveDerivedFields(28),
-    ...testedByAndComments('AL', 'AM'),
+    // Q..AD
+    ...sieveMassFields(16, 'optional'),
+    // AE..AM
+    ...sieveDerivedFields(30),
+    ...testedByAndComments('AN', 'AO'),
   ],
 };
 
 // ---------------------------------------------------------------------------
-// F07 — 7 Mash, A:AJ (36 columns), prefix MS
+// F07 — 7 Mash, A:AI (35 columns), prefix MS
 // ---------------------------------------------------------------------------
 const mash: StageSchema = {
   stage: 'mash',
   ordinal: 7,
   title: 'Mash',
   sheetTab: '7 Mash',
-  lastColumn: 'AJ',
-  columnCount: 36,
+  lastColumn: 'AI',
+  columnCount: 35,
   prefix: 'MS',
   description: 'Finished mash',
   instruction:
@@ -1332,16 +1455,16 @@ const mash: StageSchema = {
       section: 'sample_details',
       required: 'registration',
     },
-    // G..J. `7 Mash` had no settings band at all until now: nothing about how
-    // the mash was made was recorded on the tab. These four describe the sieve
-    // test rather than the mixer, which is what the band means on every other
-    // tab that has one.
-    ...sieveTestSettings(6, 'optional'),
+    // G..I. `7 Mash` had no settings band at all until now: nothing about how
+    // the mash was made was recorded on the tab. These three describe the
+    // sieve test rather than the mixer, which is what the band means on every
+    // other tab that has one. No drum speed: finished mash is not tumbled.
+    ...sieveTestSettings(6, 'optional', { durabilityTester: false }),
     {
       key: 'moisture_pct',
       // Kept first in the results band, ahead of the weights: the one result
       // on this tab that is not part of the sieve test.
-      columnLetter: 'K',
+      columnLetter: 'J',
       sheetHeader: 'Moisture (%)',
       label: 'Moisture',
       type: 'number',
@@ -1360,11 +1483,11 @@ const mash: StageSchema = {
     // unreachable on a registration-only form — no Mash sample ever carried a
     // value for either. They return below as `DGM (µm)` and `Geometric
     // standard deviation`, computed from the weights rather than transcribed.
-    // L..Y
-    ...sieveMassFields(11, 'optional'),
-    // Z..AH
-    ...sieveDerivedFields(25),
-    ...testedByAndComments('AI', 'AJ'),
+    // K..X
+    ...sieveMassFields(10, 'optional'),
+    // Y..AG
+    ...sieveDerivedFields(24),
+    ...testedByAndComments('AH', 'AI'),
   ],
 };
 
@@ -1444,9 +1567,7 @@ const dgm: StageSchema = {
       // filled RPM already means "the Particle Durability Tester was used"
       // and a blank one means it was not, so the record answers the question
       // without a second field that could contradict it.
-      help:
-        'Only when the Particle Durability Tester was used: the drum speed for that run. ' +
-        'Leave blank for an ordinary sieve test.',
+      help: 'Blank unless the tester was used.',
     },
     {
       key: 'mill_hz_position',
@@ -1461,7 +1582,7 @@ const dgm: StageSchema = {
       implausibleAbove: 200,
       decimals: 0,
       defaultValue: '8',
-      help: 'The frequency the sieve stack was shaken at. 8 Hz unless the method says otherwise.',
+      help: 'Usually 8 Hz.',
     },
     {
       key: 'grind_time',
@@ -1479,7 +1600,7 @@ const dgm: StageSchema = {
       implausibleAbove: 240,
       decimals: 0,
       defaultValue: '10',
-      help: 'How long the sieve stack ran in the vibrator. 10 minutes unless the method says otherwise.',
+      help: 'Usually 10 minutes.',
     },
     {
       key: 'sieve_series',
@@ -1496,7 +1617,7 @@ const dgm: StageSchema = {
       // aperture would move no number while silently changing what the number
       // means. Changing the stack is adding a preset, which is a code change.
       options: SIEVE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label })),
-      help: 'The stack of sieves used. The apertures are fixed by the series and are shown on each weight below.',
+      help: 'The sieve stack used.',
     },
     // K..X, the same fourteen weights the three inline sieve tabs carry.
     ...sieveMassFields(10, 'registration'),

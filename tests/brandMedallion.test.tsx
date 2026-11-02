@@ -29,6 +29,21 @@ describe('the turning mark', () => {
     expect(container.querySelector('video')).toBeNull();
   });
 
+  it('carries no rim, so the badge is the logo and not a logo in a ring', () => {
+    // The rim was a disc scaled 3% larger than the faces, sitting between
+    // them to read as the coin's edge. Being LARGER than the logo it was
+    // visible at every angle, including face-on, as a silver ring around the
+    // mark. Removed at the owner's instruction; this is what stops it coming
+    // back as a decorative flourish. Scene children are the two faces only.
+    const { container } = render(<BrandMedallion />);
+    const scene = container.querySelector('.animate-medallion-spin') as HTMLElement;
+    const children = Array.from(scene.children);
+    expect(children).toHaveLength(2);
+    for (const child of children) {
+      expect(child.tagName).toBe('IMG');
+    }
+  });
+
   it('stops for anyone who has asked their device for less motion', () => {
     // A six-second loop in the eyeline for a whole shift is exactly the case
     // `prefers-reduced-motion` exists for. At rest this is simply the logo, so
@@ -40,9 +55,9 @@ describe('the turning mark', () => {
   });
 
   it('keeps the drop shadow off the element that holds the 3D scene', () => {
-    // A `filter` flattens `transform-style: preserve-3d`, which collapsed the
-    // three layers into paint order and rendered the coin as a plain silver
-    // disc. The shadow belongs on the static wrapper; this is the regression.
+    // A `filter` flattens `transform-style: preserve-3d`, which collapses the
+    // layers into paint order — found when it rendered the coin as a plain
+    // silver disc. The shadow belongs on the static wrapper.
     const { container } = render(<BrandMedallion />);
     const spinner = container.querySelector('.animate-medallion-spin') as HTMLElement;
     expect(spinner.style.filter).toBe('');
