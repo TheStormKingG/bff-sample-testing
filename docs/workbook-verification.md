@@ -32,6 +32,26 @@ named individual's address are Bounty Farm's to publish, not this repository's.
 Anyone with access to the workbook can confirm every claim below by opening it. The
 identifiers live in the operator's own records and in the Edge Function secret store.
 
+## 0. Amendment — the live write target has moved on
+
+Everything below records a single read of the DRAFT workbook on **2026-10-24**
+and is kept as that record. It is not a description of the workbook the
+application writes to today, which has changed twice since:
+
+| Date | Change | Where it is recorded |
+|---|---|---|
+| 2026-10-29 | `8 DGM` authored — a ninth operational tab, A:AI (35 columns) | `tests/registry.test.ts` holds the read-back; migrations 0024–0028 |
+| 2026-10-30 | Three `8 DGM` columns re-headed once the lab explained them | migration `0028_dgm_sieve_test_headers.sql` |
+| 2026-11-02 | `2 Ground`, `6 Crumble` and `7 Mash` trade their typed-in particle-size columns for the sieve test — A:AN (40), A:AM (39), A:AJ (36) | `docs/workbook-restructure-2026-11-02.md`; migration `0029_sieve_test_on_three_stages.sql` |
+
+The last of those is **not yet applied to the live workbook**; see that
+document for the state it must be brought to and the order to do it in.
+
+The live row-4 headers are asserted against the registry on every test run by
+`tests/registry.test.ts`, and against the actual spreadsheet at runtime by
+`verifyWorkbook()` before any write. Those two are the current contract; this
+file is the historical evidence that the schema was read rather than assumed.
+
 ## 1. Tab inventory — 9 of 9 verified
 
 | Expected tab | Actual tab | Expected range | Actual range | Verdict |
