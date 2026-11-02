@@ -9,7 +9,7 @@ import { STAGE_ICON } from '@/components/ui/statusMaps';
 import { SECONDARY_NAV } from '@/components/layout/navItems';
 import { useAccess } from '@/components/layout/accessContext';
 import { useOnline } from '@/components/layout/connectivity';
-import { BrandMark } from '@/components/ui/BrandMark';
+import { BrandMedallion } from '@/components/ui/BrandMedallion';
 import { HomeTile } from '@/components/home/HomeTile';
 import { MoreSheet, type QueueCount } from '@/components/home/MoreSheet';
 
@@ -215,24 +215,42 @@ export function HomeScreen({
         'pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]',
       )}
     >
-      <div className="flex shrink-0 items-center justify-between gap-2">
-        {/*
-          The farm's mark, on the one screen that hides the app header to buy
-          the tile grid its height — without it this is the only screen in the
-          application with no branding at all. 28px: large enough to read as
-          the badge it is, small enough that the header row keeps the same
-          height and the grid loses none of the space the no-scroll promise
-          depends on.
-        */}
-        <div className="flex min-w-0 shrink-0 items-center gap-2">
-          <BrandMark size={28} />
+      {/*
+        THE BRANDING BLOCK: the top third of the screen, by instruction.
+
+        This is a deliberate reversal of what the rest of this file optimises
+        for. The comment on `Header`'s `compact` prop explains that this screen
+        hides the app header specifically to buy the grid its height, and a
+        third of the viewport is a large thing to hand back. It is handed back
+        anyway because the owner asked for it: this is the screen a sampler
+        opens at the start of a shift, and it is the one place the company's
+        own mark belongs at full size rather than as a 28px chip.
+
+        `basis-1/3` with `shrink-0` so it is exactly a third and does not get
+        squeezed, and the grid below keeps `min-h-0` so IT absorbs the
+        difference. The no-scroll promise is therefore still structural: the
+        grid divides whatever is left, and on the shortest phone this app
+        supports that is about 100px a tile, still well clear of the 44px
+        `min-h-tap` floor. Measured, not assumed — see the e2e check.
+      */}
+      <div className="flex shrink-0 basis-1/3 flex-col items-center justify-center gap-2">
+        <BrandMedallion size={128} />
+        <div className="text-center">
           <h1
             id="home-heading"
-            className="shrink-0 whitespace-nowrap text-sm font-bold uppercase tracking-wide text-bff-800"
+            className="text-base font-bold uppercase tracking-wide text-bff-800"
           >
             Sample testing
           </h1>
+          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+            Bounty Farm Limited
+          </p>
         </div>
+      </div>
+
+      {/* The heading moved into the branding block above, so this row now
+          carries only the dated figure and the connection chip. */}
+      <div className="flex shrink-0 items-center justify-end gap-2">
         <div className="flex flex-wrap items-center justify-end gap-2">
           {/* Which day the tile figures are counting. A tablet left on across
               midnight then shows a dated number, not a silently wrong one. */}

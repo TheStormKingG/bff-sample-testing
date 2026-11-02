@@ -35,6 +35,13 @@ import { cn } from '@/lib/cn';
  * header is the first thing painted, and a mark that pops in afterwards
  * shoves the page down under the operator's thumb (Core Web Vitals, CLS).
  */
+/**
+ * Where the logo file is, built once. See the note above on why it is not a
+ * literal: under `/FeedQualityApp/` a leading-slash path resolves to the
+ * domain root and 404s.
+ */
+export const BRAND_LOGO_SRC = `${import.meta.env.BASE_URL}bounty-farm-logo.png`;
+
 export interface BrandMarkProps {
   /** Rendered size in px. The file is 256px square, so 64 is the honest cap. */
   readonly size?: number;
@@ -55,7 +62,7 @@ export function BrandMark({
 }: BrandMarkProps): JSX.Element {
   return (
     <img
-      src={`${import.meta.env.BASE_URL}bounty-farm-logo.png`}
+      src={BRAND_LOGO_SRC}
       alt={labelled ? '' : 'Bounty Farm Limited'}
       aria-hidden={labelled ? 'true' : undefined}
       width={size}

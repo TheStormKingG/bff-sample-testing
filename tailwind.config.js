@@ -3,6 +3,27 @@ export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      /*
+       * The medallion spin on the phone home screen.
+       *
+       * Taken from the reference render the owner supplied: a coin turning on
+       * its vertical axis, continuously, in roughly five seconds. It is set
+       * slower here — six — because this is the first thing a sampler sees on
+       * a work screen, and the reference was made to be looked AT rather than
+       * looked PAST.
+       *
+       * `linear`, not an eased curve: a coin spinning at constant speed has no
+       * reason to slow at the ends, and an ease would read as a wobble.
+       */
+      keyframes: {
+        'medallion-spin': {
+          '0%': { transform: 'rotateY(0deg)' },
+          '100%': { transform: 'rotateY(360deg)' },
+        },
+      },
+      animation: {
+        'medallion-spin': 'medallion-spin 6s linear infinite',
+      },
       colors: {
         // Bounty Farm blue, used as a restrained accent on a bright white interface
         // (PRD §11). Steps below 600 are for fills/borders; 700+ for text on white
