@@ -153,7 +153,17 @@ export function SieveSeriesPanel({ onRequest, mayEdit }: SieveSeriesPanelProps):
         <div className="overflow-x-auto">
           <table className="w-full min-w-[34rem] border-collapse text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {/*
+                NOT `uppercase`, and this is a correctness fix rather than a
+                style choice. CSS `text-transform: uppercase` maps µ (U+00B5,
+                MICRO SIGN) to Μ (U+039C, GREEK CAPITAL MU), which at this
+                size is indistinguishable from a Latin M — so "Aperture (µm)"
+                rendered as "APERTURE (MM)" and presented micrometres as
+                millimetres on the screen that sets them. A thousandfold unit
+                error, in a quality system, produced entirely by a text
+                transform. Caught in a screenshot of the live page.
+              */}
+              <tr className="border-b border-slate-200 text-xs font-semibold tracking-wide text-slate-500">
                 <th className="py-2 pr-3">Position</th>
                 <th className="py-2 pr-3">ABNT</th>
                 <th className="py-2 pr-3">Aperture (µm)</th>
