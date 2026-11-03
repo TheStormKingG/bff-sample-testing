@@ -49,6 +49,7 @@ import {
 import type { Stage } from '@/forms/types';
 import { RECORD_STAGE_ORDER } from '@/forms/registry';
 import { describeBounds } from '@/lib/assessment';
+import { applicabilityText } from '@/lib/specificationScope';
 import { formatPlantDateTimeLabelled } from '@/lib/time';
 import type { SpecificationVersionRow } from '@/hooks/useSamples';
 import { useAuthority } from '@/hooks/useSamples';
@@ -157,20 +158,6 @@ function RuleStatusChip({ status }: { status: string }) {
       srPrefix="Specification status:"
     />
   );
-}
-
-/** Applicability, in the plant's own words. Blank means "any". */
-function applicabilityText(rule: SpecificationVersionRow): string {
-  const parts: string[] = [];
-  if (rule.material !== null && rule.material !== '') parts.push(`material ${rule.material}`);
-  if (rule.feed_type !== null && rule.feed_type !== '') parts.push(`feed type ${rule.feed_type}`);
-  if (rule.sampling_point !== null && rule.sampling_point !== '') {
-    parts.push(`sampling point ${rule.sampling_point}`);
-  }
-  if (rule.test_method !== null && rule.test_method !== '') {
-    parts.push(`method ${rule.test_method}`);
-  }
-  return parts.length === 0 ? 'Any material, feed type, sampling point and method' : parts.join(', ');
 }
 
 function boundsText(rule: SpecificationVersionRow): string {

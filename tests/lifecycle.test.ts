@@ -324,7 +324,7 @@ describe('UAT-02: AM and BC compose differently all the way to the sheet', () =>
   });
 });
 
-describe('UAT-07: the unconfirmed steam-pressure unit survives the whole chain', () => {
+describe('UAT-07: a steam-pressure rule is compared only in the agreed unit', () => {
   const instant = fromPlantParts('2026-10-24', '10:00').toISOString();
 
   const conditioned: Record<string, string> = {
@@ -340,13 +340,32 @@ describe('UAT-07: the unconfirmed steam-pressure unit survives the whole chain',
     tested_by_qo: 'Kayla',
   };
 
-  it('a reading inside the vendor working range still cannot be assessed', () => {
+  /*
+    WHAT THIS BLOCK USED TO PROVE, AND WHY IT NOW PROVES SOMETHING ELSE.
+
+    Until 2026-11-03 the conditioned steam-pressure field declared
+    `unitConfirmed: false`, because the workbook's `Limits` row 13 Unit cell
+    literally reads "to confirm". The chain's guarantee was therefore absolute:
+    the reading could never be assessed by anybody, however the rule was
+    written. That was open decision D-05, and the refusal was the safe default
+    standing in for an answer.
+
+    The answer arrived: the Polinutri process audit of 21/10/2026 states the
+    conditioner steam pressure in bar, and Bounty Farm confirmed bar. So the
+    blanket refusal is gone, and what remains — which is the part that was
+    always load-bearing — is that a value is compared ONLY against a limit in
+    the same agreed unit. The first test below is the old one, re-pointed at
+    the gate that still catches a rule carrying the workbook's placeholder;
+    the second is new, and proves the decision actually took effect, because a
+    confirmed unit nothing can assess against would be a silent no-op.
+  */
+  it('a rule still carrying the workbook placeholder is not compared against', () => {
     const parsed = parseStageValues('conditioned', 'testing', conditioned);
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
 
-    // Even if someone wrongly approves a bounded rule, the unconfirmed unit
-    // gate refuses before any comparison happens.
+    // The workbook's own `Set` row, as somebody might wrongly approve it:
+    // bounds that bracket the reading, and the unit cell copied verbatim.
     const wronglyApproved: SpecificationRule[] = [
       {
         id: 'bad', version: 1, parameterKey: 'conditioned.steam_pressure', stage: 'conditioned',
@@ -359,11 +378,49 @@ describe('UAT-07: the unconfirmed steam-pressure unit survives the whole chain',
 
     const assessments = assessAll('conditioned', parsed.values, wronglyApproved, instant);
     const steam = assessments.find((a) => a.fieldKey === 'steam_pressure_reading')!;
+    // 2.5 sits squarely inside 2.2-2.8. It is still not a pass, because the
+    // limit does not say what 2.2 and 2.8 are measured in. The reason moved
+    // from `unit_not_confirmed` (the field had no unit) to `unit_mismatch`
+    // (the field says bar, the rule says nothing) -- the refusal is the same.
     expect(steam.assessment.result).toBe('not_assessable');
-    expect(steam.assessment.reason).toBe('unit_not_confirmed');
+    expect(steam.assessment.reason).toBe('unit_mismatch');
     // The value is still recorded faithfully.
     const row = toSheetRow('conditioned', 'AC-261024-01', parsed.values);
     expect(row[columnLetterToIndex('G')]).toBe('2.5');
+  });
+
+  it('and a rule in bar does decide it, now that bar is the agreed unit', () => {
+    const parsed = parseStageValues('conditioned', 'testing', conditioned);
+    if (!parsed.ok) throw new Error('should validate');
+
+    // The band confirmed with the plant on 2026-11-03: 2.2-2.5 bar.
+    const inBar: SpecificationRule[] = [
+      {
+        id: 'bar-rule', version: 2, parameterKey: 'conditioned.steam_pressure',
+        stage: 'conditioned',
+        material: null, feedType: null, samplingPoint: null, testMethod: null, grindPurpose: null,
+        unit: 'bar', lowerBound: 2.2, upperBound: 2.5,
+        status: 'approved', effectiveFrom: '2026-01-01T00:00:00.000Z', effectiveTo: null,
+        approvedBy: 'supervisor-uuid',
+      },
+    ];
+
+    const steam = assessAll('conditioned', parsed.values, inBar, instant)
+      .find((a) => a.fieldKey === 'steam_pressure_reading')!;
+    expect(steam.assessment.result).toBe('within_limit');
+    expect(steam.assessment.ruleId).toBe('bar-rule');
+
+    // The control: the same rule one notch out is a FAIL, not another
+    // not_assessable. Without this, a gate still refusing everything for some
+    // other reason would read as a pass above.
+    const high = parseStageValues('conditioned', 'testing', {
+      ...conditioned,
+      steam_pressure_reading: '2.7',
+    });
+    if (!high.ok) throw new Error('should validate');
+    const outside = assessAll('conditioned', high.values, inBar, instant)
+      .find((a) => a.fieldKey === 'steam_pressure_reading')!;
+    expect(outside.assessment.result).toBe('outside_limit');
   });
 
   it('85 degC assesses only once a properly-united rule is approved (UAT-06)', () => {

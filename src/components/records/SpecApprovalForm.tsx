@@ -16,7 +16,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
 import { STAGES, type Stage } from '@/forms/types';
-import { RECORD_STAGE_ORDER } from '@/forms/registry';
+import { RECORD_STAGE_ORDER, SELECTABLE_GRIND_PURPOSES } from '@/forms/registry';
 import { isUnitConfirmed } from '@/lib/assessment';
 import { plantLocalDate } from '@/lib/time';
 import {
@@ -49,6 +49,7 @@ const schema = z
     feedType: z.string(),
     samplingPoint: z.string(),
     testMethod: z.string(),
+    grindPurpose: z.string(),
     unit: z
       .string()
       .min(1, 'An approved rule must state the unit its bounds are measured in.')
@@ -140,6 +141,7 @@ export function SpecApprovalForm({
       feedType: '',
       samplingPoint: '',
       testMethod: '',
+      grindPurpose: '',
       unit: '',
       lowerBound: '',
       upperBound: '',
@@ -174,6 +176,11 @@ export function SpecApprovalForm({
           feedType: BLANK_TO_NULL(values.feedType),
           samplingPoint: BLANK_TO_NULL(values.samplingPoint),
           testMethod: BLANK_TO_NULL(values.testMethod),
+          // Only a Ground sample records a grind purpose, so a rule scoped to
+          // one on any other stage could never match anything. The select is
+          // hidden off Ground; this discards a value left behind by someone
+          // who chose a purpose and then changed the stage.
+          grindPurpose: values.stage === 'ground' ? BLANK_TO_NULL(values.grindPurpose) : null,
           unit: values.unit.trim(),
           lowerBound: parseBound(values.lowerBound),
           upperBound: parseBound(values.upperBound),
@@ -282,6 +289,25 @@ export function SpecApprovalForm({
             </label>
             <input id="spec-method" className={`${INPUT_CLASS} mt-1`} {...register('testMethod')} />
           </div>
+          {stage === 'ground' ? (
+            <div>
+              <label htmlFor="spec-grind-purpose" className="text-sm text-slate-700">
+                Grind purpose
+              </label>
+              <select
+                id="spec-grind-purpose"
+                className={`${INPUT_CLASS} mt-1`}
+                {...register('grindPurpose')}
+              >
+                <option value="">Any grind</option>
+                {SELECTABLE_GRIND_PURPOSES.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
         </div>
         <p className="mt-2 text-xs text-slate-600">
           Two approved rules that are equally applicable make a measurement unassessable, so keep

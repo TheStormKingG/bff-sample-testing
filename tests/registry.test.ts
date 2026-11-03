@@ -34,6 +34,7 @@ import {
 } from '@/forms/registry';
 import { STAGES, type FieldDef, type Stage } from '@/forms/types';
 import { columnLetterToIndex, indexToColumnLetter } from '@/forms/sheetMapping';
+import { isUnitConfirmed } from '@/lib/assessment';
 
 /** Verified row-4 headers, transcribed independently from the live workbook. */
 const VERIFIED_HEADERS: Record<Stage, { tab: string; headers: string[] }> = {
@@ -439,10 +440,46 @@ describe('registry: quality-critical flags', () => {
     }
   });
 
-  it('declares steam pressure unit UNCONFIRMED so it can never pass (UAT-07, R-02)', () => {
+  it('declares the steam pressure unit as bar, now that D-05 is decided', () => {
+    /*
+      THIS ASSERTION USED TO BE ITS OWN OPPOSITE, and that is the point of
+      keeping it. Until 2026-11-03 it read `unitConfirmed === false` and
+      `unit === undefined`, guarding UAT-07 and risk R-02: the workbook's
+      `Limits` row 13 Unit cell literally says "to confirm", so the reading
+      could never be assessed, whatever bounds anybody set.
+
+      Open decision D-05 asked what the unit is. The Polinutri process audit
+      of 21/10/2026 states the conditioner steam pressure in bar, and Bounty
+      Farm confirmed bar on 2026-11-03. So the refusal is lifted — by a
+      decision, recorded, not by a developer tidying up a failing test.
+
+      What the assertion guards now is the other direction: that nobody
+      silently reverts the unit to null or to the placeholder, which would
+      make every approved steam-pressure limit inert while still displaying
+      it. `isUnitConfirmed` is applied too, because 'to confirm' is a string
+      a careless edit could put in `unit` and this would otherwise pass.
+    */
     const f = STAGE_SCHEMAS.conditioned.fields.find((x) => x.key === 'steam_pressure_reading')!;
-    expect(f.unitConfirmed).toBe(false);
-    expect(f.unit).toBeUndefined();
+    expect(f.unit).toBe('bar');
+    expect(f.unitConfirmed).toBe(true);
+    expect(isUnitConfirmed(f.unit)).toBe(true);
+  });
+
+  it('still has a field that carries an unconfirmed unit, so UAT-07 has a subject', () => {
+    /*
+      The control UAT-07 exercises — a value with no agreed unit is recorded
+      but never compared — is a property of the engine, not of steam pressure.
+      Confirming one field's unit must not quietly retire the mechanism by
+      leaving it with nothing to act on. If this ever reaches zero, the
+      engine's unit gate is untested by any real column and the suite should
+      say so here rather than keep a green tick on an empty set.
+    */
+    const unconfirmed = STAGES.flatMap((stage) =>
+      STAGE_SCHEMAS[stage].fields
+        .filter((f) => f.unitConfirmed === false)
+        .map((f) => `${stage}.${f.key}`),
+    );
+    expect(unconfirmed).toEqual(['raw_materials.other_mycotoxin_result']);
   });
 
   it('declares the other-mycotoxin result unit UNCONFIRMED', () => {

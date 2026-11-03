@@ -492,6 +492,7 @@ export const PROPOSE_SPECIFICATION_SPEC: MutationSpec<Record<string, unknown>> =
       p_lower_bound: lowerBound,
       p_upper_bound: upperBound,
       p_reason: reason,
+      p_grind_purpose: readString(source, 'grindPurpose', { maxLength: 200 }),
     };
 
     const result = await callTransaction<SpecificationVersionResult>(

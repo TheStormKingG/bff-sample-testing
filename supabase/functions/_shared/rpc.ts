@@ -480,6 +480,18 @@ export interface ProposeSpecificationArgs extends RpcActorArgs {
   readonly p_lower_bound: number | null;
   readonly p_upper_bound: number | null;
   readonly p_reason: string;
+  /**
+   * The grind this rule applies to, or null for "any grind".
+   *
+   * The fifth applicability dimension (0044), and the only one a sample sets
+   * itself: a Ground sample records the purpose it was ground for, which is
+   * what lets corn-for-pellets and rice-for-mash carry different targets.
+   *
+   * NOT OPTIONAL. `rpc_propose_specification` declares fifteen arguments with
+   * no defaults, so a call that omits this one does not find the function at
+   * all. Sending it explicitly as null is how "any grind" is expressed.
+   */
+  readonly p_grind_purpose: string | null;
 }
 
 /** `rpc_submit_specification_for_review(p_specification_version_id, ...)`. */

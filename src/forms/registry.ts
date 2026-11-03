@@ -255,6 +255,33 @@ const GRIND_PURPOSE_OPTIONS = [
 ] as const;
 
 /**
+ * The grind purposes a NEW rule or record may be scoped to.
+ *
+ * Derived here, beside the list, rather than filtered at each use: the
+ * retired member exists so that one voided commissioning record stays
+ * readable, and offering it when scoping a limit would create a rule whose
+ * only possible match is a voided sample.
+ */
+/**
+ * The plant's words for a grind purpose code, for a screen that has only the
+ * code. Falls back to the code itself: a label is a courtesy, and showing
+ * `corn_pelleted` is far better than showing nothing, which is what an
+ * applicability line said about four differently-scoped grind rules before
+ * this existed.
+ */
+export function grindPurposeLabel(code: string): string {
+  return GRIND_PURPOSE_OPTIONS.find((o) => o.value === code)?.label ?? code;
+}
+
+export const SELECTABLE_GRIND_PURPOSES: readonly {
+  readonly value: string;
+  readonly label: string;
+}[] = GRIND_PURPOSE_OPTIONS.filter((o) => !('retired' in o && o.retired)).map((o) => ({
+  value: o.value,
+  label: o.label,
+}));
+
+/**
  * Structured sampling-point codes for `2 Ground`. The CODE drives the sample-ID
  * prefix and the BC-moisture rule; the LABEL is what the sheet cell receives.
  * PRD §5.2: "derive prefix AM or BC directly from structured point code rather
@@ -1293,21 +1320,33 @@ const conditioned: StageSchema = {
       type: 'number',
       section: 'settings',
       required: 'registration',
-      // The workbook `Limits` row 13 Unit cell literally reads "to confirm"
-      // (bar or kg/cm² per its own note). Until an approved unit exists this
-      // reading can never be assessed as conforming — PRD §5.3, R-02, UAT-07.
-      unitConfirmed: false,
+      // The workbook `Limits` row 13 Unit cell reads "to confirm" (bar or
+      // kg/cm² per its own note), and until 2026-11-03 so did this field:
+      // `unitConfirmed: false` meant the reading could never be assessed,
+      // whatever bounds were set — PRD §5.3, R-02, UAT-07, open decision D-05.
+      //
+      // The Polinutri process audit of 21/10/2026 states the conditioner
+      // steam pressure in BAR, and Bounty Farm confirmed bar as the unit on
+      // 2026-11-03. That closes D-05, and the field can be assessed.
+      //
+      // The sheet header is deliberately NOT renamed to "Steam pressure
+      // reading (bar)". Row 4 is compared cell by cell against this registry
+      // before every write, and the Edge Functions latch on a mismatch, so
+      // renaming it here without editing the live workbook in the same breath
+      // would fence the system off from its own spreadsheet. The unit is
+      // shown on the field and carried by the rule; the header can follow
+      // when somebody is at the workbook.
+      unit: 'bar',
+      unitConfirmed: true,
       min: 0,
       implausibleAbove: 100,
       decimals: 2,
       parameterKey: 'conditioned.steam_pressure',
-      // The full sentence moved to the stage instruction when the settings
-      // band went to two columns: a cell there is about 131px wide and this
-      // ran to six lines in it, leaving a dead zone beside the field next to
-      // it. Nothing is lost — `unitConfirmed: false` is what actually stops
-      // the engine assessing it, and the instruction above the form says why
-      // in full. This keeps the caveat where the figure is typed.
-      help: 'Unit not confirmed; not assessed.',
+      // 36 characters is the cap for a paired-band hint; see
+      // `tests/pairedFields.test.tsx`, which measured it. The reference
+      // figures are deliberately not quoted here: a target printed beside an
+      // assessment chip invites an operator to read it as a pass criterion.
+      help: 'Steam pressure at the conditioner.',
     },
     {
       key: 'water_added_pct',

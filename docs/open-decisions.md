@@ -20,10 +20,10 @@ to pretend, and a refusal that nobody revisits quietly becomes the permanent beh
 | ID | Decision | Owner | Blocks | Flag |
 | --- | --- | --- | --- | --- |
 | D-01 | Which Google accounts will staff use? | Management + IT | consent-screen type, access model | 🔴 |
-| D-02 | **0 of 34 limits are approved.** Who approves, and when? | Quality function | every conformity decision | 🔴 |
+| D-02 | **21 limits are proposed; 0 approved.** Both approver accounts are the same person | Quality function | every conformity decision | 🔴 |
 | D-03 | Who may release material or clear a hold? | Management + Quality | FR-011 acceptance | 🔴 |
 | D-04 | Sampling frequencies for Ground, Conditioned, Pellets, Crumble | Feed Factory Process Owner | FR-020, any adherence KPI | 🟠 |
-| D-05 | What is the steam-pressure unit? | Process Owner + Polinutri | UAT-07, entry #13 | 🟠 |
+| D-05 | ~~What is the steam-pressure unit?~~ **CLOSED 2026-11-03: bar** | Process Owner + Polinutri | — | ✅ |
 | D-06 | Which fields are mandatory at which stage? | Quality function | FR-008 acceptance | 🟡 |
 | D-07 | **The workbook is a draft owned by a personal Gmail account (B-07)** | Management + IT | **cutover** | 🔴 |
 | D-08 | Retention, disposal, backup objective, ongoing owner | Record-control owner | NFR-009, FR-016 | 🟠 |
@@ -63,9 +63,32 @@ both depend on a personal account has a single person as a dependency.
 
 ### D-02 🔴 Who approves specification limits, and when?
 
-*PRD §16 Q2, R-01.* **0 of 34 workbook limit entries are approved.** 27 are *To set*, 4
-are *Set* (Polinutri **vendor reference values** from 23 October 2026, **not Bounty Farm
-approvals**), 2 are *Confirm with Polinutri*, 1 is *To set with Polinutri*.
+*PRD §16 Q2, R-01.* **Still 0 approved — but no longer 0 proposed.**
+
+**2026-11-03.** Twenty-one limits were confirmed with Bounty Farm from the Polinutri
+process audit of 21/10/2026 and entered as proposals; each is `proposed` and waiting for
+a decision. They are rules of Bounty Farm's own, with stated sources — not the imported
+workbook rows, which are `reference_only` and can never be approved. Four of them are
+Ground grind targets scoped by grind purpose, which is the first use of the engine's
+applicability scoping and required migration 0045 to be approvable at all.
+
+**What now blocks approval is not a missing decision — it is an access-control fact.**
+Two accounts hold `spec.approve`, and **both belong to Stefan Gravesande**
+(`stefan.gravesande@gmail.com` and `stefan_gravesande@yahoo.com`). The proposer of these
+twenty-one is the first of those. `specification_versions_two_person_approval` and
+`separation_of_duties_failure` would both be satisfied by approving from the second — and
+that is self-approval wearing another name, which is exactly what the control exists to
+prevent. The constraint cannot detect it; only a person can.
+
+**Kayla Ferdinand (`kaylaferdinand78@gmail.com`) is `quality_officer`: propose, not
+approve.** So the smallest honest step is one of:
+
+  * grant a second real person `quality_supervisor`, and have them decide these; or
+  * have Kayla re-propose them, and Stefan approve — two actual people, in the right
+    order, with no change to anybody's permissions.
+
+The second needs no administration and is available today. **Nothing should be approved
+across Stefan's two accounts.**
 
 **Who decides:** the Quality function, with a named approver.
 **Blocks:** every conformity decision in the system.
@@ -110,19 +133,33 @@ the ledger**. The Reports page states both reasons and the difference between th
 needs a recorded denominator, which means recording how many loads arrived and how many
 runs were made — a second decision nobody has been asked for yet.
 
-### D-05 🟠 What is the steam-pressure measurement unit?
+### D-05 ✅ What is the steam-pressure measurement unit? — **CLOSED 2026-11-03: bar**
 
-*PRD §16 Q5, R-02, UAT-07.* `Limits` entry **#13** has the unit cell containing the
+*PRD §16 Q5, R-02, UAT-07.* `Limits` entry **#13** had the unit cell containing the
 literal string **`"to confirm"`** with a range of 2.2–2.8.
 
-**Who decides:** the Process Owner with Polinutri.
-**Blocks:** UAT-07, and any assessment of column G on tab 3.
-**Safe default today:** the unit renders **verbatim** — the app does not guess "bar". The
-field is marked *unit not confirmed*, it can **never** assess as conforming even if a
-2.2–2.8 rule were approved, and `is_unit_confirmed` returns false for `'to confirm'` and
-for NULL.
-**Why guessing is not an option:** 2.5 bar and 2.5 psi differ by a factor of about 14.5.
-A conformity decision on an unknown unit is not a decision.
+**Decided:** the Polinutri process audit of 21/10/2026 states the conditioner steam
+pressure in **bar**, and Bounty Farm confirmed bar on **2026-11-03**.
+
+**What changed:** migration 0045 sets `stage_fields.unit = 'bar'` and
+`unit_confirmed = true` for `conditioned.steam_pressure_reading`, and the registry
+matches. A limit of **2.2–2.5 bar** is proposed (not approved — see D-02).
+
+**What did not change, deliberately:** the sheet header still reads "Steam pressure
+reading" without the unit. Row 4 is diffed against the registry before every write and
+the Edge Functions latch on a mismatch, so renaming it here without editing the live
+workbook in the same breath would fence the system off from its own spreadsheet. **A
+cosmetic follow-up for whoever is next at the workbook.**
+
+**Why guessing was never an option:** 2.5 bar and 2.5 psi differ by a factor of about
+14.5. A conformity decision on an unknown unit is not a decision — and until this was
+answered the field could not be assessed at all, whatever bounds anybody approved.
+
+**The control did not go away with the question.** `assessment.ts` still refuses any
+measurement whose unit is unconfirmed, and `raw_materials.other_mycotoxin_result` still
+carries that state by design. `tests/registry.test.ts` asserts it is the only one, so if
+it ever gains a unit the suite says the gate has no subject left rather than passing on
+an empty set.
 
 ### D-06 🟡 Which test fields are mandatory at which stage?
 

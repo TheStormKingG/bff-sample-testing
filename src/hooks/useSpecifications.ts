@@ -269,6 +269,12 @@ export interface SpecificationProposal {
   readonly feedType: string | null;
   readonly samplingPoint: string | null;
   readonly testMethod: string | null;
+  /**
+   * The grind this rule applies to, or null for "any grind". Only a Ground
+   * sample carries one, so a rule scoped to a purpose on any other stage
+   * matches nothing — which is why the form offers it on Ground alone.
+   */
+  readonly grindPurpose: string | null;
   readonly unit: string | null;
   readonly lowerBound: number | null;
   readonly upperBound: number | null;

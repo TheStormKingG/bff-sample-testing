@@ -375,16 +375,29 @@ describe('StageForm — units', () => {
 });
 
 describe('StageForm — unconfirmed unit (PRD §5.3, UAT-07)', () => {
-  it('marks the Conditioned steam pressure reading as having no confirmed unit', () => {
-    const values = defaultStageValues('conditioned');
-    renderStage('conditioned', values);
+  /*
+    THIS TEST MOVED TABS ON 2026-11-03, and did not change what it checks.
 
-    const unconfirmed = editableFields('conditioned', values).filter(
+    Its subject was the Conditioned steam pressure reading, whose unit the
+    workbook left as "to confirm" (open decision D-05). Bounty Farm confirmed
+    bar on 2026-11-03, so that field no longer carries the marker and the
+    assertion had to go somewhere real rather than be deleted: the marker and
+    its spoken note are a UI mechanism, and the mechanism is still needed.
+
+    `raw_materials.other_mycotoxin_result` is the remaining field with no
+    agreed unit — deliberately so, since the source workbook defines none for
+    that column. `tests/registry.test.ts` asserts it is the only one, so if it
+    ever gains a unit this test is pointed at nothing and that one fails
+    loudly rather than this one passing on an empty list.
+  */
+  it('marks the other-mycotoxin result as having no confirmed unit', () => {
+    const values = defaultStageValues('raw_materials');
+    renderStage('raw_materials', values);
+
+    const unconfirmed = editableFields('raw_materials', values).filter(
       (field) => field.unitConfirmed === false,
     );
-    // The verified workbook fact this marker exists for: `Limits` row 13's
-    // Unit cell literally reads "to confirm".
-    expect(unconfirmed.map((field) => field.key)).toEqual(['steam_pressure_reading']);
+    expect(unconfirmed.map((field) => field.key)).toEqual(['other_mycotoxin_result']);
 
     const field = unconfirmed[0] as FieldDef;
     expect(labelTextFor(field)).toContain('unit not confirmed');
@@ -400,6 +413,20 @@ describe('StageForm — unconfirmed unit (PRD §5.3, UAT-07)', () => {
       .map((id) => document.getElementById(id)?.textContent ?? '')
       .join(' ');
     expect(noteTexts).toMatch(/cannot be checked against a limit/i);
+  });
+
+  it('no longer marks anything on Conditioned, now that D-05 is decided', () => {
+    const values = defaultStageValues('conditioned');
+    renderStage('conditioned', values);
+
+    // The direct record of the decision's effect on this screen. Reverting the
+    // registry to `unitConfirmed: false` would put the warning back on a form
+    // whose unit the plant has agreed, and this is what would catch it.
+    expect(
+      editableFields('conditioned', values)
+        .filter((field) => field.unitConfirmed === false)
+        .map((field) => field.key),
+    ).toEqual([]);
   });
 
   it('does not mark a field whose unit is confirmed', () => {
