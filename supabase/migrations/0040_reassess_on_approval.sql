@@ -238,6 +238,13 @@ begin
 end;
 $$;
 
+-- A trigger function is only ever invoked by the trigger, but it is still a
+-- `security definer` function with a name any signed-in account could call.
+-- `tests/rpcContract.test.ts` requires an explicit revoke on every one of the
+-- 92 of them, and it caught this one missing — the rule exists precisely
+-- because "nobody would call it directly" is an assumption, not a control.
+revoke all on function public.tg_specification_approved_reassess() from public, anon, authenticated;
+
 drop trigger if exists specification_versions_reassess on public.specification_versions;
 
 create trigger specification_versions_reassess
