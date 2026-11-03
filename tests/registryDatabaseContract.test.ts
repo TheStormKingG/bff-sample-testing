@@ -428,11 +428,21 @@ describe('the instrument works before anything it says is believed', () => {
     );
     expect(material?.['select_options']).toEqual(['corn', 'rice', 'soya', 'other']);
 
-    const conditional = STAGE_FIELD_ROWS.find((r) => r['field_key'] === 'moisture_pct_bc');
-    expect(conditional?.['applies_when_field']).toBe('sampling_point');
-    expect(conditional?.['applies_when_values']).toEqual(['BC']);
-    expect(conditional?.['hard_max']).toBe(100);
-    expect(conditional?.['unit_confirmed']).toBe(true);
+    // The conditional column this used to read — `ground.moisture_pct_bc`,
+    // applicable only at sampling point BC — was removed by 0043. The parser
+    // can still read `applies_when_*`; there is simply nothing left that
+    // sets them, which is asserted rather than assumed so the pair of
+    // columns does not quietly rot.
+    const conditionals = STAGE_FIELD_ROWS.filter((r) => r['applies_when_field'] !== null);
+    expect(conditionals.map((r) => `${String(r['stage'])}.${String(r['field_key'])}`)).toEqual([]);
+
+    // A different row with a hard_max and a confirmed unit, so those two
+    // parses are still exercised by something real.
+    const moisture = STAGE_FIELD_ROWS.find(
+      (r) => r['stage'] === 'conditioned' && r['field_key'] === 'moisture_pct',
+    );
+    expect(moisture?.['hard_max']).toBe(100);
+    expect(moisture?.['unit_confirmed']).toBe(true);
 
     const micro = STAGE_FIELD_ROWS.find(
       (r) => r['stage'] === 'dgm' && r['field_key'] === 'dgm_um',

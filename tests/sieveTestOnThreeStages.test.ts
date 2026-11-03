@@ -73,7 +73,8 @@ const EXPECTED: Readonly<Record<string, string>> = {
 const IDENTITY: Readonly<Record<string, Record<string, string>>> = {
   ground: {
     sampling_point: 'AM',
-    material_or_feed_type: 'Starter',
+    material_or_feed_type: 'corn_pelleted',
+    mill_rpm: '1300',
     batch_or_bin_no: 'B-2214',
     mill_screen_size_mm: '5',
     hammer_distance_mm: '40',

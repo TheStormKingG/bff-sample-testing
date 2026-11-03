@@ -211,6 +211,50 @@ const UREASE_QUALITATIVE_GALLERY: readonly OptionGalleryEntry[] = [
 ] as const;
 
 /**
+ * What the hammer mill is grinding, and what the meal is destined for.
+ *
+ * ===========================================================================
+ * ONE FIELD BECAUSE POLINUTRI SPECIFIES ON ONE FIELD
+ * ===========================================================================
+ * This was free text reading "Corn". It is now four codes, because the grind
+ * target is not one number: the visit report of 21 October 2026 gives
+ * 950-1050 um for rice destined for pelleted feed, 1200-1300 for corn
+ * destined for pelleted feed, 1550-1650 for corn destined for mash and
+ * 1850-1950 for rice destined for mash. Four ranges, scoped on exactly this
+ * distinction.
+ *
+ * It is ONE field and not two (a material and a destination) because a limit
+ * is matched on a field's value, and two fields would mean either two
+ * applicability dimensions or a rule that cannot express "corn, and for
+ * pellets". The combination is what the specialist specified on, so the
+ * combination is what the form records.
+ *
+ * THE CODE IS NOT THE LABEL, for the reason `sampling_point` gives: the code
+ * is what an approved limit is scoped by, and a label is what a person
+ * reads. Renaming "Corn for pelletized feed" must never silently detach a
+ * sample from the rule that judged it.
+ *
+ * The mill settings that go with each are on the same form and are recorded
+ * rather than derived: screen size 5 mm for pelleted and 7 mm for mash, and
+ * 1300, 2300 or 1200 rpm depending on grain. The form does not enforce the
+ * pairing, because an operator running an unusual combination is recording
+ * what happened, not filling in a form wrong.
+ */
+const GRIND_PURPOSE_OPTIONS = [
+  { value: 'corn_pelleted', label: 'Corn for pelletized feed' },
+  { value: 'corn_mashed', label: 'Corn for mashed feed' },
+  { value: 'rice_pelleted', label: 'Rice for pelletized feed' },
+  { value: 'rice_mashed', label: 'Rice for mashed feed' },
+  /*
+    Every value the column has ever held, so no stored record becomes
+    unreadable. One ground sample exists, a voided commissioning record, and
+    it says "Corn". `encodeEnum` throws on a code it does not know, so
+    without this the sheet projection of that record would fail for ever.
+  */
+  { value: 'Corn', label: 'Corn', retired: true },
+] as const;
+
+/**
  * Structured sampling-point codes for `2 Ground`. The CODE drives the sample-ID
  * prefix and the BC-moisture rule; the LABEL is what the sheet cell receives.
  * PRD §5.2: "derive prefix AM or BC directly from structured point code rather
@@ -1052,11 +1096,20 @@ const ground: StageSchema = {
     {
       key: 'material_or_feed_type',
       columnLetter: 'E',
+      // The workbook heading is UNCHANGED, deliberately: re-heading a live
+      // column is a spreadsheet restructure, and "Material or feed type"
+      // still describes what the four codes say. Only the screen label and
+      // the type change.
       sheetHeader: 'Material or feed type',
-      label: 'Material or feed type',
-      type: 'text',
+      label: 'Ground for',
+      type: 'select',
+      options: GRIND_PURPOSE_OPTIONS,
       section: 'sample_details',
       required: 'registration',
+      // 36 characters is the cap for a paired-band hint: at 375px a cell is
+      // ~131px wide and the help renders at ~18 characters a line. See
+      // `tests/pairedFields.test.tsx`, which measured it.
+      help: 'Grain, and what the meal is for.',
     },
     {
       key: 'batch_or_bin_no',
@@ -1093,19 +1146,62 @@ const ground: StageSchema = {
       help: '5 or 7 mm, as fitted when sampled.',
     },
     {
+      /*
+        RETIRED, NOT DELETED, and the schema is what decided that.
+
+        The plant asked for this to be replaced by the mill's rotational
+        speed, which is what the specialist's report actually specifies on.
+        It cannot be deleted: one value was recorded against it on a voided
+        commissioning record, `assessments` holds the decision made on that
+        value and is append-only, and `sample_measurements` cannot release a
+        row an assessment cites. So removing the column would mean deleting a
+        quality decision, which this system refuses by design and rightly.
+
+        Hidden instead. The column, the heading and that one figure stay
+        exactly where they are; it simply stops being asked for. Its
+        `parameterKey` is gone and limit entry 7 is superseded, because a
+        limit on a field nobody will ever fill in is a permanent gap on the
+        Limits screen that no action can close.
+      */
       key: 'hammer_distance_mm',
       columnLetter: 'I',
       sheetHeader: 'Hammer distance from screen (mm)',
       label: 'Hammer distance from screen',
       type: 'number',
       section: 'settings',
-      required: 'registration',
+      required: 'optional',
+      hidden: true,
       unit: 'mm',
       unitConfirmed: true,
       min: 0,
       implausibleAbove: 500,
       decimals: 1,
-      parameterKey: 'ground.hammer_distance',
+    },
+    {
+      key: 'mill_rpm',
+      columnLetter: 'J',
+      sheetHeader: 'Mill rotational speed (rpm)',
+      label: 'Mill rotational speed',
+      type: 'number',
+      section: 'settings',
+      required: 'registration',
+      unit: 'rpm',
+      unitConfirmed: true,
+      min: 0,
+      // A hammer mill runs at 1200 to 3600 rpm; 10000 is a mis-keyed figure,
+      // not a mill. Confirmable, never assessed.
+      implausibleAbove: 10000,
+      decimals: 0,
+      parameterKey: 'ground.mill_rpm',
+      /*
+        The report's figures — 1,300 rpm for corn to pellets, 2,300 for rice
+        to pellets, 1,200 for either to mash — are deliberately NOT here.
+        Help in a paired band has 36 characters, and more importantly this
+        application does not put unapproved figures beside an input where
+        they read as a target. They belong on the Limits screen, scoped by
+        the grind purpose, once a limit on them is approved.
+      */
+      help: 'Hammer mill speed for this grind.',
     },
     // J..L. The sieve test replaces what used to be J and K: an `Average
     // particle size (µm)` and a `Size spread (GSD)` typed in from an analyser
@@ -1119,28 +1215,17 @@ const ground: StageSchema = {
     // tester's drum, so the drum-speed column was a question this tab could
     // not answer; it was removed at the owner's instruction and everything
     // right of it moved one column left.
-    ...sieveTestSettings(9, { durabilityTester: false }),
-    {
-      key: 'moisture_pct_bc',
-      // Kept FIRST in the results band, ahead of the weights, because it is
-      // the one result on this tab that is not part of the sieve test.
-      columnLetter: 'M',
-      sheetHeader: 'Moisture (%) at BC',
-      label: 'Moisture at BC',
-      type: 'number',
-      section: 'test_results',
-      required: 'testing',
-      unit: '%',
-      unitConfirmed: true,
-      min: 0,
-      max: 100,
-      decimals: 2,
-      parameterKey: 'ground.moisture',
-      // Not applicable at AM. Hidden in the UI and asserted Not Applicable by
-      // the server, which never treats the absence as a missing result.
-      appliesWhen: { field: 'sampling_point', equals: ['BC'] },
-      help: HELP.moisture,
-    },
+    ...sieveTestSettings(10, { durabilityTester: false }),
+    /*
+      `Moisture (%) at BC` was removed by migration 0043. The plant does not
+      measure moisture on ground meal, and no value was ever recorded in it —
+      which is also what made the removal possible, since a column that has
+      ever held a figure cannot be deleted.
+
+      It was this tab's only CONDITIONAL field: applicable at BC and not at
+      AM. Nothing else in the registry uses `appliesWhen` now, and the
+      machinery stays because the next conditional column will need it.
+    */
     // N..AA
     ...sieveMassFields(13, 'optional'),
     // AB..AJ

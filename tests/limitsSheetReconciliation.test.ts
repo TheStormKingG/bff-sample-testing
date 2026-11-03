@@ -111,7 +111,7 @@ describe('the lifecycle guard', () => {
     }
   });
 
-  it('permits exactly five transitions, and the fifth is the one 0039 added', () => {
+  it('permits exactly six transitions, the last two added for a reason stated in SQL', () => {
     // Parsed rather than grepped, so a SIXTH move slipped in beside the
     // intended one fails here. "Contains reference_only -> superseded" would
     // pass on a guard that also permitted draft -> approved.
@@ -134,6 +134,11 @@ describe('the lifecycle guard', () => {
         'proposed -> approved',
         'proposed -> rejected',
         'reference_only -> superseded',
+        // 0043. A draft holding figures the plant has decided against sits
+        // one proposal and one approval away from colouring a quality
+        // record, and a rejection would have to name a rejector who never
+        // decided anything.
+        'draft -> superseded',
       ].sort(),
     );
   });

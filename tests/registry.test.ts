@@ -26,14 +26,13 @@ import {
   RETIRED_STAGES,
   resolvePrefix,
   isFieldApplicable,
-  fieldsRequiredAt,
   adverseObservationFields,
   assessableFields,
   ALL_PREFIXES,
   PROTECTED_HEADER_ROWS,
   FIRST_DATA_ROW,
 } from '@/forms/registry';
-import { STAGES, type Stage } from '@/forms/types';
+import { STAGES, type FieldDef, type Stage } from '@/forms/types';
 import { columnLetterToIndex, indexToColumnLetter } from '@/forms/sheetMapping';
 
 /** Verified row-4 headers, transcribed independently from the live workbook. */
@@ -53,10 +52,12 @@ const VERIFIED_HEADERS: Record<Stage, { tab: string; headers: string[] }> = {
     headers: [
       'Sample ID', 'Date', 'Time', 'Sampling point', 'Material or feed type',
       'Batch or bin no.', 'Sampled by', 'Mill screen size (mm)',
+      // Retired but not removed: one figure was recorded against it on a
+      // voided record, and an append-only assessment cites that figure.
       'Hammer distance from screen (mm)',
+      'Mill rotational speed (rpm)',
       'Sieve shaker frequency (Hz)',
       'Vibration time (min)', 'Sieve series',
-      'Moisture (%) at BC',
       'ABNT 5 empty sieve (g)', 'ABNT 5 sieve + sample (g)',
       'ABNT 10 empty sieve (g)', 'ABNT 10 sieve + sample (g)',
       'ABNT 16 empty sieve (g)', 'ABNT 16 sieve + sample (g)',
@@ -375,21 +376,57 @@ describe('registry: sample ID prefixes', () => {
 });
 
 describe('registry: conditional applicability (UAT-02)', () => {
-  const moistureBc = STAGE_SCHEMAS.ground.fields.find((f) => f.key === 'moisture_pct_bc')!;
+  /*
+    NO REGISTRY FIELD USES `appliesWhen` ANY MORE.
 
-  it('moisture at BC applies at BC', () => {
-    expect(isFieldApplicable(moistureBc, { sampling_point: 'BC' })).toBe(true);
+    `moisture_pct_bc` was the only one, and migration 0043 removed it — the
+    plant does not measure moisture on ground meal. These tests used to run
+    against it, and deleting them with the column would have taken UAT-02's
+    only coverage with it: the machinery is still in the engine, on both
+    sides, and the next conditional column will depend on it being right.
+
+    So they run against a SYNTHETIC field instead. That is weaker in one
+    specific way and the weakness is worth naming: nothing now proves the
+    registry and the database agree about a real conditional column, because
+    there is no real conditional column to agree about. What is still proven
+    is that the rule itself works.
+  */
+  const conditional: FieldDef = {
+    key: 'synthetic_bc_only',
+    columnLetter: 'ZZ',
+    sheetHeader: 'Synthetic',
+    label: 'Synthetic',
+    type: 'number',
+    section: 'test_results',
+    required: 'testing',
+    appliesWhen: { field: 'sampling_point', equals: ['BC'] },
+  };
+
+  it('a BC-only field applies at BC', () => {
+    expect(isFieldApplicable(conditional, { sampling_point: 'BC' })).toBe(true);
   });
 
-  it('moisture at BC does not apply at AM', () => {
-    expect(isFieldApplicable(moistureBc, { sampling_point: 'AM' })).toBe(false);
+  it('a BC-only field does not apply at AM', () => {
+    expect(isFieldApplicable(conditional, { sampling_point: 'AM' })).toBe(false);
   });
 
-  it('excludes non-applicable fields from testing requirements', () => {
-    const amRequired = fieldsRequiredAt('ground', 'testing', { sampling_point: 'AM' }).map((f) => f.key);
-    const bcRequired = fieldsRequiredAt('ground', 'testing', { sampling_point: 'BC' }).map((f) => f.key);
-    expect(amRequired).not.toContain('moisture_pct_bc');
-    expect(bcRequired).toContain('moisture_pct_bc');
+  it('a field with no condition applies whatever the context says', () => {
+    // The control. Without it the two assertions above would pass on an
+    // `isFieldApplicable` that returned the wrong answer for everything.
+    const plain = { ...conditional, appliesWhen: undefined };
+    expect(isFieldApplicable(plain, { sampling_point: 'AM' })).toBe(true);
+    expect(isFieldApplicable(plain, {})).toBe(true);
+  });
+
+  it('the registry declares no conditional column, which is why the above is synthetic', () => {
+    const conditionals = STAGES.flatMap((stage) =>
+      STAGE_SCHEMAS[stage].fields
+        .filter((f) => f.appliesWhen !== undefined)
+        .map((f) => `${stage}.${f.key}`),
+    );
+    // When a real one is added, point the suite back at it and delete the
+    // synthetic — and this assertion is what will tell you to.
+    expect(conditionals).toEqual([]);
   });
 });
 

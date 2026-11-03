@@ -9,7 +9,7 @@ import {
   type StageFormValues,
 } from '@/forms/zodSchema';
 import { defaultStageValues, emptyStageValues, hydrateStageValues } from '@/forms/defaults';
-import { STAGE_SCHEMAS, fieldsRequiredAt } from '@/forms/registry';
+import { STAGE_SCHEMAS, fieldsRequiredAt, resolvePrefix } from '@/forms/registry';
 import { STAGES } from '@/forms/types';
 import { toSheetRow } from '@/forms/sheetMapping';
 
@@ -57,7 +57,8 @@ function groundRegistration(
     collection_date: '2026-10-24',
     collection_time: '10:00',
     sampling_point: point,
-    material_or_feed_type: 'Starter',
+    material_or_feed_type: 'corn_pelleted',
+    mill_rpm: '1300',
     batch_or_bin_no: 'B-2291',
     sampled_by: 'Satesh',
     mill_screen_size_mm: '5',
@@ -352,60 +353,29 @@ describe('controlled codes', () => {
   });
 });
 
+/*
+  The conditional column these ran against — `ground.moisture_pct_bc` —
+  was removed by migration 0043: the plant does not measure moisture on
+  ground meal and no value was ever recorded in it. `tests/registry.test.ts`
+  keeps `isFieldApplicable` under test with a synthetic field and asserts
+  that the registry declares no conditional column, so these suites can be
+  restored the day one returns. See that file for the full note on the cost.
+*/
 describe('conditional applicability: AM versus BC (UAT-02)', () => {
-  it('omits BC moisture from the editable field list at AM', () => {
-    const keys = editableFields('ground', groundRegistration('AM')).map((f) => f.key);
-    expect(keys).not.toContain('moisture_pct_bc');
+  it('the registry declares no conditional column, so the schema gates nothing', () => {
+    const conditionals = STAGES.flatMap((stage) =>
+      STAGE_SCHEMAS[stage].fields
+        .filter((f) => f.appliesWhen !== undefined)
+        .map((f) => `${stage}.${f.key}`),
+    );
+    expect(conditionals).toEqual([]);
   });
 
-  it('includes BC moisture in the editable field list at BC', () => {
-    const keys = editableFields('ground', groundRegistration('BC')).map((f) => f.key);
-    expect(keys).toContain('moisture_pct_bc');
-  });
-
-  it('does not require BC moisture at testing when the point is AM', () => {
-    const result = parseStageValues('ground', 'testing', groundRegistration('AM', {
-      avg_particle_size_um: '880',
-      size_spread_gsd: '1.9',
-      tested_by_qo: 'Kayla',
-    }));
-    if (!result.ok) throw new Error(`expected valid: ${JSON.stringify(result.errors)}`);
-    expect('moisture_pct_bc' in result.values).toBe(false);
-  });
-
-  it('requires BC moisture at testing when the point is BC', () => {
-    const result = parseStageValues('ground', 'testing', groundRegistration('BC', {
-      avg_particle_size_um: '880',
-      size_spread_gsd: '1.9',
-      tested_by_qo: 'Kayla',
-    }));
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.errors['moisture_pct_bc']).toMatch(/enter a value/i);
-  });
-
-  it('strips a stale BC moisture value once the point is switched to AM', () => {
-    // The operator entered a BC reading, then corrected the point to AM. The
-    // reading must not reach the server, let alone the sheet.
-    const result = parseStageValues('ground', 'testing', groundRegistration('AM', {
-      moisture_pct_bc: '13.2',
-      avg_particle_size_um: '880',
-      size_spread_gsd: '1.9',
-      tested_by_qo: 'Kayla',
-    }));
-    if (!result.ok) throw new Error(`expected valid: ${JSON.stringify(result.errors)}`);
-    expect('moisture_pct_bc' in result.values).toBe(false);
-
-    const row = toSheetRow('ground', 'AM-261024-01', result.values);
-    // Column L is moisture at BC.
-    expect(row[11]).toBe('');
-  });
-
-  it('does not let an invalid stale BC value fail an AM submission', () => {
-    const result = parseStageValues('ground', 'registration', groundRegistration('AM', {
-      moisture_pct_bc: 'rubbish',
-    }));
-    expect(result.ok).toBe(true);
+  it('AM and BC still differ, in the one way that is left: the sample-ID prefix', () => {
+    // Not a replacement for what was lost, but the sampling point is still
+    // load-bearing and this is the part of UAT-02 a real column still backs.
+    expect(resolvePrefix('ground', { sampling_point: 'AM' })).toBe('AM');
+    expect(resolvePrefix('ground', { sampling_point: 'BC' })).toBe('BC');
   });
 });
 
@@ -674,6 +644,13 @@ describe('the schema is generated, not hand-written per stage', () => {
     // being `system` and so outside this sweep); and `4 Pellets` gained 2
     // numeric settings, 14 masses and the 2 weighings (+18).
     //
+    // 0043 left the numbers at 109 and moved the codes from 34 to 35:
+    // `2 Ground` lost `Moisture (%) at BC` and gained `Mill rotational speed
+    // (rpm)`, so the numeric count did not move, and `Material or feed type`
+    // stopped being free text and became the four grind purposes. A sweep
+    // reporting only the total would have shown no change at all across a
+    // migration that removed one column and added another.
+    //
     // 0038 moved the numbers from 111 to 109 and the codes from 33 to 34,
     // and the two movements are ONE change seen twice: `5 Extruded soya`
     // lost `Protein solubility (%)` outright (-1 number) and its urease
@@ -683,7 +660,7 @@ describe('the schema is generated, not hand-written per stage', () => {
     //
     // Asserted so that a registry change dropping fields out of the sweep
     // fails here rather than passing quietly with less coverage than claimed.
-    expect(checked).toBe(109 + 34);
+    expect(checked).toBe(109 + 35);
   });
 
   it('never emits a key the registry does not define for the stage', () => {

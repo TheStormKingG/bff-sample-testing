@@ -29,7 +29,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { STAGE_SCHEMAS, fieldsRequiredAt, isFieldApplicable } from '@/forms/registry';
-import { SECTIONS, SECTION_LABELS, type FieldDef, type Section, type Stage } from '@/forms/types';
+import { SECTIONS, SECTION_LABELS, type FieldDef, type Section, type Stage, STAGES } from '@/forms/types';
 import { defaultStageValues, emptyStageValues } from '@/forms/defaults';
 import { editableFields, type StageFormValues } from '@/forms/zodSchema';
 import { StageForm, type StageFormSubmission } from '@/components/form/StageForm';
@@ -265,7 +265,12 @@ describe('StageForm — section bands', () => {
     // carry the durability test. All of them are `system` precisely so they
     // never render as an operator input.
     expect(systemColumns).toBe(8 + 9 * 5 + 1 * 2);
-    expect(notApplicable).toBe(1);
+    // ZERO since 0043. `ground.moisture_pct_bc` was the registry's only
+    // conditional column and the plant does not measure it; see
+    // `tests/registry.test.ts` for what that cost UAT-02's coverage. The
+    // term is kept in the arithmetic below rather than dropped, because the
+    // next conditional column must land back in it.
+    expect(notApplicable).toBe(0);
 
     /*
       Two fields are recorded but not asked for, and they are counted here
@@ -281,82 +286,46 @@ describe('StageForm — section bands', () => {
                       of the system it holds zero rows — the disposition and
                       hold flow is where that decision is actually recorded,
                       with a reason, an actor and an audit entry.
+
+        hammer_distance_mm
+                      on `2 Ground`, from 0043. Replaced by the mill's
+                      rotational speed, which is what the Polinutri report
+                      specifies on. It could not be DELETED: one figure was
+                      recorded against it, an append-only assessment cites
+                      that figure, and a measurement an assessment cites
+                      cannot be released. The schema chose hiding over
+                      destroying a quality decision.
     */
     const hidden = Object.values(STAGE_SCHEMAS).flatMap((s) =>
       s.fields.filter((f) => f.hidden === true).map((f) => `${s.stage}.${f.key}`),
     );
     expect(hidden.filter((k) => k.endsWith('.sieve_series'))).toHaveLength(5);
     expect(hidden.filter((k) => k.endsWith('.action_taken'))).toHaveLength(3);
+    expect(hidden.filter((k) => k.endsWith('.hammer_distance_mm'))).toHaveLength(1);
     const hiddenFields = hidden.length;
-    expect(hiddenFields).toBe(8);
+    expect(hiddenFields).toBe(9);
     expect(checked).toBe(columns - systemColumns - notApplicable - hiddenFields);
   });
 });
 
-describe('StageForm — conditional applicability (UAT-02)', () => {
-  /**
-   * The conditional column, found through the registry rather than named.
-   * Observation: a sweep that leaves a conditional member in its default state
-   * tests the default, not the property, so this one is deliberately placed in
-   * both of its states below.
-   */
-  const conditional = STAGE_SCHEMAS.ground.fields.find((field) => field.appliesWhen !== undefined);
+/*
+  The conditional column these ran against — `ground.moisture_pct_bc`,
+  applicable at sampling point BC only — was removed by migration 0043: the
+  plant does not measure moisture on ground meal and no value was ever
+  recorded in it. `tests/registry.test.ts` keeps `isFieldApplicable` under
+  test with a synthetic field and asserts the registry declares no
+  conditional column, so these suites can be restored the day one returns.
+  See that file for the full note on what this costs.
+*/
 
-  it('the premise holds: Ground has exactly one BC-only column', () => {
-    const gated = STAGE_SCHEMAS.ground.fields.filter((field) => field.appliesWhen !== undefined);
-    expect(gated.map((field) => field.key)).toEqual(['moisture_pct_bc']);
-    expect(gated[0]?.appliesWhen?.equals).toEqual(['BC']);
-  });
-
-  it('does not render the BC-only column at sampling point AM', () => {
-    expect(conditional).toBeDefined();
-    renderStage('ground', { ...defaultStageValues('ground'), sampling_point: 'AM' });
-
-    expect(
-      screen.queryByText(conditional?.label ?? '—', { selector: 'span' }),
-    ).not.toBeInTheDocument();
-  });
-
-  it('renders the BC-only column at sampling point BC', () => {
-    expect(conditional).toBeDefined();
-    renderStage('ground', { ...defaultStageValues('ground'), sampling_point: 'BC' });
-
-    expect(screen.getByText(conditional?.label ?? '—', { selector: 'span' })).toBeInTheDocument();
-  });
-
-  it('clears a BC reading when the operator switches to AM, and never submits it', async () => {
-    const user = userEvent.setup();
-    const key = conditional?.key ?? 'moisture_pct_bc';
-
-    const seeded = fillRegistrationFields('ground', {
-      ...defaultStageValues('ground'),
-      sampling_point: 'BC',
-    });
-    const { onSubmit } = renderStage('ground', seeded);
-
-    const moisture = screen.getByLabelText(labelPattern(conditional?.label ?? '—'));
-    await user.type(moisture, '13.25');
-    expect(moisture).toHaveValue('13.25');
-
-    const point = screen.getByLabelText(/sampling point/i);
-    await user.selectOptions(point, 'AM');
-
-    // Gone from the screen...
-    expect(
-      screen.queryByText(conditional?.label ?? '—', { selector: 'span' }),
-    ).not.toBeInTheDocument();
-
-    // ...and gone from the payload, which is the part that would otherwise
-    // reach the spreadsheet as a reading taken at the wrong point.
-    await user.click(screen.getByRole('button', { name: /register sample/i }));
-    expect(onSubmit).toHaveBeenCalledTimes(1);
-    const submission = onSubmit.mock.calls[0]?.[0] as StageFormSubmission;
-    expect(Object.keys(submission.values)).not.toContain(key);
-    expect(submission.values['sampling_point']).toBe('AM');
-
-    // Switching back shows an empty box, not the stale 13.25.
-    await user.selectOptions(point, 'BC');
-    expect(screen.getByLabelText(labelPattern(conditional?.label ?? '—'))).toHaveValue('');
+describe('conditional columns (UAT-02)', () => {
+  it('the registry declares none, so there is nothing for the form to gate', () => {
+    const gated = STAGES.flatMap((stage) =>
+      STAGE_SCHEMAS[stage].fields
+        .filter((field) => field.appliesWhen !== undefined)
+        .map((field) => `${stage}.${field.key}`),
+    );
+    expect(gated).toEqual([]);
   });
 });
 

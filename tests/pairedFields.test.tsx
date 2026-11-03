@@ -70,7 +70,7 @@ describe('sample details, two fields to a line', () => {
       rows.map((row) => Array.from(row.querySelectorAll('span')).map((c) => c.textContent)),
     ).toEqual([
       ['Date', 'Time'],
-      ['Sampling point', 'Material or feed type'],
+      ['Sampling point', 'Ground for'],
       ['Batch or bin no.', 'Sampled by'],
     ]);
   });

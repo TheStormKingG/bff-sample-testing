@@ -244,24 +244,37 @@ describe('toSheetRow: coded values become their workbook labels', () => {
   });
 });
 
-describe('toSheetRow: non-applicable fields', () => {
-  it('leaves BC moisture blank at AM and never writes a zero there', () => {
-    const row = toSheetRow('ground', 'AM-261024-01', {
-      sampling_point: 'AM',
-      moisture_pct_bc: 12.4, // stale value from a switched point
-    });
-    // K since the sieve test took J..L on `2 Ground` and the drum speed left.
-    expect(row[columnLetterToIndex('M')]).toBe('');
-  });
+/*
+  ===========================================================================
+  THERE IS NO LONGER A CONDITIONAL COLUMN TO TEST THIS AGAINST
+  ===========================================================================
+  `ground.moisture_pct_bc` was the registry's only `appliesWhen` field —
+  applicable at sampling point BC and not at AM — and migration 0043 removed
+  it, because the plant does not measure moisture on ground meal and no value
+  was ever recorded in it.
 
-  it('writes BC moisture at BC', () => {
-    const row = toSheetRow('ground', 'BC-261024-01', {
-      sampling_point: 'BC',
-      moisture_pct_bc: 12.4,
-    });
-    // M since the sieve test took J..L on `2 Ground`: three settings, not
-    // four — ground meal never goes in the durability tester's drum.
-    expect(row[columnLetterToIndex('M')]).toBe('12.4');
+  The machinery it exercised is still live on both sides: `isFieldApplicable`
+  in the browser and `is_field_applicable` in SQL, with UAT-02 behind them.
+  What is gone is any END-TO-END subject for it — a real column whose
+  behaviour the form, the schema, the sheet mapping and the database contract
+  could be checked against together.
+
+  `tests/registry.test.ts` keeps the rule itself under test with a synthetic
+  field, and asserts that the registry declares no conditional column, so the
+  day a real one is added that assertion fails and points back here.
+
+  This is a reduction in coverage and it is written down rather than absorbed
+  silently. If a conditional column returns, restore these suites first.
+*/
+
+describe('toSheetRow: non-applicable fields', () => {
+  it('has no conditional column left to blank', () => {
+    const conditionals = STAGES.flatMap((stage) =>
+      STAGE_SCHEMAS[stage].fields
+        .filter((f) => f.appliesWhen !== undefined)
+        .map((f) => `${stage}.${f.key}`),
+    );
+    expect(conditionals).toEqual([]);
   });
 });
 

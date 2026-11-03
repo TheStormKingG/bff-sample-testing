@@ -260,84 +260,67 @@ describe('UAT-10: raw-material intake, gate to disposition', () => {
   });
 });
 
-describe('UAT-02: AM and BC compose differently all the way to the sheet', () => {
-  const instant = fromPlantParts('2026-10-24', '09:30').toISOString();
+/*
+  ===========================================================================
+  THIS SUITE LOST ITS SUBJECT, AND WHAT REPLACES IT IS NARROWER
+  ===========================================================================
+  UAT-02 was proved here end to end: a stale BC moisture reading held on an
+  AM sample was stripped from the payload, written as blank in column M, and
+  assessed `not_applicable` rather than `not_tested` — the registry, the
+  schema, the sheet mapping and the engine agreeing about one conditional
+  column, in one test.
 
+  Migration 0043 removed that column. The plant does not measure moisture on
+  ground meal and no value was ever recorded in it, so it could be deleted
+  outright — and with it went the only conditional column in the registry.
+
+  What is left below is the half of UAT-02 that still has a real subject: AM
+  and BC still compose different sample-ID prefixes. The applicability half
+  now has unit coverage only, in `tests/registry.test.ts`, against a
+  synthetic field. That is a reduction and it is recorded rather than
+  absorbed; if a conditional column returns, this suite is the one to
+  restore first.
+*/
+describe('UAT-02: AM and BC compose differently all the way to the sheet', () => {
   const groundBase: Record<string, string> = {
     collection_date: '2026-10-24',
     collection_time: '09:30',
-    material_or_feed_type: 'Starter',
+    material_or_feed_type: 'corn_pelleted',
+    mill_rpm: '1300',
     batch_or_bin_no: 'B-4471',
     sampled_by: 'Satesh',
     mill_screen_size_mm: '5',
-    hammer_distance_mm: '12',
   };
 
-  it('AM yields the AM prefix and never writes BC moisture, even if a stale value is held', () => {
-    const stale = {
-      ...groundBase,
-      sampling_point: 'AM',
-      moisture_pct_bc: '12.4', // left over from a BC entry before switching
-      tested_by_qo: 'Kayla',
-    };
+  it('AM composes the AM prefix and a sheet row that validates', () => {
+    const am = { ...groundBase, sampling_point: 'AM', tested_by_qo: 'Kayla' };
+    expect(resolvePrefix('ground', am)).toBe('AM');
 
-    expect(resolvePrefix('ground', stale)).toBe('AM');
-
-    const cleared = clearNonApplicable('ground', stale);
-    const parsed = parseStageValues('ground', 'testing', cleared);
+    const parsed = parseStageValues('ground', 'testing', clearNonApplicable('ground', am));
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
 
-    // Stripped from the payload entirely, not submitted as null.
-    expect(parsed.values).not.toHaveProperty('moisture_pct_bc');
-
     const row = toSheetRow('ground', 'AM-261024-01', parsed.values);
-    // M, not L: the sieve test took J..L when it replaced the two
-    // analyser-reading columns, and `2 Ground` carries three settings rather
-    // than four because ground meal never goes in the durability tester.
-    expect(row[columnLetterToIndex('M')]).toBe('');
-
-    // And it assesses as Not Applicable — distinct from Not Tested.
-    const assessments = assessAll('ground', parsed.values, NO_APPROVED_RULES, instant);
-    const bc = assessments.find((a) => a.fieldKey === 'moisture_pct_bc')!;
-    expect(bc.assessment.result).toBe('not_applicable');
+    // The grind purpose reaches the sheet as its LABEL, never its code: the
+    // code is what a limit is scoped by, the label is what a reader sees.
+    expect(row[columnLetterToIndex('E')]).toBe('Corn for pelletized feed');
+    expect(row[columnLetterToIndex('J')]).toBe('1300');
   });
 
-  it('BC yields the BC prefix and requires moisture at testing', () => {
-    const withoutMoisture = {
-      ...groundBase,
-      sampling_point: 'BC',
-      tested_by_qo: 'Kayla',
-    };
+  it('BC composes the BC prefix from the same values', () => {
+    const bc = { ...groundBase, sampling_point: 'BC', tested_by_qo: 'Kayla' };
+    expect(resolvePrefix('ground', bc)).toBe('BC');
 
-    expect(resolvePrefix('ground', withoutMoisture)).toBe('BC');
-
-    const missing = parseStageValues('ground', 'testing', withoutMoisture);
-    expect(missing.ok).toBe(false);
-    if (!missing.ok) expect(missing.errors).toHaveProperty('moisture_pct_bc');
-
-    const complete = parseStageValues('ground', 'testing', { ...withoutMoisture, moisture_pct_bc: '12.4' });
-    expect(complete.ok).toBe(true);
-    if (!complete.ok) return;
-    const row = toSheetRow('ground', 'BC-261024-01', complete.values);
-    expect(row[columnLetterToIndex('M')]).toBe('12.4');
+    const parsed = parseStageValues('ground', 'testing', clearNonApplicable('ground', bc));
+    expect(parsed.ok, JSON.stringify(parsed)).toBe(true);
   });
 
-  it('the two points write to the same tab but never to each other\'s columns', () => {
-    const am = parseStageValues('ground', 'testing', {
-      ...groundBase, sampling_point: 'AM', tested_by_qo: 'Kayla',
-    });
-    const bc = parseStageValues('ground', 'testing', {
-      ...groundBase, sampling_point: 'BC', moisture_pct_bc: '12.4', tested_by_qo: 'Kayla',
-    });
-    if (!am.ok || !bc.ok) throw new Error('both should validate');
-
-    const amRow = toSheetRow('ground', 'AM-261024-01', am.values);
-    const bcRow = toSheetRow('ground', 'BC-261024-01', bc.values);
-    expect(amRow).toHaveLength(39);
-    expect(bcRow).toHaveLength(39);
-    expect(amRow[columnLetterToIndex('D')]).toBe('AM after mill');
-    expect(bcRow[columnLetterToIndex('D')]).toBe('BC before conditioning');
+  it('the control: the two points really do differ', () => {
+    // Without this, both assertions above would pass on a `resolvePrefix`
+    // that returned the same string for everything.
+    expect(resolvePrefix('ground', { ...groundBase, sampling_point: 'AM' })).not.toBe(
+      resolvePrefix('ground', { ...groundBase, sampling_point: 'BC' }),
+    );
   });
 });
 
