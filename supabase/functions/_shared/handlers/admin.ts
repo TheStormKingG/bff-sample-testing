@@ -334,12 +334,11 @@ export function adminSpec(action: AdminAction): MutationSpec<Record<string, unkn
     subjectType:
       action === 'upsert_controlled_value'
         ? 'controlled_value'
-        : action === 'set_sieve_series' || action === 'set_dgm_target_ranges'
+        : action === 'set_sieve_series'
           ? 'system_config'
           : 'user',
     subjectId: (body) => {
       if (action === 'set_sieve_series') return 'sieve_series';
-      if (action === 'set_dgm_target_ranges') return 'dgm_target_ranges';
       if (action === 'upsert_controlled_value') {
         return typeof body['listKey'] === 'string' ? body['listKey'] : null;
       }
@@ -474,56 +473,6 @@ export function adminSpec(action: AdminAction): MutationSpec<Record<string, unkn
         };
       }
 
-      // ---- the DGM target ranges ---------------------------------------
-
-      if (action === 'set_dgm_target_ranges') {
-        /*
-          Forwarded as JSON and validated by the RPC, for the same reason the
-          sieve table is: `rpc_set_dgm_target_ranges` re-checks the stage, the
-          order of the two figures and the stated source in SQL, because a
-          value reaching it has not passed through the browser's copy of
-          those rules. This refuses only a shape that is not an object.
-        */
-        const document = body['document'];
-        if (typeof document !== 'object' || document === null || Array.isArray(document)) {
-          throw new ApiError('bad_request', {
-            message: 'The DGM targets must be sent as an object.',
-            details: { field: 'document' },
-          });
-        }
-
-        const result = await callTransaction<SieveSeriesResult>(admin, RPC.setDgmTargetRanges, {
-          ...envelope,
-          p_document: document,
-          p_reason: reason,
-        });
-
-        /** COMMIT POINT — see `_shared/commitOutcome.ts`. */
-        markCommitted({ ok: true, action, key: result.key, updatedAt: result.updated_at });
-
-        await recordAudit({
-          actorId: actor.userId,
-          action: `admin_action.${action}`,
-          subjectType: 'system_config',
-          subjectId: result.key,
-          outcome: 'allowed',
-          reason,
-          // The RPC already audits the whole document before and after. This
-          // is the endpoint's own record that the call was allowed, by whom.
-          after: { key: result.key, updated_at: result.updated_at },
-          appVersion,
-        });
-
-        return {
-          ok: true,
-          action,
-          key: result.key,
-          value: result.value,
-          updatedAt: result.updated_at,
-          message:
-            'The DGM targets have been updated. Results screens show the new range immediately.',
-        };
-      }
 
       // ---- delegations --------------------------------------------------
 

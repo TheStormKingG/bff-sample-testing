@@ -134,16 +134,6 @@ export const ADMIN_ACTIONS = [
    * why the RPC audits the whole table before and after.
    */
   'set_sieve_series',
-  /**
-   * Replace the per-form DGM target ranges. `user.manage`, like the sieve
-   * table: it is a TARGET for the miller, not a disposition — nothing in the
-   * application releases, rejects or holds a sample on the strength of it,
-   * and no computed or stored figure reads it. What it decides is what a
-   * reader of a quality record sees shaded green, which is why the RPC
-   * audits the whole document before and after and refuses a target that
-   * does not say where its figures came from.
-   */
-  'set_dgm_target_ranges',
   'create_account',
   'set_password',
 ] as const;
@@ -223,7 +213,6 @@ export const ADMIN_ACTION_CLAIM_OPERATION: Readonly<Record<AdminAction, string>>
   revoke_delegation: 'revoke_delegation',
   upsert_controlled_value: 'upsert_controlled_value',
   set_sieve_series: 'set_sieve_series',
-  set_dgm_target_ranges: 'set_dgm_target_ranges',
   // These two are served by `rpc_record_admin_password_set`, which resolves the
   // operation FROM the claim and validates it against its own two-member
   // constant, so the prefixed name IS what it expects. Changing either string
@@ -241,7 +230,6 @@ export const ADMIN_ACTION_PERMISSION: Readonly<Record<AdminAction, Permission>> 
   revoke_delegation: 'user.manage',
   upsert_controlled_value: 'user.manage',
   set_sieve_series: 'user.manage',
-  set_dgm_target_ranges: 'user.manage',
   create_account: 'user.manage',
   set_password: 'user.manage',
 };

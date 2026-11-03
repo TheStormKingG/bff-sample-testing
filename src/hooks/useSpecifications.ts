@@ -346,6 +346,10 @@ export function useSpecificationAction() {
       // An approved rule changes future assessments, so detail views must
       // not keep showing a cached evaluation as current.
       void client.invalidateQueries({ queryKey: ['sample'] });
+      // And since 0041 the particle-size band on every results screen IS an
+      // approved rule, read with a one-hour staleTime. Without this an
+      // approver would watch their own approval not appear for an hour.
+      void client.invalidateQueries({ queryKey: ['dgm-target-ranges'] });
     },
   });
 }

@@ -179,7 +179,68 @@ function parseSqlFunctions(): SqlFunction[] {
   return found;
 }
 
-const SQL_FUNCTIONS = parseSqlFunctions();
+/**
+ * Every `rpc_*` whose LAST appearance in the corpus is a drop.
+ *
+ * ===========================================================================
+ * A MODEL THAT SEES ONLY DEFINITIONS IS NOT A MODEL OF THE DATABASE
+ * ===========================================================================
+ * `parseSqlFunctions` reads `create function` and nothing else, so a
+ * function defined in one migration and dropped in a later one stayed in the
+ * model for ever. 0042 retired `rpc_set_dgm_target_ranges` — it wrote a
+ * configuration document that no longer exists — and "defined but never
+ * called" then reported a function the database does not have.
+ *
+ * ===========================================================================
+ * AND A DROP IS NOT A RETIREMENT
+ * ===========================================================================
+ * The first version of this read every `drop function` and called the name
+ * retired. That was wrong, and the suite said so immediately: this codebase
+ * drops and recreates a function whenever its RETURN TYPE changes, because
+ * `create or replace` is refused in that case. Seven RPCs are dropped and
+ * immediately redefined that way, and treating them as retired emptied a
+ * third of the contract — including `rpc_register_sample`, the single most
+ * important write path in the system, which would then have been "undefined"
+ * with nothing failing.
+ *
+ * So what matters is ORDER. A name is retired when the last thing the corpus
+ * does to it is drop it. The corpus is concatenated in filename order, which
+ * is application order, and the comparison is on offset within it.
+ */
+function retiredRpcNames(): Set<string> {
+  let sqlFiles: string[] = [];
+  try {
+    sqlFiles = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
+  } catch {
+    sqlFiles = [];
+  }
+
+  // name -> ['create' | 'drop', absolute offset of the last such event]
+  const last = new Map<string, 'create' | 'drop'>();
+  let offset = 0;
+  const events: Array<{ at: number; name: string; kind: 'create' | 'drop' }> = [];
+  for (const file of sqlFiles) {
+    const src = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
+    for (const m of src.matchAll(
+      /create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?(rpc_[a-z0-9_]+)/gi,
+    )) {
+      events.push({ at: offset + m.index!, name: m[1]!, kind: 'create' });
+    }
+    for (const m of src.matchAll(
+      /drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?(rpc_[a-z0-9_]+)/gi,
+    )) {
+      events.push({ at: offset + m.index!, name: m[1]!, kind: 'drop' });
+    }
+    offset += src.length;
+  }
+  events.sort((a, b) => a.at - b.at);
+  for (const e of events) last.set(e.name, e.kind);
+
+  return new Set([...last].filter(([, kind]) => kind === 'drop').map(([name]) => name));
+}
+
+const RETIRED_RPCS = retiredRpcNames();
+const SQL_FUNCTIONS = parseSqlFunctions().filter((f) => !RETIRED_RPCS.has(f.name));
 
 /**
  * A definition's `returns ...` clause, normalised.
@@ -251,6 +312,27 @@ describe('RPC contract: every called function is defined (review finding 1)', ()
     expect(referenced.size).toBeGreaterThan(20); // instrument check
     const missing = [...referenced].filter((n) => !SQL_BY_NAME.has(n)).sort();
     expect(missing, `referenced but undefined: ${missing.join(', ')}`).toEqual([]);
+  });
+
+  it('tells a retired RPC from one dropped only to be recreated', () => {
+    // The instrument for the filter above, in both directions.
+    //
+    // 0042 retired `rpc_set_dgm_target_ranges` outright: it wrote a
+    // configuration document that no longer exists.
+    expect(RETIRED_RPCS.has('rpc_set_dgm_target_ranges')).toBe(true);
+    // `rpc_register_sample` is dropped and immediately recreated whenever its
+    // return type changes, which `create or replace` cannot do. Reading that
+    // as a retirement would take the system's most important write path out
+    // of the contract with nothing failing.
+    expect(RETIRED_RPCS.has('rpc_register_sample')).toBe(false);
+    expect(SQL_BY_NAME.has('rpc_register_sample')).toBe(true);
+
+    for (const name of RETIRED_RPCS) {
+      expect(
+        referencedRpcNames().has(name),
+        `${name} is retired by a migration but still called from supabase/functions`,
+      ).toBe(false);
+    }
   });
 
   it('does not define an rpc_* function nothing calls', () => {

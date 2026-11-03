@@ -46,8 +46,7 @@
  * from different documents.
  */
 
-import { STAGE_SCHEMAS } from '../forms/registry.ts';
-import { STAGES, type Stage } from '../forms/types.ts';
+import { type Stage } from '../forms/types.ts';
 
 /** One form's target, in micrometres. */
 export interface DgmTargetRange {
@@ -70,159 +69,29 @@ export interface DgmTargetDocument {
   readonly ranges: Readonly<Partial<Record<Stage, DgmTargetRange>>>;
 }
 
-/** The `system_config` key this document is stored under. */
-export const DGM_TARGETS_CONFIG_KEY = 'dgm_target_ranges';
+/*
+  ===========================================================================
+  WHAT USED TO BE HERE, AND WHY IT IS NOT
+  ===========================================================================
+  A `system_config` key, a `DGM_TARGET_STAGES` list and a 110-line
+  `parseDgmTargets` that read a stored JSON document and refused anything it
+  could not defend — a stage that is not a stage, a figure beyond 20 mm, a
+  range the wrong way round, a target with no stated source.
 
-/**
- * The stages a target may be set for: the five that carry a sieve stack and
- * therefore produce a DGM at all.
- *
- * Derived rather than typed out, so a sixth sieve tab cannot be added to the
- * registry and silently be ineligible for a target. `sieve1_tare_g` is the
- * marker because it is the first column of the stack on every tab that has
- * one.
- */
-export const DGM_TARGET_STAGES: readonly Stage[] = STAGES.filter((stage) =>
-  STAGE_SCHEMAS[stage].fields.some((field) => field.key === 'sieve1_tare_g'),
-);
+  All of it existed because the band had nowhere else to live: before 0041 a
+  computed result could not be assessed, so the only way to get a range onto
+  a chart was an administrator setting that bypassed the specification
+  workflow. Every rule that parser enforced by hand, the specification schema
+  now enforces as a constraint — bounds ordered, source evidence non-empty,
+  the stage a real enum value — and it adds the ones a parser could not:
+  proposed by one person, approved by a different one, versioned, dated.
 
-/**
- * A micrometre figure beyond which a target is a mis-keyed decimal point.
- * The coarsest sieve in service is 4000 µm; 20 mm is five times the top of
- * the stack and nothing a grind could be measured against.
- */
-const MAX_MICRONS = 20000;
-const MAX_BASIS_LENGTH = 300;
+  So the document is gone and `useDgmTargets` reads approved rules instead.
+  What remains below is the DISPLAY side, which never cared where the figures
+  came from: a range, where a sample sits against it, and how to place a
+  micrometre figure on a categorical sieve axis.
+*/
 
-export type DgmTargetParse =
-  | { readonly ok: true; readonly document: DgmTargetDocument }
-  | { readonly ok: false; readonly reason: string };
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
-
-function isStage(value: string): value is Stage {
-  return (STAGES as readonly string[]).includes(value);
-}
-
-/**
- * Read a stored document, refusing anything that would paint a band nobody
- * could defend.
- *
- * Like `parseSieveSeries`, this is whole-or-nothing: half a document would
- * leave one form showing a target and another showing none for no reason a
- * reader could see.
- */
-export function parseDgmTargets(raw: unknown): DgmTargetParse {
-  let data: unknown = raw;
-  if (typeof raw === 'string') {
-    if (raw.trim() === '') return { ok: false, reason: 'The stored DGM targets are empty.' };
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      return { ok: false, reason: 'The stored DGM targets are not readable JSON.' };
-    }
-  }
-  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-    return { ok: false, reason: 'The stored DGM targets are not an object.' };
-  }
-  const doc = data as Record<string, unknown>;
-  if (doc['version'] !== 1) {
-    return { ok: false, reason: `Unsupported DGM target version ${String(doc['version'])}.` };
-  }
-  const ranges = doc['ranges'];
-  if (typeof ranges !== 'object' || ranges === null || Array.isArray(ranges)) {
-    return { ok: false, reason: 'The stored DGM targets need a ranges object.' };
-  }
-
-  const out: Partial<Record<Stage, DgmTargetRange>> = {};
-  for (const [key, value] of Object.entries(ranges as Record<string, unknown>)) {
-    if (!isStage(key)) {
-      return { ok: false, reason: `"${key}" is not a form in this system.` };
-    }
-    // A target on a form with no sieve stack would never be drawn, so it is
-    // refused rather than stored: a setting that has no effect is worse than
-    // no setting, because somebody will set it and believe it is in force.
-    if (!DGM_TARGET_STAGES.includes(key)) {
-      return { ok: false, reason: `The ${key} form has no sieve test, so it produces no DGM.` };
-    }
-    if (value === null || value === undefined) continue;
-    if (typeof value !== 'object' || Array.isArray(value)) {
-      return { ok: false, reason: `The target for ${key} is not an object.` };
-    }
-    const entry = value as Record<string, unknown>;
-    const lower = entry['lowerMicrons'];
-    const upper = entry['upperMicrons'];
-    if (!isFiniteNumber(lower) || lower <= 0) {
-      return { ok: false, reason: `The target for ${key} has no usable lower figure in µm.` };
-    }
-    if (!isFiniteNumber(upper) || upper <= 0) {
-      return { ok: false, reason: `The target for ${key} has no usable upper figure in µm.` };
-    }
-    /*
-      STRICTLY INCREASING, and the error says which way round they go. An
-      inverted pair would not fail — it would silently shade a band of zero
-      width and report every sample as outside it, which looks like a result.
-    */
-    if (upper <= lower) {
-      return {
-        ok: false,
-        reason:
-          `The target for ${key} has its upper figure (${upper} µm) at or below its lower ` +
-          `figure (${lower} µm). The lower figure is the finer grind.`,
-      };
-    }
-    if (upper > MAX_MICRONS) {
-      return {
-        ok: false,
-        reason: `The target for ${key} is above ${MAX_MICRONS} µm, which is a mis-keyed decimal point.`,
-      };
-    }
-    const basis = entry['basis'];
-    if (typeof basis !== 'string' || basis.trim() === '') {
-      return {
-        ok: false,
-        // Enforced rather than encouraged: the screen prints this next to the
-        // figures, and a target shown with no origin invites a reader to take
-        // it for an approved specification.
-        reason: `The target for ${key} does not say where its figures came from.`,
-      };
-    }
-    if (basis.trim().length > MAX_BASIS_LENGTH) {
-      return {
-        ok: false,
-        reason: `The source note for ${key} is longer than ${MAX_BASIS_LENGTH} characters.`,
-      };
-    }
-    out[key] = {
-      lowerMicrons: lower,
-      upperMicrons: upper,
-      basis: basis.trim(),
-    };
-  }
-
-  return { ok: true, document: { version: 1, ranges: out } };
-}
-
-/**
- * Where a micrometre figure sits along the sieve axis, as a fractional
- * position in the stack.
- *
- * The plot spaces the seven positions evenly, so position 0 is the coarsest
- * sieve and position 6 the pan, whatever their apertures are. A figure
- * between two of them is placed by interpolating on the LOG of the two
- * apertures, because a sieve series is approximately geometric: on the
- * shipped stack 1200 µm and 600 µm are adjacent, and linear interpolation
- * would put their midpoint 900 µm at 0.50 while the stack itself puts it at
- * 0.42. Half a sieve width of error in where a target's edge is drawn.
- *
- * CLAMPED at both ends and `null` when the whole figure is off the stack, so
- * a caller cannot draw a band outside the plot or collapsed onto its edge.
- * Exported because this is the one piece of arithmetic in the figure and a
- * drawing is a poor place to check it; `tests/dgmTargets.test.ts` drives it
- * directly.
- */
 export function apertureIndex(
   apertures: readonly number[],
   microns: number,

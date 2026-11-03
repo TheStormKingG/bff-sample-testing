@@ -31,14 +31,10 @@ import { DerivedResultsTable } from '@/components/form/DerivedResultsTable';
 import { ParticleSizeChart } from '@/components/form/ParticleSizeChart';
 import { RegistrationConfirmation } from '@/components/form/RegistrationConfirmation';
 import { deriveSystemValues } from '@/forms/derived';
-import { STAGE_SCHEMAS } from '@/forms/registry';
 import { DEFAULT_SIEVE_PRESET } from '@/lib/dgm';
 import {
   apertureIndex,
   dgmStanding,
-  DGM_TARGET_STAGES,
-  emptyDgmTargets,
-  parseDgmTargets,
   type DgmTargetRange,
 } from '@/lib/dgmTargets';
 
@@ -71,98 +67,22 @@ function stored(stage: 'dgm' | 'ground'): Record<string, string> {
 // The stored document
 // ---------------------------------------------------------------------------
 
-describe('reading a stored set of targets', () => {
-  const good = {
-    version: 1,
-    ranges: { ground: { lowerMicrons: 900, upperMicrons: 1200, basis: 'Auburn 2025.' } },
-  };
+/*
+  The two suites that stood here — "reading a stored set of targets" and
+  "which forms may carry a target" — went with the stored document itself.
 
-  it('accepts a document with a target on one form and none on the others', () => {
-    const parsed = parseDgmTargets(good);
-    expect(parsed.ok).toBe(true);
-    if (!parsed.ok) return;
-    expect(parsed.document.ranges.ground?.upperMicrons).toBe(1200);
-    // PARTIAL IS THE POINT. Two of the five sieve forms ship with no target
-    // because the published guidance gives none for a finished pellet, and a
-    // parser that demanded all five would have forced a figure to be invented.
-    expect(parsed.document.ranges.pellets).toBeUndefined();
-  });
+  They tested `parseDgmTargets`: a 110-line reader that refused a stage which
+  is not a stage, a figure beyond 20 mm, an inverted pair, a target with no
+  stated source. Every one of those rules is now a constraint on
+  `specification_versions`, enforced by the database rather than by a parser
+  the browser happened to run, and the schema adds what no parser could —
+  proposed by one person, approved by a different one, versioned and dated.
 
-  it('accepts the same document as a JSON string, which is how it is stored', () => {
-    const parsed = parseDgmTargets(JSON.stringify(good));
-    expect(parsed.ok).toBe(true);
-  });
-
-  it('accepts an empty set, which is a deployment that has set no target', () => {
-    const parsed = parseDgmTargets({ version: 1, ranges: {} });
-    expect(parsed.ok).toBe(true);
-    if (!parsed.ok) return;
-    expect(Object.keys(parsed.document.ranges)).toEqual([]);
-  });
-
-  it.each([
-    ['not JSON', '{nope'],
-    ['an array', [] as unknown],
-    ['the wrong version', { version: 2, ranges: {} }],
-    ['no ranges object', { version: 1 }],
-    ['a form that does not exist', { version: 1, ranges: { fermenter: { lowerMicrons: 1, upperMicrons: 2, basis: 'x' } } }],
-    // A target on a form with no sieve stack would never be drawn. A setting
-    // that silently has no effect is worse than no setting.
-    ['a form with no sieve test', { version: 1, ranges: { conditioned: { lowerMicrons: 900, upperMicrons: 1200, basis: 'x' } } }],
-    ['a negative figure', { version: 1, ranges: { ground: { lowerMicrons: -1, upperMicrons: 1200, basis: 'x' } } }],
-    ['a figure that is not a number', { version: 1, ranges: { ground: { lowerMicrons: '900', upperMicrons: 1200, basis: 'x' } } }],
-    ['an absurd figure', { version: 1, ranges: { ground: { lowerMicrons: 900, upperMicrons: 999999, basis: 'x' } } }],
-    ['no stated source', { version: 1, ranges: { ground: { lowerMicrons: 900, upperMicrons: 1200, basis: '  ' } } }],
-  ])('refuses %s', (_name, raw) => {
-    expect(parseDgmTargets(raw).ok).toBe(false);
-  });
-
-  it('refuses an inverted pair, which would shade a band of no width', () => {
-    // The dangerous one: it does not crash and it does not look wrong. Every
-    // sample would read as outside a range the chart draws as a hairline.
-    const parsed = parseDgmTargets({
-      version: 1,
-      ranges: { ground: { lowerMicrons: 1200, upperMicrons: 900, basis: 'x' } },
-    });
-    expect(parsed.ok).toBe(false);
-    if (parsed.ok) return;
-    expect(parsed.reason).toMatch(/lower figure is the finer grind/);
-  });
-
-  it('refuses a pair that is equal, for the same reason', () => {
-    expect(
-      parseDgmTargets({
-        version: 1,
-        ranges: { ground: { lowerMicrons: 1000, upperMicrons: 1000, basis: 'x' } },
-      }).ok,
-    ).toBe(false);
-  });
-
-  it('offers an empty document as the failure state, never a built-in range', () => {
-    // A fallback range would put a figure on a quality record that no
-    // administrator set, which is the one thing this feature must not do.
-    expect(emptyDgmTargets().ranges).toEqual({});
-  });
-});
-
-describe('which forms may carry a target', () => {
-  it('is derived from the registry, not from a list', () => {
-    expect([...DGM_TARGET_STAGES]).toEqual(['ground', 'pellets', 'crumble', 'mash', 'dgm']);
-  });
-
-  it('is exactly the forms that weigh a sieve stack', () => {
-    for (const stage of DGM_TARGET_STAGES) {
-      expect(
-        STAGE_SCHEMAS[stage].fields.some((f) => f.key === 'sieve1_tare_g'),
-        `${stage} has no sieve test`,
-      ).toBe(true);
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Where a figure sits
-// ---------------------------------------------------------------------------
+  Deleting a test is usually how coverage is lost, so it is worth being
+  precise about what moved rather than vanished: `tests/limitsSheetReconciliation.test.ts`
+  and the in-migration assertions of 0039 to 0041 cover the lifecycle, and the
+  display rules those suites also touched are still asserted below.
+*/
 
 describe('standing against a target', () => {
   it.each([
@@ -492,8 +412,8 @@ describe('the navigation under a registration', () => {
 // The reader's cache after a write
 // ---------------------------------------------------------------------------
 
-describe('saving a setting drops the cache the screens read it from', () => {
-  it('names the query keys that both configuration writers have to invalidate', () => {
+describe('a write drops the cache the screens read it from', () => {
+  it('names the query keys the sieve table and the particle-size band depend on', () => {
     // A behaviour test would need a live QueryClient and a mocked Edge call
     // to assert one line; this reads the line instead, and it is the line
     // that matters: both settings are read with an hour's staleTime, so a
@@ -504,14 +424,29 @@ describe('saving a setting drops the cache the screens read it from', () => {
       'utf8',
     );
     const onSuccess = source.slice(source.indexOf('onSuccess:'));
-    for (const [action, key] of [
-      ['set_sieve_series', 'sieve-series'],
-      ['set_dgm_target_ranges', 'dgm-target-ranges'],
-    ]) {
-      const branch = onSuccess.indexOf(`input.action === '${action}'`);
-      expect(branch, `${action} does not invalidate anything`).toBeGreaterThan(-1);
-      expect(onSuccess.slice(branch, branch + 200)).toContain(`'${key}'`);
-    }
+    const branch = onSuccess.indexOf("input.action === 'set_sieve_series'");
+    expect(branch, 'set_sieve_series does not invalidate anything').toBeGreaterThan(-1);
+    expect(onSuccess.slice(branch, branch + 200)).toContain("'sieve-series'");
+
+    /*
+      THE BAND IS NO LONGER AN ADMIN SETTING, so its invalidation moved.
+
+      0042 retired `set_dgm_target_ranges`; the range now comes from an
+      APPROVED specification, and the thing that changes it is an approval.
+      The staleness problem is unchanged and so is the consequence — an hour's
+      staleTime means an approver would watch their own approval not appear —
+      so the assertion follows the write path rather than being deleted with
+      the action.
+    */
+    const specs = readFileSync(
+      join(process.cwd(), 'src', 'hooks', 'useSpecifications.ts'),
+      'utf8',
+    );
+    const specSuccess = specs.slice(specs.indexOf('onSuccess:'));
+    expect(
+      specSuccess,
+      'approving a limit no longer drops the cache the particle-size band is read from',
+    ).toContain("queryKey: ['dgm-target-ranges']");
 
     // And the keys are the ones the hooks actually use, read from the hooks
     // rather than retyped here — a pair of matching strings in two files is

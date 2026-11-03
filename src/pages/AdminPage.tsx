@@ -35,7 +35,6 @@ import {
   KeyRound,
   ListChecks,
   Ruler,
-  Target,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
@@ -100,7 +99,6 @@ import { AuditTimeline } from '@/components/records/AuditTimeline';
 import { Pagination } from '@/components/records/Pagination';
 import { SchemaVerificationPanel } from '@/components/records/SchemaVerificationPanel';
 import { SieveSeriesPanel } from '@/components/records/SieveSeriesPanel';
-import { DgmTargetPanel } from '@/components/records/DgmTargetPanel';
 import { SyncHealthTable } from '@/components/records/SyncHealthTable';
 
 /**
@@ -305,7 +303,6 @@ type AdminTab =
   | 'delegations'
   | 'lists'
   | 'equipment'
-  | 'targets'
   | 'sync'
   | 'schema'
   | 'audit';
@@ -323,7 +320,6 @@ const TABS: readonly { id: AdminTab; label: string; icon: typeof Users }[] = [
     same kind of thing, so an administrator should not reach one while
     looking for the other.
   */
-  { id: 'targets', label: 'DGM targets', icon: Target },
   { id: 'sync', label: 'Google Sheets sync health', icon: RefreshCw },
   { id: 'schema', label: 'Workbook schema check', icon: TableProperties },
   { id: 'audit', label: 'Audit query', icon: FileSearch },
@@ -2236,10 +2232,6 @@ export default function AdminPage() {
       ) : null}
 
       {tab === 'lists' ? <ListsTab onRequest={request} /> : null}
-
-      {tab === 'targets' ? (
-        <DgmTargetPanel onRequest={request} mayEdit={canManageUsers} />
-      ) : null}
 
       {tab === 'equipment' ? (
         <EquipmentTab onRequest={request} mayEdit={canManageUsers} />
