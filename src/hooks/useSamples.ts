@@ -170,7 +170,7 @@ export const FUNCTIONS = {
  * that function is the one place to change when either side moves.
  */
 export const SAMPLE_COLUMNS =
-  'id,sample_id,stage,stage_detail,grind_purpose,material_code,supplier_code,supplier_label,feed_type_label,source_reference,upstream_reference,collection_local_date,collection_local_time,collection_instant,registered_by,revision,capture_state,disposition,hold_flag,sheet_sync_state,sheet_confirmed_at,created_at,updated_at' as const;
+  'id,sample_id,stage,stage_detail,grind_purpose,material_code,supplier_code,supplier_label,feed_type_label,source_reference,upstream_reference,collection_local_date,collection_local_time,collection_instant,registered_by,revision,capture_state,disposition,hold_flag,outside_limit_flag,sheet_sync_state,sheet_confirmed_at,created_at,updated_at' as const;
 
 /**
  * The measurement select list, for the same reason and with the same caveat.
@@ -247,6 +247,14 @@ export interface SampleRow {
   readonly disposition: Disposition;
   /** `samples.hold_flag` — true while any hold on the sample is uncleared. */
   readonly hold_active: boolean;
+  /**
+   * `samples.outside_limit_flag` (0047) — true while any recorded
+   * measurement on this sample reads `outside_limit`.
+   *
+   * A cached EXISTS over `sample_measurements`, not a severity. What band
+   * the Flagged screen puts the sample in is decided when it draws.
+   */
+  readonly outside_limit: boolean;
   readonly sync_state: SyncState;
   readonly sheet_confirmed_at: string | null;
   readonly created_at: string;
@@ -274,6 +282,7 @@ export interface SampleDbRow {
   readonly capture_state: CaptureState;
   readonly disposition: Disposition;
   readonly hold_flag: boolean;
+  readonly outside_limit_flag: boolean;
   readonly sheet_sync_state: string;
   readonly sheet_confirmed_at: string | null;
   readonly created_at: string;
@@ -389,6 +398,7 @@ export function toSampleRow(row: SampleDbRow): SampleRow {
     capture_state: row.capture_state,
     disposition: row.disposition,
     hold_active: row.hold_flag,
+    outside_limit: row.outside_limit_flag,
     sync_state: toSyncState(row.sheet_sync_state),
     sheet_confirmed_at: row.sheet_confirmed_at,
     created_at: row.created_at,
@@ -662,6 +672,16 @@ export interface SampleFilters {
   readonly supplier: string;
   readonly captureStates: readonly CaptureState[];
   readonly holdOnly: boolean;
+  /**
+   * The Flagged screen's one filter: anything that needs a person.
+   *
+   * A UNION, not an intersection — on hold, OR carrying an out-of-limit
+   * result, OR waiting for results or a review. Every other filter in this
+   * type narrows; this one is the only one that widens, which is why it is
+   * expressed as a PostgREST `or` rather than by adding three more booleans
+   * that would have to be ANDed and could never all be true at once.
+   */
+  readonly flagged: boolean;
   readonly testingStatus: TestingStatus;
 }
 
@@ -674,6 +694,7 @@ export const EMPTY_FILTERS: SampleFilters = {
   supplier: '',
   captureStates: [],
   holdOnly: false,
+  flagged: false,
   testingStatus: 'any',
 };
 
@@ -713,6 +734,23 @@ export interface SampleListResult {
   /** True when the server reported no total, so paging cannot be sized. */
   readonly totalUnknown: boolean;
 }
+
+/**
+ * The capture states that mean "this sample is waiting on somebody".
+ *
+ * Derived from nothing — written out — because it is a judgement about which
+ * states are OUTSTANDING work, not a mechanical subset. `draft` is excluded
+ * (nobody else can act on another person's draft), `voided` is excluded (it
+ * is not work), and `released`/`rejected` are excluded because the decision
+ * has been made. The three that remain are the ones somebody is expected to
+ * do something about.
+ */
+export const FLAGGED_WAITING_STATES: readonly CaptureState[] = [
+  'registered',
+  'awaiting_results',
+  'correction_required',
+  'ready_for_review',
+];
 
 export async function fetchSampleList(
   filters: SampleFilters,
@@ -765,6 +803,26 @@ export async function fetchSampleList(
   }
   if (filters.holdOnly) query = query.eq('hold_flag', true);
 
+  /*
+    Anything that needs a person, in one query.
+
+    supabase-js appends each `or` as its own parameter and PostgREST ANDs
+    them, so this intersects with the free-text and supplier filters above
+    rather than replacing them — the same property the supplier filter
+    relies on. `capture_state` appears here AND in the intersection below;
+    that is fine, because the two express different things: this says which
+    states count as waiting, the one below is the user's own state filter.
+  */
+  if (filters.flagged) {
+    query = query.or(
+      [
+        'hold_flag.eq.true',
+        'outside_limit_flag.eq.true',
+        `capture_state.in.(${FLAGGED_WAITING_STATES.join(',')})`,
+      ].join(','),
+    );
+  }
+
   // Capture state and testing status both constrain `capture_state`, so they
   // are INTERSECTED. An empty intersection must return nothing; applying no
   // filter at all would return everything, which is the opposite answer.
@@ -798,22 +856,104 @@ export function useSampleList(filters: SampleFilters, page: number) {
   });
 }
 
-/** Worklist queries. Each is the same data, filtered by the work it needs. */
-export function useWorklist(kind: 'awaiting' | 'review' | 'holds', page: number) {
+/**
+ * The three bands the Flagged screen sorts work into.
+ *
+ * Severity is DERIVED HERE, from state, and is stored nowhere. A sample
+ * cannot be edited to look less serious than it is, and the ordering can be
+ * changed without a migration.
+ *
+ * Highest band wins: a sample that is both on hold and carrying an
+ * out-of-limit result is critical, counted once. That is also why the counts
+ * below are not three independent predicates — `high` excludes holds and
+ * `other` excludes both, so the three add up to the list.
+ */
+export type FlagBand = 'critical' | 'high' | 'other';
+
+export function flagBandOf(row: SampleRow): FlagBand {
+  if (row.hold_active) return 'critical';
+  if (row.outside_limit) return 'high';
+  return 'other';
+}
+
+export interface FlaggedCounts {
+  readonly critical: number;
+  readonly high: number;
+  readonly other: number;
+  readonly all: number;
+}
+
+/**
+ * Exact counts per band, as head requests.
+ *
+ * Counted on the server rather than by banding the page on screen: the list
+ * is paged, so a tally of what happens to be on this page would be wrong the
+ * moment there is a second one — and a wrong count on a screen whose whole
+ * job is "how much needs me" is worse than no count.
+ */
+export function useFlaggedCounts() {
+  return useQuery<FlaggedCounts>({
+    queryKey: ['samples', 'flagged', 'counts'],
+    staleTime: 15_000,
+    queryFn: async () => {
+      const head = () => db.from(TABLES.samples).select('id', { count: 'exact', head: true });
+
+      const [critical, high, other] = await Promise.all([
+        head().eq('hold_flag', true),
+        head().eq('hold_flag', false).eq('outside_limit_flag', true),
+        head()
+          .eq('hold_flag', false)
+          .eq('outside_limit_flag', false)
+          .in('capture_state', [...FLAGGED_WAITING_STATES]),
+      ]);
+
+      for (const result of [critical, high, other]) {
+        if (result.error !== null) {
+          throw new Error(await edgeErrorMessage(result.error, 'the service'));
+        }
+      }
+
+      const c = critical.count ?? 0;
+      const h = high.count ?? 0;
+      const o = other.count ?? 0;
+      return { critical: c, high: h, other: o, all: c + h + o };
+    },
+  });
+}
+
+/** Everything that needs a person, newest first, in one paged query. */
+export function useFlagged(band: FlagBand | 'all', page: number) {
   const filters: SampleFilters =
-    kind === 'holds'
+    band === 'critical'
       ? { ...EMPTY_FILTERS, holdOnly: true }
-      : kind === 'review'
-        ? { ...EMPTY_FILTERS, captureStates: ['ready_for_review'] }
-        : { ...EMPTY_FILTERS, captureStates: ['registered', 'awaiting_results', 'correction_required'] };
+      : { ...EMPTY_FILTERS, flagged: true };
 
   return useQuery({
-    queryKey: ['samples', 'worklist', kind, page],
-    queryFn: () => fetchSampleList(filters, page),
+    queryKey: ['samples', 'flagged', 'list', band, page],
+    queryFn: async () => {
+      const result = await fetchSampleList(filters, page);
+      if (band === 'all' || band === 'critical') return result;
+      // `high` and `other` have no single-column predicate, so they are
+      // narrowed from the flagged set after it is read. The COUNT shown
+      // beside the chip comes from `useFlaggedCounts`, which asks the
+      // server — this only decides which rows of this page to draw.
+      return {
+        ...result,
+        rows: result.rows.filter((row) => flagBandOf(row) === band),
+      };
+    },
     placeholderData: keepPreviousData,
     staleTime: 15_000,
   });
 }
+
+/*
+  `useWorklist` was here: one query that answered 'awaiting', 'review' or
+  'holds' depending on a string, behind three pages that were three views of
+  the same table. Those pages merged into Flagged on 2026-11-03 and the hook
+  went with them — `useFlagged` and `useFlaggedCounts` above ask the same
+  questions, in one screen, with the bands adding up to the total.
+*/
 
 /**
  * Every matching sample plus its measurements, for the CSV export.

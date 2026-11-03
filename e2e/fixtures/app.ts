@@ -334,29 +334,22 @@ export const DASHBOARD_STAGES = [
 export const DASHBOARD_CARDS = DASHBOARD_STAGES.map((entry) => entry.title);
 
 /**
- * The secondary, record-oriented destinations — Master Prompt §2 is explicit
- * that these "are not additional testing-form buttons". Routes from
+ * The record-oriented destinations in the bottom bar — Master Prompt §2 is
+ * explicit that these "are not additional testing-form buttons". Routes from
  * src/App.tsx, labels from src/components/layout/navItems.ts.
+ *
+ * HOME IS DELIBERATELY NOT IN EITHER LIST. These two are used for "is a
+ * records screen being offered where it should not be", and Home is the way
+ * back to the forms rather than a records screen — including before sign-in,
+ * where '/' is the login page and would make the absence checks nonsense.
+ *
+ * Reduced from six destinations to four on 2026-11-03: Awaiting Results,
+ * Holds and Reviews merged into Flagged, Reports became a Dashboard tab, and
+ * Approved limits became an Admin tab.
  */
-export const SECONDARY_NAV_ROUTES = [
-  '/samples',
-  '/awaiting',
-  '/holds',
-  '/reviews',
-  '/specifications',
-  '/reports',
-  '/admin',
-] as const;
+export const SECONDARY_NAV_ROUTES = ['/samples', '/flagged', '/dashboard', '/admin'] as const;
 
-export const SECONDARY_NAV_LABELS = [
-  'Samples',
-  'Awaiting Results',
-  'Holds',
-  'Reviews',
-  'Approved limits',
-  'Reports',
-  'Admin',
-] as const;
+export const SECONDARY_NAV_LABELS = ['Samples', 'Flagged', 'Dashboard', 'Admin'] as const;
 
 /** PRD NFR-004: `minHeight.tap` is 44px in tailwind.config.js. */
 export const MIN_TAP_TARGET_PX = 44;

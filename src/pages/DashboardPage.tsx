@@ -1,7 +1,5 @@
-import { useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ClipboardX, Eye, Hourglass, ShieldAlert } from 'lucide-react';
 import { z } from 'zod';
 import { DASHBOARD_ORDER } from '@/forms/registry';
 import { STAGES, type Stage } from '@/forms/types';
@@ -9,13 +7,9 @@ import { CAPTURE_STATES, type CaptureState, type Disposition } from '@/lib/workf
 import { plantDayEnd, plantDayStart, plantLocalDate } from '@/lib/time';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/cn';
-import { BrandMark } from '@/components/ui/BrandMark';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { STAGE_ICON } from '@/components/ui/statusMaps';
-import { SecondaryNav } from '@/components/layout/SecondaryNav';
-import { useIsPhone } from '@/components/layout/viewport';
-import { HomeScreen } from '@/components/home/HomeScreen';
+import { PageHeader } from '@/components/records/common';
 import { useAccess } from '@/components/layout/accessContext';
+import ReportsPage from '@/pages/ReportsPage';
 
 /**
  * Cross-slice contract: the ledger table and columns this dashboard counts.
@@ -37,6 +31,14 @@ interface DashboardCounts {
   readonly awaitingResults: number;
   readonly readyForReview: number;
   readonly onHold: number;
+  /**
+   * Samples carrying at least one out-of-limit measurement (0047).
+   *
+   * Overlaps `onHold` and is deliberately not summed with it: a sample can
+   * be both, and the two answer different questions — one is a decision to
+   * stop material, the other an observation about a reading.
+   */
+  readonly outsideLimits: number;
 }
 
 /**
@@ -67,7 +69,7 @@ async function fetchDashboardCounts(plantDate: string): Promise<DashboardCounts>
   const readyForReviewState: CaptureState = 'ready_for_review';
   const onHoldDisposition: Disposition = 'on_hold';
 
-  const [today, awaiting, review, holds] = await Promise.all([
+  const [today, awaiting, review, holds, outside] = await Promise.all([
     supabase
       .from(SAMPLES_TABLE)
       .select(COL_STAGE)
@@ -86,9 +88,21 @@ async function fetchDashboardCounts(plantDate: string): Promise<DashboardCounts>
       .from(SAMPLES_TABLE)
       .select(COL_STAGE, { count: 'exact', head: true })
       .eq(COL_DISPOSITION, onHoldDisposition),
+    /*
+      Samples carrying an out-of-limit result (0047).
+
+      Counted separately from holds and NOT added to them, because the two
+      overlap: a sample can be both. Showing "holds + outside limits" as one
+      figure would double-count those, and showing them as two figures that
+      do not add up is the honest shape — each answers a different question.
+    */
+    supabase
+      .from(SAMPLES_TABLE)
+      .select(COL_STAGE, { count: 'exact', head: true })
+      .eq('outside_limit_flag', true),
   ]);
 
-  for (const result of [today, awaiting, review, holds]) {
+  for (const result of [today, awaiting, review, holds, outside]) {
     if (result.error !== null) {
       throw new Error(`Could not read the sample counts: ${result.error.message}`);
     }
@@ -119,6 +133,7 @@ async function fetchDashboardCounts(plantDate: string): Promise<DashboardCounts>
     awaitingResults: awaiting.count ?? 0,
     readyForReview: review.count ?? 0,
     onHold: holds.count ?? 0,
+    outsideLimits: outside.count ?? 0,
   };
 }
 
@@ -157,198 +172,150 @@ function CountValue({
   );
 }
 
-export function DashboardPage() {
-  const { profile, can } = useAccess();
-  const isPhone = useIsPhone();
 
-  // The plant-local calendar date the figures belong to, computed once per
-  // render and shown on screen, so a tablet left open across midnight shows a
-  // dated figure rather than a silently wrong "today".
+/**
+ * The quality overview and the reports, as two tabs of one screen.
+ *
+ * ===========================================================================
+ * WHAT MOVED OFF THIS PAGE
+ * ===========================================================================
+ * It used to be the application's front door: the seven stage cards, the
+ * queue figures, a records panel, and a different layout on a phone. The
+ * stage cards are Home's job now, the queues are Flagged's, and the bottom
+ * bar is the records panel. What is left is the two things a supervisor
+ * opens this screen FOR — how the day looks, and the reports behind it.
+ *
+ * Reports is a tab here rather than a sixth item in the bar because a figure
+ * and the report that explains it are the same subject; splitting them put
+ * two taps between a number and its basis.
+ *
+ * ===========================================================================
+ * A FIGURE IS NEVER INVENTED
+ * ===========================================================================
+ * Every tile reads through `CountValue`, which renders a dash and says
+ * "count not available" to a screen reader when a query has not resolved or
+ * has failed. A placeholder zero on this screen would read as "nothing is
+ * wrong", which is the one wrong answer that looks like good news.
+ */
+
+type DashboardTab = 'overview' | 'reports';
+
+const DASHBOARD_TABS: readonly { readonly id: DashboardTab; readonly label: string }[] = [
+  { id: 'overview', label: 'Quality overview' },
+  { id: 'reports', label: 'Reports' },
+];
+
+function OverviewTab() {
+  const { profile } = useAccess();
   const plantDate = useMemo(() => plantLocalDate(new Date()), []);
-
-  const mayRecord = can('sample.draft');
 
   const counts = useQuery({
     queryKey: ['dashboard-counts', plantDate],
     queryFn: () => fetchDashboardCounts(plantDate),
-    // A pending or suspended profile never renders this page, but the gate is
-    // repeated here so no query can be issued without an approved profile.
     enabled: profile.status === 'active',
   });
 
   const data = counts.data;
-  /** `undefined` covers both "not resolved yet" and "the query failed". */
   const countOf = (value: number | undefined): CountState =>
     value === undefined ? { kind: 'unavailable' } : { kind: 'ready', value };
 
-  const queues = [
-    {
-      key: 'awaiting',
-      to: '/awaiting',
-      label: 'Awaiting results',
-      icon: Hourglass,
-      state: countOf(data?.awaitingResults),
-      visible: can('sample.view'),
-    },
-    {
-      key: 'review',
-      to: '/reviews',
-      label: 'Ready for review',
-      icon: Eye,
-      state: countOf(data?.readyForReview),
-      visible: can('sample.review'),
-    },
-    {
-      key: 'holds',
-      to: '/holds',
-      label: 'On hold',
-      icon: ShieldAlert,
-      state: countOf(data?.onHold),
-      visible: can('sample.view'),
-    },
-  ].filter((queue) => queue.visible);
+  const collectedToday =
+    data === undefined
+      ? undefined
+      : STAGES.reduce((total, stage) => total + data.todayByStage[stage], 0);
 
-  /*
-   * TWO LAYOUTS, ONE QUERY, ONE TREE.
-   *
-   * Below `sm` (640px) the home screen is the eight-tile grid; at `sm` and up
-   * it is the existing dashboard, unchanged. The split is at `sm` and not
-   * higher because the no-scroll problem is a PHONE problem: eight
-   * finger-sized targets plus the app shell will not fit in 812px of height,
-   * while the plant tablet this app also runs on has 1138px and room for the
-   * stage descriptions, the queue section and the records panel. Collapsing a
-   * 1280px desktop to eight big tiles would remove information from the
-   * quality officer at a desk to solve a problem they do not have.
-   *
-   * Exactly ONE of the two is rendered — see `useIsPhone` for why hiding one
-   * with CSS is not an option here.
-   */
-  if (isPhone) {
-    return (
-      <div className="h-[100dvh]">
-        <HomeScreen
-          plantDate={plantDate}
-          mayRecord={mayRecord}
-          awaitingResults={data?.awaitingResults}
-          readyForReview={data?.readyForReview}
-          onHold={data?.onHold}
-        />
-      </div>
-    );
-  }
+  const tiles = [
+    { key: 'today', label: 'Samples today', state: countOf(collectedToday), unit: 'samples collected today' },
+    { key: 'awaiting', label: 'Awaiting results', state: countOf(data?.awaitingResults), unit: 'samples awaiting results' },
+    { key: 'holds', label: 'Active holds', state: countOf(data?.onHold), unit: 'samples on hold' },
+    { key: 'review', label: 'Pending review', state: countOf(data?.readyForReview), unit: 'samples ready for review' },
+    { key: 'outside', label: 'Outside limits', state: countOf(data?.outsideLimits), unit: 'samples with a result outside an approved limit' },
+  ];
 
   return (
-    <div className="space-y-10">
-      <section aria-labelledby="forms-heading">
-        {/*
-          The mark sits WITH the heading rather than above it, so the row
-          reads as one masthead over the grid of forms instead of a floating
-          image. It is decorative here: the words beside it, and the wordmark
-          in the header above, already name the company.
-        */}
-        <div className="flex items-center gap-3">
-          <BrandMark size={48} />
-          <h1 id="forms-heading" className="text-2xl font-bold tracking-tight text-slate-900">
-            Sample testing
-          </h1>
-        </div>
-        <p className="mt-1 text-base text-slate-600">
-          {mayRecord
-            ? 'Choose the test you are doing.'
-            : 'The sample testing logs used in the feed factory.'}
-        </p>
-        <p className="mt-1 text-sm text-slate-600">
-          Counts are for samples collected on{' '}
-          <span className="tabular font-medium text-slate-700">{plantDate}</span> (Guyana local
-          time). Drafts are not counted.
-          {counts.isError && ' Counts could not be loaded.'}
-        </p>
+    <div className="flex flex-col gap-6">
+      <p className="text-sm text-slate-600">
+        Counts are for samples collected on{' '}
+        <span className="tabular font-medium text-slate-700">{plantDate}</span> (Guyana local
+        time) unless the tile says otherwise. Drafts are not counted.
+        {counts.isError && ' Counts could not be loaded.'}
+      </p>
 
-        {mayRecord ? (
-          <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {DASHBOARD_ORDER.map((schema) => {
-              const Icon = STAGE_ICON[schema.stage];
-              return (
-                <li key={schema.stage}>
-                  <Link
-                    to={`/stage/${schema.stage}`}
-                    className={cn(
-                      'flex h-full min-h-[9.5rem] flex-col gap-2 rounded-2xl bg-neu-base p-4 shadow-neu-sm transition-[transform,box-shadow] duration-150 ease-out active:scale-[0.99] active:shadow-neu-pressed',
-                      'hover:border-bff-500 hover:bg-bff-50',
-                    )}
-                  >
-                    <span className="flex items-center gap-3">
-                      <span
-                        aria-hidden="true"
-                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-bff-100 text-lg font-bold text-bff-800"
-                      >
-                        {schema.ordinal}
-                      </span>
-                      <Icon aria-hidden="true" className="h-8 w-8 shrink-0 text-bff-700" />
-                    </span>
-                    <span className="block text-lg font-semibold leading-tight text-slate-900">
-                      {/* The ordinal is decorative above; it is repeated in the
-                          accessible name so the spoken order matches the seen
-                          order (Master Prompt section 2). */}
-                      <span className="sr-only">Form {schema.ordinal}: </span>
-                      {schema.title}
-                    </span>
-                    <span className="block text-sm text-slate-600">{schema.description}</span>
-                    <span className="mt-auto flex items-baseline justify-between gap-2 border-t border-slate-100 pt-2">
-                      <span className="text-sm text-slate-600">Collected today</span>
-                      <CountValue
-                        state={countOf(data?.todayByStage[schema.stage])}
-                        unit={`samples collected today for ${schema.title}`}
-                        className="text-xl font-bold text-slate-900"
-                      />
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <EmptyState
-            className="mt-5 rounded-xl border border-slate-200"
-            icon={ClipboardX}
-            title="Your role does not record samples"
-            description="You can search records, review queues and open reports from the list below."
-          />
-        )}
-      </section>
-
-      {queues.length > 0 && (
-        <section aria-labelledby="queues-heading">
-          <h2
-            id="queues-heading"
-            className="text-sm font-semibold uppercase tracking-wide text-slate-600"
+      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {tiles.map((tile) => (
+          <li
+            key={tile.key}
+            className="flex flex-col gap-1 rounded-2xl bg-neu-base p-4 shadow-neu-sm"
           >
-            Needs attention
-          </h2>
-          <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {queues.map((queue) => (
-              <li key={queue.key}>
-                <Link
-                  to={queue.to}
-                  className="flex min-h-tap items-center justify-between gap-3 rounded-2xl bg-neu-base shadow-neu-sm px-4 py-3 shadow-neu-sm transition-[transform,box-shadow] duration-150 ease-out hover:border-bff-300 active:scale-[0.99] active:shadow-neu-pressed"
-                >
-                  <span className="flex items-center gap-3">
-                    <queue.icon aria-hidden="true" className="h-5 w-5 text-slate-600" />
-                    <span className="font-medium text-slate-900">{queue.label}</span>
-                  </span>
-                  <CountValue
-                    state={queue.state}
-                    unit={`samples ${queue.label.toLowerCase()}`}
-                    className="text-xl font-bold text-slate-900"
-                  />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+            <CountValue
+              state={tile.state}
+              unit={tile.unit}
+              className="text-3xl font-bold text-slate-900"
+            />
+            <span className="text-sm font-medium leading-tight text-slate-700">{tile.label}</span>
+          </li>
+        ))}
+      </ul>
 
-      <SecondaryNav variant="panel" />
+      {/*
+        "Active holds" and "Outside limits" deliberately do not add up to
+        anything, and no total is offered. A sample can be both, so a sum
+        would double-count it; and the two are different facts — one is a
+        decision somebody made to stop material, the other is an observation
+        about a reading.
+      */}
+      <section aria-labelledby="by-stage-heading" className="flex flex-col gap-3">
+        <h2 id="by-stage-heading" className="text-lg font-semibold text-slate-900">
+          Collected today, by stage
+        </h2>
+        <ul className="flex flex-col gap-2">
+          {DASHBOARD_ORDER.map((schema) => (
+            <li key={schema.stage} className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-2 last:border-b-0">
+              <span className="text-base text-slate-800">
+                {schema.ordinal}. {schema.title}
+              </span>
+              <CountValue
+                state={countOf(data?.todayByStage[schema.stage])}
+                unit={`samples collected today for ${schema.title}`}
+                className="text-lg font-semibold text-slate-900"
+              />
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+export function DashboardPage() {
+  const [tab, setTab] = useState<DashboardTab>('overview');
+
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader title="Dashboard" description="Feed Factory quality figures and reports." />
+
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Dashboard sections">
+        {DASHBOARD_TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.id}
+            onClick={() => setTab(item.id)}
+            className={cn(
+              'min-h-tap rounded-full border px-4 py-2 text-sm font-semibold',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-2',
+              tab === item.id
+                ? 'border-blue-800 bg-blue-800 text-white'
+                : 'border-slate-300 bg-neu-base text-slate-800 shadow-neu-sm',
+            )}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'overview' ? <OverviewTab /> : <ReportsPage />}
     </div>
   );
 }

@@ -1,256 +1,75 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { LayoutGrid, Wifi, WifiOff } from 'lucide-react';
 import { DASHBOARD_ORDER } from '@/forms/registry';
-import { cn } from '@/lib/cn';
-import { StatusChip } from '@/components/ui/StatusChip';
 import { STAGE_ICON } from '@/components/ui/statusMaps';
-import { SECONDARY_NAV } from '@/components/layout/navItems';
-import { useAccess } from '@/components/layout/accessContext';
-import { useOnline } from '@/components/layout/connectivity';
-import { BrandMedallion } from '@/components/ui/BrandMedallion';
 import { HomeTile } from '@/components/home/HomeTile';
-import { MoreSheet, type QueueCount } from '@/components/home/MoreSheet';
 
 export interface HomeScreenProps {
-  /** The plant-local calendar date the per-stage figures belong to. */
-  readonly plantDate: string;
+  /** False for a role that records nothing — an auditor, or an unassigned account. */
   readonly mayRecord: boolean;
-  readonly awaitingResults: number | undefined;
-  readonly readyForReview: number | undefined;
-  readonly onHold: number | undefined;
 }
 
 /**
- * The most cells the grid will lay out: five rows of two. If there is ever
- * more to offer than that, the last cell is 'More' and the remainder lives
- * inside it.
+ * Home: the testing forms, and nothing else.
  *
- * WHY TEN AND NOT EIGHT. It was eight — four rows — while there were seven
- * forms plus 'More'. The eighth stage made nine cells, and nine against a cap
- * of eight was not a harmless overflow: `rows` below clamps to `MAX_CELLS / 2`,
- * so the template stayed at four explicit `minmax(0, 1fr)` rows and the ninth
- * cell landed in an IMPLICIT fifth row, which is auto-height. An auto-height
- * row does not divide the remaining space — it claims its content's height —
- * so it pushed the grid past the `h-[100dvh]` wrapper and broke the no-scroll
- * promise this file is built around.
+ * ===========================================================================
+ * WHAT THIS SCREEN STOPPED CARRYING, AND WHERE IT WENT
+ * ===========================================================================
+ * It used to be the whole application on a phone. The shell was deleted on
+ * this route to win back roughly 380px, so the screen grew its own brand
+ * block, its own connection chip, its own plant date, and a 'More' sheet
+ * holding the record destinations, the queue counts, the signed-in identity
+ * and the only Sign out button in the app.
  *
- * Raising the cap keeps that promise structurally rather than by luck: with
- * five `1fr` rows the tiles divide the same height into smaller pieces, which
- * is the documented degradation. On the shortest phone this app supports that
- * is roughly 110px per tile, still well clear of the 44px `min-h-tap` floor.
+ * The navigation moved to a bottom bar that costs about 58px, which makes
+ * that trade unnecessary. The header carries brand, connection and identity
+ * again on every screen; `PrimaryNav` carries the destinations; the queue
+ * figures have a screen of their own in Flagged. So this is back to the one
+ * job Master Prompt section 2 gives it: the numbered stage cards are the
+ * only way into a testing form, and nothing here may read as an extra one.
+ *
+ * ===========================================================================
+ * IT MAY SCROLL NOW, AND THAT IS THE POINT OF THE TRADE
+ * ===========================================================================
+ * The old grid divided the viewport into exact rows so that every tile was
+ * reachable without scrolling, which is why it had a hard cell cap and an
+ * e2e check on tile height. That contract bought its height by deleting the
+ * chrome, and the chrome is back. Seven tiles in two columns is four rows;
+ * on the shortest supported phone the last row may sit below the fold.
+ *
+ * A thumb-flick is a smaller cost than a navigation bar the operator cannot
+ * see, and the tiles keep their `min-h-tap` floor either way. HORIZONTAL
+ * scroll is still forbidden and still checked — that one is a layout fault,
+ * not a trade.
  */
-const MAX_CELLS = 10;
-
-/** One grid cell: its React key and the tile that fills it. */
-interface Cell {
-  readonly key: string;
-  readonly node: ReactNode;
-}
-
-/**
- * The phone home screen: one large tile per form, no scroll.
- *
- * WHAT THIS IS FOR. A sampler on the floor of the feed mill opens the app to
- * answer one question — which test am I doing — one-handed, in gloves, in
- * bright light. So the whole screen is that question's answer set: the
- * numbered forms in the plant's own order, plus one tile holding everything
- * else. Nothing above it to read past, nothing below it to scroll to.
- *
- * HOW THE NO-SCROLL PROMISE IS KEPT, structurally rather than by luck:
- *
- *  - The outer element is exactly one viewport tall (`h-full` inside a
- *    `h-[100dvh]` wrapper in DashboardPage). `dvh`, not `vh`: on mobile
- *    Safari `100vh` is the viewport WITHOUT the collapsing toolbar, so a
- *    `100vh` screen scrolls by the toolbar's height on first paint.
- *  - The grid is `flex-1 min-h-0` and its rows are `minmax(0, 1fr)`, so the
- *    rows divide whatever height is left instead of claiming their content's
- *    height. The header strip and the status strip are `shrink-0`.
- *  - Every tile is `overflow-hidden`, so a long label can never push a row
- *    taller than its share.
- *
- * That means the screen degrades by making tiles smaller, not by growing past
- * the viewport. Measured heights are in the handover notes; the floor is
- * `min-h-tap` (44px) on each tile, which is reached only well below any
- * phone this app supports.
- *
- * WHERE THE OLD SCREEN'S INFORMATION WENT. Nothing was dropped to win space:
- *
- *  - Per-stage "collected today" counts stay, on their own tile.
- *  - The three "Needs attention" queue figures moved inside 'More', keeping
- *    their own separate numbers. They are not summed into one badge: three
- *    different kinds of work do not add up to a meaningful number.
- *  - Identity, role, last-successful-save and Sign out moved inside 'More',
- *    because this screen hides the app header to buy the grid its height.
- */
-export function HomeScreen({
-  plantDate,
-  mayRecord,
-  awaitingResults,
-  readyForReview,
-  onHold,
-}: HomeScreenProps) {
-  const { can } = useAccess();
-  const online = useOnline();
-  const [moreOpen, setMoreOpen] = useState(false);
-
-  const queueCounts: readonly QueueCount[] = useMemo(
-    () => [
-      { route: '/awaiting', value: awaitingResults },
-      { route: '/reviews', value: readyForReview },
-      { route: '/holds', value: onHold },
-    ],
-    [awaitingResults, readyForReview, onHold],
-  );
-
-  /**
-   * Does anything need attention? Said in words on the 'More' tile rather
-   * than as a coloured dot — PRD §11 forbids carrying meaning in colour
-   * alone. `undefined` counts as "not known", so a failed query never
-   * produces a reassuring silence OR an invented alarm.
-   */
-  const visibleQueueValues = [
-    can('sample.view') ? awaitingResults : undefined,
-    can('sample.review') ? readyForReview : undefined,
-    can('sample.view') ? onHold : undefined,
-  ];
-  const needsAttention = visibleQueueValues.some((value) => value !== undefined && value > 0);
-
-  const moreTile: Cell = {
-    key: 'more',
-    node: (
-      <HomeTile
-        label="More"
-        icon={LayoutGrid}
-        onClick={() => setMoreOpen(true)}
-        flag={needsAttention ? 'Needs attention' : undefined}
-      />
-    ),
-  };
-
-  /**
-   * The cells.
-   *
-   * When the person may record a sample, that is every form plus 'More'.
-   * When they may not — an auditor, or an account whose role has not been
-   * assigned — showing form tiles that all refuse would be a lie told in
-   * layout, so the grid becomes the record destinations their role DOES open,
-   * and the screen says so in a sentence above it. 'More' is always the last
-   * cell, because it is the only route to Sign out.
-   */
-  const recordTiles: Cell[] = SECONDARY_NAV.filter((item) => can(item.permission))
-    .slice(0, MAX_CELLS - 1)
-    .map((item) => ({
-      key: item.to,
-      node: <HomeTile label={item.label} icon={item.icon} to={item.to} />,
-    }));
-
-  const stageTiles: Cell[] = DASHBOARD_ORDER.map((schema) => ({
-    key: schema.stage,
-    node: (
-      <HomeTile
-        ordinal={schema.ordinal}
-        label={schema.title}
-        icon={STAGE_ICON[schema.stage]}
-        to={`/stage/${schema.stage}`}
-      />
-    ),
-  }));
-
-  const cells = mayRecord ? [...stageTiles, moreTile] : [...recordTiles, moreTile];
-  // Clamped, but the clamp must never bite: a cell beyond the explicit rows
-  // falls into an implicit auto-height row and breaks the no-scroll promise.
-  // `stageTiles` is deliberately NOT sliced — silently hiding a form would be
-  // worse than a layout fault — so the cap is what has to move when a stage is
-  // added, and this assertion is where that is noticed.
-  const rows = Math.min(Math.ceil(cells.length / 2), MAX_CELLS / 2);
-
+export function HomeScreen({ mayRecord }: HomeScreenProps) {
   return (
-    <div
-      className={cn(
-        'flex h-full flex-col gap-4 overscroll-none bg-neu-base px-4',
-        // `env()` is 0 until index.html opts into `viewport-fit=cover`; the
-        // `max()` keeps a sane gutter today and becomes the real inset the
-        // moment it does. The browser already lays the page out inside the
-        // safe area without that opt-in.
-        'pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]',
-      )}
-    >
-      {/*
-        THE BRANDING BLOCK: the top third of the screen, by instruction.
-
-        This is a deliberate reversal of what the rest of this file optimises
-        for. The comment on `Header`'s `compact` prop explains that this screen
-        hides the app header specifically to buy the grid its height, and a
-        third of the viewport is a large thing to hand back. It is handed back
-        anyway because the owner asked for it: this is the screen a sampler
-        opens at the start of a shift, and it is the one place the company's
-        own mark belongs at full size rather than as a 28px chip.
-
-        `basis-1/3` with `shrink-0` so it is exactly a third and does not get
-        squeezed, and the grid below keeps `min-h-0` so IT absorbs the
-        difference. The no-scroll promise is therefore still structural: the
-        grid divides whatever is left, and on the shortest phone this app
-        supports that is about 100px a tile, still well clear of the 44px
-        `min-h-tap` floor. Measured, not assumed — see the e2e check.
-      */}
-      <div className="flex shrink-0 basis-1/3 flex-col items-center justify-center gap-2">
-        <BrandMedallion size={128} />
-        <div className="text-center">
-          <h1
-            id="home-heading"
-            className="text-base font-bold uppercase tracking-wide text-bff-800"
-          >
-            Sample testing
-          </h1>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-600">
-            Bounty Farm Limited
-          </p>
-        </div>
-      </div>
-
-      {/* The heading moved into the branding block above, so this row now
-          carries only the dated figure and the connection chip. */}
-      <div className="flex shrink-0 items-center justify-end gap-2">
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {/* The plant-local date. It used to be captioned "Counts for",
-              naming the per-tile figures; those figures left with the tiles'
-              second line, so the caption did too rather than pointing at
-              nothing. A tablet left on across midnight still shows which day
-              this screen belongs to. */}
-          <span className="tabular text-xs font-medium text-slate-600">
-            <span className="sr-only">Plant date: </span>
-            {plantDate}
-          </span>
-          <StatusChip
-            label={online ? 'Online' : 'Offline'}
-            tone={online ? 'success' : 'danger'}
-            icon={online ? Wifi : WifiOff}
-            srPrefix="Connection:"
-            size="sm"
-          />
-        </div>
-      </div>
-
-      {!mayRecord && (
-        <p className="shrink-0 text-sm font-medium text-slate-700">
-          Your role does not record samples. These are the records you can open.
+    <div className="flex flex-col gap-4">
+      <div>
+        <h1 id="home-heading" className="text-2xl font-bold text-slate-900">
+          Sample testing
+        </h1>
+        <p className="mt-1 text-base text-slate-600">
+          {mayRecord
+            ? 'Select a stage to record results.'
+            : 'Your role does not record samples. Use the bar below to open the records you can read.'}
         </p>
-      )}
+      </div>
 
-      <nav aria-labelledby="home-heading" className="min-h-0 flex-1">
-        <ul
-          className="grid h-full grid-cols-2 gap-4"
-          style={{ gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))` }}
-        >
-          {cells.map((cell) => (
-            <li key={cell.key} className="min-h-0">
-              {cell.node}
-            </li>
-          ))}
-        </ul>
-      </nav>
-
-      <MoreSheet open={moreOpen} onClose={() => setMoreOpen(false)} queueCounts={queueCounts} />
+      {mayRecord ? (
+        <nav aria-labelledby="home-heading">
+          <ul className="grid grid-cols-2 gap-4">
+            {DASHBOARD_ORDER.map((schema) => (
+              <li key={schema.stage}>
+                <HomeTile
+                  ordinal={schema.ordinal}
+                  label={schema.title}
+                  icon={STAGE_ICON[schema.stage]}
+                  to={`/stage/${schema.stage}`}
+                />
+              </li>
+            ))}
+          </ul>
+        </nav>
+      ) : null}
     </div>
   );
 }

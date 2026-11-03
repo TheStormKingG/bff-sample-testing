@@ -64,11 +64,8 @@ import NotFoundPage from '@/pages/NotFoundPage';
 import StageFormPage from '@/pages/StageFormPage';
 import SamplesPage from '@/pages/SamplesPage';
 import SampleDetailPage from '@/pages/SampleDetailPage';
-import AwaitingResultsPage from '@/pages/AwaitingResultsPage';
-import HoldsPage from '@/pages/HoldsPage';
-import ReviewsPage from '@/pages/ReviewsPage';
-import SpecificationsPage from '@/pages/SpecificationsPage';
-import ReportsPage from '@/pages/ReportsPage';
+import HomePage from '@/pages/HomePage';
+import FlaggedPage from '@/pages/FlaggedPage';
 import AdminPage from '@/pages/AdminPage';
 
 /**
@@ -158,7 +155,7 @@ function AuthenticatedRoutes({
       />
 
       <Route path="/" element={<AppLayout />}>
-        <Route index element={<DashboardPage />} />
+        <Route index element={<HomePage />} />
 
         {/*
           Every gate below is UX only. The permission that actually decides the
@@ -190,42 +187,18 @@ function AuthenticatedRoutes({
           }
         />
         <Route
-          path="awaiting"
+          path="flagged"
           element={
             <RequirePermission permission="sample.view">
-              <AwaitingResultsPage />
+              <FlaggedPage />
             </RequirePermission>
           }
         />
         <Route
-          path="holds"
-          element={
-            <RequirePermission permission="sample.view">
-              <HoldsPage />
-            </RequirePermission>
-          }
-        />
-        <Route
-          path="reviews"
-          element={
-            <RequirePermission permission="sample.review">
-              <ReviewsPage />
-            </RequirePermission>
-          }
-        />
-        <Route
-          path="specifications"
+          path="dashboard"
           element={
             <RequirePermission permission="report.view">
-              <SpecificationsPage />
-            </RequirePermission>
-          }
-        />
-        <Route
-          path="reports"
-          element={
-            <RequirePermission permission="report.view">
-              <ReportsPage />
+              <DashboardPage />
             </RequirePermission>
           }
         />
@@ -237,6 +210,29 @@ function AuthenticatedRoutes({
             </RequirePermission>
           }
         />
+
+        {/*
+          THE OLD ADDRESSES, KEPT AS REDIRECTS.
+
+          Five screens became three on 2026-11-03. These paths are in
+          people's history, in bookmarks, and in the body of audit records
+          and emails written while they existed. Letting them 404 would turn
+          "the app moved this screen" into "this link is broken", which is
+          the same experience as data loss to whoever follows one.
+
+          `replace` so the Back button returns where the person came from
+          rather than bouncing them through the dead address again.
+
+          Holds, Awaiting results and Reviews all land on Flagged without a
+          band pre-selected: the merged screen answers the question all three
+          were asking, and pre-filtering to one band would hide the other two
+          thirds from somebody who followed a link expecting a list.
+        */}
+        <Route path="awaiting" element={<Navigate to="/flagged" replace />} />
+        <Route path="holds" element={<Navigate to="/flagged" replace />} />
+        <Route path="reviews" element={<Navigate to="/flagged" replace />} />
+        <Route path="reports" element={<Navigate to="/dashboard" replace />} />
+        <Route path="specifications" element={<Navigate to="/admin" replace />} />
 
         <Route path="*" element={<NotFoundPage />} />
       </Route>

@@ -100,6 +100,7 @@ import { Pagination } from '@/components/records/Pagination';
 import { SchemaVerificationPanel } from '@/components/records/SchemaVerificationPanel';
 import { SieveSeriesPanel } from '@/components/records/SieveSeriesPanel';
 import { SyncHealthTable } from '@/components/records/SyncHealthTable';
+import SpecificationsPage from '@/pages/SpecificationsPage';
 
 /**
  * The permissions that decide the fate of material or of a limit. An
@@ -299,6 +300,7 @@ function TemporaryPasswordPanel({
 }
 
 type AdminTab =
+  | 'limits'
   | 'access'
   | 'delegations'
   | 'lists'
@@ -308,6 +310,19 @@ type AdminTab =
   | 'audit';
 
 const TABS: readonly { id: AdminTab; label: string; icon: typeof Users }[] = [
+  /*
+    FIRST, AND NOT REALLY AN ADMINISTRATOR'S SETTING.
+
+    Approved limits moved here on 2026-11-03 when the navigation went to
+    five destinations. It is the odd one out on this page: every other tab
+    configures the system, while this one decides whether feed conforms, and
+    it is gated on `report.view` rather than on an administrator permission.
+
+    It sits first so that nobody hunting for it has to read past seven
+    settings to find it, and so the page does not open on a screen that
+    looks like configuration when this is the thing most people came for.
+  */
+  { id: 'limits', label: 'Approved limits', icon: ListChecks },
   { id: 'access', label: 'Users and access', icon: Users },
   { id: 'delegations', label: 'Delegated authority', icon: ShieldCheck },
   { id: 'lists', label: 'Controlled lists', icon: ListChecks },
@@ -2217,6 +2232,8 @@ export default function AdminPage() {
           })}
         </ul>
       </nav>
+
+      {tab === 'limits' ? <SpecificationsPage /> : null}
 
       {tab === 'access' ? (
         <AccessTab

@@ -104,7 +104,7 @@ test('each stage card is at least a 44px tap target', async ({ page }) => {
 test('secondary navigation is present but is not a stage card', async ({ page }) => {
   await page.goto(appUrl());
   await expect(page.locator('a[href$="#/stage/raw_materials"]')).toBeVisible();
-  const { cards, inventory } = await dashboardCards(page);
+  const { cards, boxes, inventory } = await dashboardCards(page);
 
   // No stage card may lead to a records screen, and no records screen may be
   // reached through a stage route. The two sets are disjoint by construction
@@ -122,49 +122,25 @@ test('secondary navigation is present but is not a stage card', async ({ page })
     The secondary destinations must still be reachable — asserting only their
     absence from the card set would also pass if they vanished entirely.
 
-    ON A PHONE THEY ARE ONE TAP AWAY, BEHIND "More", and that is by design:
-    the home screen hides the app header to buy the stage grid its height, so
-    `MoreSheet` carries the same `SECONDARY_NAV` table the wide layout shows
-    in a bar. The wide layouts render that bar directly, so they satisfy this
-    without opening anything.
+    THEY ARE DIRECTLY LINKED AT EVERY WIDTH NOW. Until 2026-11-03 this had to
+    open a "More" sheet on a phone, because the home screen deleted the shell
+    to win height and kept its navigation behind a button. The bottom bar
+    replaced both arrangements, so there is one place to look on every
+    viewport and this is a plain assertion again.
 
-    This used to pass on a phone WITHOUT opening the sheet, because an
-    unrelated strip under the grid — a warning that some stages had no
-    approved sampling frequency — happened to link to Approved limits. That
-    strip was removed on 2026-11-03 with the rest of sampling frequency, and
-    this assertion went red: it had been resting on a link whose purpose was
-    nothing to do with navigation. Opening the sheet is what it should always
-    have done on this viewport.
+    It is worth remembering why the fallback existed at all: before the bar,
+    this check passed on a phone only because an unrelated warning strip
+    happened to link to Approved limits. Removing that strip turned it red.
+    A reachability check that can be satisfied by an accident is barely a
+    check, which is the argument for one bar rather than two renderings.
   */
-  const reachable = async (): Promise<string[]> => {
-    const current = await clickableBoxes(page);
-    return SECONDARY_NAV_ROUTES.filter((route) =>
-      current.some((box) => box.href.endsWith(`#${route}`)),
-    );
-  };
-
-  let secondaryPresent = await reachable();
-  if (secondaryPresent.length === 0) {
-    const more = page.getByRole('button', { name: /^More$/i });
-    expect(
-      await more.count(),
-      `no secondary destination is linked directly and there is no "More" control to open. ` +
-        `Controls on screen: ${inventory}`,
-    ).toBeGreaterThan(0);
-    await more.first().click();
-    // `clickableBoxes` skips anything with a zero-sized rect, so a sheet
-    // still animating open would read as empty and fail this for the wrong
-    // reason. Wait for one real destination to have a box before counting.
-    await expect(
-      page.locator(SECONDARY_NAV_ROUTES.map((r) => `a[href$="#${r}"]`).join(', ')).first(),
-    ).toBeVisible();
-    secondaryPresent = await reachable();
-  }
-
+  const secondaryPresent = SECONDARY_NAV_ROUTES.filter((route) =>
+    boxes.some((box) => box.href.endsWith(`#${route}`)),
+  );
   expect(
     secondaryPresent.length,
-    `no secondary navigation destination is reachable, directly or through "More". ` +
-      `Controls on screen: ${inventory}`,
+    `no secondary navigation destination is reachable. The bottom bar should link every ` +
+      `destination this role may open, at every width. Controls on screen: ${inventory}`,
   ).toBeGreaterThan(0);
 
   // No stage card may be TITLED like a records screen.
