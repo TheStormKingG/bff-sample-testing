@@ -350,7 +350,7 @@ describe('UAT-07: the unconfirmed steam-pressure unit survives the whole chain',
     const wronglyApproved: SpecificationRule[] = [
       {
         id: 'bad', version: 1, parameterKey: 'conditioned.steam_pressure', stage: 'conditioned',
-        material: null, feedType: null, samplingPoint: null, testMethod: null,
+        material: null, feedType: null, samplingPoint: null, testMethod: null, grindPurpose: null,
         unit: 'to confirm', lowerBound: 2.2, upperBound: 2.8,
         status: 'approved', effectiveFrom: '2026-01-01T00:00:00.000Z', effectiveTo: null,
         approvedBy: 'supervisor-uuid',
@@ -373,7 +373,7 @@ describe('UAT-07: the unconfirmed steam-pressure unit survives the whole chain',
     const approvedTemp: SpecificationRule[] = [
       {
         id: 'temp', version: 1, parameterKey: 'conditioned.temperature', stage: 'conditioned',
-        material: null, feedType: null, samplingPoint: null, testMethod: null,
+        material: null, feedType: null, samplingPoint: null, testMethod: null, grindPurpose: null,
         unit: '°C', lowerBound: 84, upperBound: 86,
         status: 'approved', effectiveFrom: '2026-01-01T00:00:00.000Z', effectiveTo: null,
         approvedBy: 'supervisor-uuid',

@@ -255,7 +255,37 @@ const SQL_FUNCTIONS = parseSqlFunctions().filter((f) => !RETIRED_RPCS.has(f.name
 function returnsClause(def: { file: string; index: number }): string | null {
   const src = readFileSync(join(MIGRATIONS_DIR, def.file), 'utf8').slice(def.index);
   const match = /\)\s*(returns[\s\S]*?)\blanguage\b/i.exec(src);
-  return match === null ? null : match[1]!.replace(/\s+/g, ' ').trim().toLowerCase();
+  if (match === null) return null;
+  // Normalised past COSMETIC differences, because the question is whether
+  // the return TYPE changed, not whether the text is byte-identical.
+  // `pg_get_functiondef` writes `RETURNS TABLE(a integer)` where this
+  // codebase writes `returns table (\n  a integer\n)`; treating those as
+  // different return types made 0044's restatement look like an illegal
+  // in-place replacement.
+  let clause = match[1]!
+    .replace(/\s+/g, ' ')
+    .replace(/\s*\(\s*/g, '(')
+    .replace(/\s*\)\s*/g, ')')
+    .replace(/\s*,\s*/g, ',')
+    .trim()
+    .toLowerCase();
+  // And past TYPE ALIASES, which are the same type spelled two ways.
+  // `pg_get_functiondef` always writes the canonical form, so a body read
+  // out of the catalogue says `timestamp with time zone` where this
+  // codebase wrote `timestamptz`. Only exact, documented aliases are
+  // folded — nothing here can make two genuinely different types look equal.
+  for (const [alias, canonical] of [
+    [/\btimestamptz\b/g, 'timestamp with time zone'],
+    [/\btimestamp\b(?! with| without)/g, 'timestamp without time zone'],
+    [/\bvarchar\b/g, 'character varying'],
+    [/\bint\b/g, 'integer'],
+    [/\bint4\b/g, 'integer'],
+    [/\bint8\b/g, 'bigint'],
+    [/\bbool\b/g, 'boolean'],
+  ] as const) {
+    clause = clause.replace(alias as RegExp, canonical as string);
+  }
+  return clause;
 }
 const SQL_BY_NAME = new Map(SQL_FUNCTIONS.map((f) => [f.name, f]));
 
@@ -499,7 +529,14 @@ describe('SECURITY DEFINER hardening, per function and across all migrations', (
           file,
           name: m[1]!.toLowerCase(),
           isDefiner: /security\s+definer/i.test(header),
-          hasSearchPath: /set\s+search_path\s*=/i.test(header),
+          // `= ''` OR `TO ''`. Both are valid SQL and PostgreSQL's own
+          // `pg_get_functiondef` emits the second — so a body copied out of
+          // the live catalogue, which is how 0044 restated four functions
+          // rather than retyping 500 lines, read as unprotected. A matcher
+          // that only knew one spelling would also have missed a
+          // hand-written `SET search_path TO 'public'`, which is the real
+          // vulnerability this test exists to catch.
+          hasSearchPath: /set\s+search_path\s*(?:=|\bto\b)/i.test(header),
         });
       });
     }

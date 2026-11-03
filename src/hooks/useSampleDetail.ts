@@ -290,6 +290,7 @@ function toRule(row: SpecificationVersionRow): SpecificationRule {
     feedType: row.feed_type,
     samplingPoint: row.sampling_point,
     testMethod: row.test_method,
+    grindPurpose: row.grind_purpose,
     unit: row.unit,
     lowerBound: row.lower_bound,
     upperBound: row.upper_bound,
@@ -361,6 +362,11 @@ function viewFor(
       feedType: sample.feed_type,
       samplingPoint: sample.sampling_point,
       testMethod: null,
+      // The fifth dimension. Read from the sample rather than from a
+      // measurement, exactly as the server does: `samples.grind_purpose` is
+      // maintained by `tg_sample_grind_purpose`, so the browser and SQL
+      // score the same rule against the same context.
+      grindPurpose: sample.grind_purpose,
       collectionInstant: sample.collection_instant,
     };
     assessment = assess(ctx, rules);

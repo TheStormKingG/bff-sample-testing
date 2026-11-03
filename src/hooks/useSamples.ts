@@ -170,7 +170,7 @@ export const FUNCTIONS = {
  * that function is the one place to change when either side moves.
  */
 export const SAMPLE_COLUMNS =
-  'id,sample_id,stage,stage_detail,material_code,supplier_code,supplier_label,feed_type_label,source_reference,upstream_reference,collection_local_date,collection_local_time,collection_instant,registered_by,revision,capture_state,disposition,hold_flag,sheet_sync_state,sheet_confirmed_at,created_at,updated_at' as const;
+  'id,sample_id,stage,stage_detail,grind_purpose,material_code,supplier_code,supplier_label,feed_type_label,source_reference,upstream_reference,collection_local_date,collection_local_time,collection_instant,registered_by,revision,capture_state,disposition,hold_flag,sheet_sync_state,sheet_confirmed_at,created_at,updated_at' as const;
 
 /**
  * The measurement select list, for the same reason and with the same caveat.
@@ -217,6 +217,15 @@ export interface SampleRow {
   readonly stage: Stage;
   /** `samples.stage_detail` — the structured point code, Ground only. */
   readonly sampling_point: string | null;
+  /**
+   * What the mill was grinding and what for, on `2 Ground`.
+   *
+   * Maintained by `tg_sample_grind_purpose` from the form's own value, so
+   * the browser scores a rule against the same context SQL does. Null on
+   * every other stage, which makes a purpose-scoped rule inapplicable there
+   * rather than wrongly applicable.
+   */
+  readonly grind_purpose: string | null;
   /** `samples.material_code`. A CODE; `samples` carries no material label. */
   readonly material: string | null;
   readonly feed_type: string | null;
@@ -250,6 +259,7 @@ export interface SampleDbRow {
   readonly sample_id: string | null;
   readonly stage: Stage;
   readonly stage_detail: string | null;
+  readonly grind_purpose: string | null;
   readonly material_code: string | null;
   readonly supplier_code: string | null;
   readonly supplier_label: string | null;
@@ -347,6 +357,7 @@ export function toSampleRow(row: SampleDbRow): SampleRow {
     // `sampling_points (code)` and the schema constrains it to be non-null for
     // Ground alone — the one stage whose form has a `sampling_point` field.
     sampling_point: row.stage_detail,
+    grind_purpose: row.grind_purpose,
     material: row.material_code,
     feed_type: row.feed_type_label,
     // Label preferred, code as the fallback. Both name the same supplier and
@@ -453,6 +464,8 @@ export interface SpecificationVersionRow {
   readonly feed_type: string | null;
   readonly sampling_point: string | null;
   readonly test_method: string | null;
+  /** The fifth applicability dimension; see `SpecificationRule`. */
+  readonly grind_purpose: string | null;
   readonly unit: string | null;
   readonly lower_bound: number | null;
   readonly upper_bound: number | null;
@@ -495,7 +508,7 @@ export interface SpecificationVersionRow {
  * detail page read the same table successfully. One list, one mapper.
  */
 export const SPECIFICATION_VERSION_COLUMNS =
-  'id,specification_id,version,parameter_key,stage,material_code,feed_type_code,sampling_point,test_method,unit,lower_bound,upper_bound,status,effective_from,effective_to,proposed_by,approved_by,approved_at,decision_reason,source_evidence,workbook_entry_no,workbook_status' as const;
+  'id,specification_id,version,parameter_key,stage,material_code,feed_type_code,sampling_point,test_method,grind_purpose,unit,lower_bound,upper_bound,status,effective_from,effective_to,proposed_by,approved_by,approved_at,decision_reason,source_evidence,workbook_entry_no,workbook_status' as const;
 
 export interface SpecificationVersionDbRow {
   readonly id: string;
@@ -507,6 +520,7 @@ export interface SpecificationVersionDbRow {
   readonly feed_type_code: string | null;
   readonly sampling_point: string | null;
   readonly test_method: string | null;
+  readonly grind_purpose: string | null;
   readonly unit: string | null;
   readonly lower_bound: number | null;
   readonly upper_bound: number | null;
@@ -545,6 +559,7 @@ export function toSpecificationVersionRow(row: SpecificationVersionDbRow): Speci
     feed_type: row.feed_type_code,
     sampling_point: row.sampling_point,
     test_method: row.test_method,
+    grind_purpose: row.grind_purpose,
     unit: row.unit,
     lower_bound: row.lower_bound,
     upper_bound: row.upper_bound,

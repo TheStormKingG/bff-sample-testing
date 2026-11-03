@@ -26,6 +26,7 @@ function rule(overrides: Partial<SpecificationRule> = {}): SpecificationRule {
     feedType: null,
     samplingPoint: null,
     testMethod: null,
+    grindPurpose: null,
     unit: '°C',
     lowerBound: 84,
     upperBound: 86,
@@ -380,5 +381,96 @@ describe('the seeded production ruleset assesses nothing', () => {
     for (const value of [84, 85, 86, 2.5, 0.7, 1.5]) {
       expect(assess(ctx({ value }), imported).result).toBe('not_assessable');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The fifth applicability dimension (0044)
+// ---------------------------------------------------------------------------
+
+describe('a limit scoped on the grind purpose', () => {
+  /*
+    WHY THIS DIMENSION EXISTS AND WHY FOUR WERE NOT ENOUGH.
+
+    Polinutri's visit report of 21 October 2026 gives four grind targets
+    scoped on what is being ground AND what the meal is for: 1,200-1,300 µm
+    for corn to pelleted feed, 950-1,050 for rice to pelleted, and two more
+    for mash. The engine matched on material, feed type, sampling point and
+    test method — and on `2 Ground` all three of the first are dead:
+    `material_code` is reserved for tab 1 by a CHECK constraint, and feed
+    type and test method are passed as hard-coded nulls at every call site.
+
+    So the four ranges could be written down and could never decide
+    anything. These assertions are the browser half; migration 0044 carries
+    a rolled-back probe that proves the same thing in SQL, against a real
+    computed DGM.
+  */
+  const groundRule = (over: Partial<SpecificationRule>): SpecificationRule =>
+    rule({
+      parameterKey: 'ground.avg_particle_size',
+      stage: 'ground',
+      unit: 'µm',
+      lowerBound: 1200,
+      upperBound: 1300,
+      status: 'approved',
+      approvedBy: 'sup',
+      ...over,
+    });
+
+  const groundCtx = (purpose: string | null) =>
+    ctx({
+      parameterKey: 'ground.avg_particle_size',
+      stage: 'ground',
+      value: 1250,
+      unit: 'µm',
+      grindPurpose: purpose,
+    });
+
+  it('decides a sample whose purpose it names', () => {
+    const a = assess(groundCtx('corn_pelleted'), [groundRule({ grindPurpose: 'corn_pelleted' })]);
+    expect(a.result).toBe('within_limit');
+  });
+
+  it('does not touch a sample with a different purpose', () => {
+    // 1,250 µm is inside the corn band. A rice sample must not be judged by
+    // it — that is the whole reason the dimension was added.
+    const a = assess(groundCtx('rice_pelleted'), [groundRule({ grindPurpose: 'corn_pelleted' })]);
+    expect(a.result).toBe('not_assessable');
+    expect(a.reason).toBe('no_approved_rule');
+  });
+
+  it('beats an unscoped rule rather than tying with it', () => {
+    /*
+      Both rules apply to a corn-for-pellets sample: the unscoped one is a
+      wildcard. If the purpose did not raise specificity they would be
+      equally applicable, and the engine would correctly refuse to choose —
+      returning `ambiguous_rules` and deciding nothing. The scoped one has
+      to win.
+    */
+    const a = assess(groundCtx('corn_pelleted'), [
+      groundRule({ id: 'general', grindPurpose: null, lowerBound: 900, upperBound: 1200 }),
+      groundRule({ id: 'corn', grindPurpose: 'corn_pelleted' }),
+    ]);
+    expect(a.result).toBe('within_limit');
+    expect(a.ruleId).toBe('corn');
+  });
+
+  it('the control: two rules on the same purpose are still ambiguous', () => {
+    // Without this, the test above would pass on an engine that simply
+    // preferred the last rule in the list.
+    const a = assess(groundCtx('corn_pelleted'), [
+      groundRule({ id: 'a', grindPurpose: 'corn_pelleted' }),
+      groundRule({ id: 'b', grindPurpose: 'corn_pelleted', upperBound: 1400 }),
+    ]);
+    expect(a.result).toBe('not_assessable');
+    expect(a.reason).toBe('ambiguous_rules');
+  });
+
+  it('a purpose-scoped rule is inapplicable where no purpose is recorded', () => {
+    // Every stage but Ground leaves `grind_purpose` null, and a null context
+    // value must NOT match a scoped rule — otherwise a grind limit would
+    // start judging conditioned mash.
+    const a = assess(groundCtx(null), [groundRule({ grindPurpose: 'corn_pelleted' })]);
+    expect(a.result).toBe('not_assessable');
   });
 });

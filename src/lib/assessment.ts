@@ -78,6 +78,15 @@ export interface SpecificationRule {
   readonly feedType: string | null;
   readonly samplingPoint: string | null;
   readonly testMethod: string | null;
+  /**
+   * What the mill was grinding and what for, on `2 Ground`.
+   *
+   * The fifth applicability dimension, added because the Polinutri report of
+   * 21 October 2026 scopes its grind targets on exactly this combination —
+   * 1200-1300 µm for corn to pelleted feed, 950-1050 for rice to pelleted,
+   * and two more for mash. Null is a wildcard, as on every other filter.
+   */
+  readonly grindPurpose: string | null;
   /** Approved unit. `null` when the source states no confirmed unit. */
   readonly unit: string | null;
   readonly lowerBound: number | null;
@@ -105,6 +114,8 @@ export interface MeasurementContext {
   readonly feedType?: string | null;
   readonly samplingPoint?: string | null;
   readonly testMethod?: string | null;
+  /** The sample's own grind purpose. Null on every stage but `2 Ground`. */
+  readonly grindPurpose?: string | null;
   /** Plant collection instant; rule effectivity is evaluated against this. */
   readonly collectionInstant: string;
 }
@@ -158,6 +169,7 @@ function specificity(rule: SpecificationRule): number {
   if (rule.feedType !== null) score++;
   if (rule.samplingPoint !== null) score++;
   if (rule.testMethod !== null) score++;
+  if (rule.grindPurpose !== null) score++;
   return score;
 }
 
@@ -174,7 +186,8 @@ function ruleApplies(rule: SpecificationRule, ctx: MeasurementContext): boolean 
     filterMatches(rule.material, ctx.material) &&
     filterMatches(rule.feedType, ctx.feedType) &&
     filterMatches(rule.samplingPoint, ctx.samplingPoint) &&
-    filterMatches(rule.testMethod, ctx.testMethod)
+    filterMatches(rule.testMethod, ctx.testMethod) &&
+    filterMatches(rule.grindPurpose, ctx.grindPurpose)
   );
 }
 

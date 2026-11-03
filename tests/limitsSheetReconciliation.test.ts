@@ -163,6 +163,7 @@ describe('nothing 0039 touched can decide anything', () => {
     feedType: null,
     samplingPoint: null,
     testMethod: null,
+    grindPurpose: null,
     unit: '%',
     lowerBound: 1,
     upperBound: 10,
@@ -184,6 +185,7 @@ describe('nothing 0039 touched can decide anything', () => {
     feedType: null,
     samplingPoint: null,
     testMethod: null,
+    grindPurpose: null,
     collectionInstant: '2026-11-02T12:00:00.000Z',
   };
 
