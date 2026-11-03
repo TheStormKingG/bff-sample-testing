@@ -1,5 +1,6 @@
 import { DASHBOARD_ORDER } from '@/forms/registry';
 import { STAGE_ICON } from '@/components/ui/statusMaps';
+import { BrandMedallion } from '@/components/ui/BrandMedallion';
 import { HomeTile } from '@/components/home/HomeTile';
 
 export interface HomeScreenProps {
@@ -42,17 +43,43 @@ export interface HomeScreenProps {
  */
 export function HomeScreen({ mayRecord }: HomeScreenProps) {
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 id="home-heading" className="text-2xl font-bold text-slate-900">
-          Sample testing
-        </h1>
-        <p className="mt-1 text-base text-slate-600">
-          {mayRecord
-            ? 'Select a stage to record results.'
-            : 'Your role does not record samples. Use the bar below to open the records you can read.'}
-        </p>
+    <div className="flex flex-col gap-6">
+      {/*
+        THE MASTHEAD, kept at the owner's instruction.
+
+        It was briefly dropped when the navigation moved to a bottom bar and
+        this screen lost its bespoke full-height layout — the header already
+        carries a small mark, so a second one looked redundant from the
+        inside. It is not redundant from the outside: this is the screen a
+        sampler opens at the start of a shift, on a shared tablet, and the
+        company's mark at the top of it is the point rather than decoration.
+
+        It no longer claims a literal third of the viewport. `basis-1/3` only
+        meant anything while this screen WAS the viewport, dividing a fixed
+        height between the masthead and the grid; inside the normal page flow
+        it would resolve against nothing. The medallion is sized directly
+        instead, which is what produced the visual that was asked for.
+      */}
+      <div className="flex flex-col items-center justify-center gap-3 pt-2">
+        <BrandMedallion size={128} />
+        <div className="text-center">
+          <h1
+            id="home-heading"
+            className="text-lg font-bold uppercase tracking-wide text-bff-800"
+          >
+            Sample testing
+          </h1>
+          <p className="text-xs font-semibold uppercase tracking-widest text-slate-600">
+            Bounty Farm Limited
+          </p>
+        </div>
       </div>
+
+      <p className="text-base text-slate-600">
+        {mayRecord
+          ? 'Select a stage to record results.'
+          : 'Your role does not record samples. Use the bar below to open the records you can read.'}
+      </p>
 
       {mayRecord ? (
         <nav aria-labelledby="home-heading">
