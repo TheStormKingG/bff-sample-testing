@@ -20,8 +20,20 @@ const SAMPLES_TABLE = 'samples';
 const COL_STAGE = 'stage';
 const COL_CAPTURE_STATE = 'capture_state';
 const COL_DISPOSITION = 'disposition';
-/** The UTC instant the sample was collected. Stored UTC, read plant-local. */
-const COL_COLLECTED_AT = 'collected_at';
+/**
+ * The UTC instant the sample was collected. Stored UTC, read plant-local.
+ *
+ * It read `collected_at` from the first commit until 2026-11-03, and there
+ * is no such column — the schema has always called it `collection_instant`.
+ * Every request for "samples collected today" came back 400 and every card
+ * on this page showed "Count not available", which is the honest rendering
+ * of a failed query and therefore looked exactly like a system with no
+ * samples in it yet. Nothing failed loudly, so nothing was investigated.
+ *
+ * `tests/dashboardColumns.test.ts` now checks these four names against the
+ * `samples` table in the migrations.
+ */
+const COL_COLLECTED_AT = 'collection_instant';
 
 const stageRowSchema = z.object({ stage: z.string() });
 
