@@ -26,6 +26,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { assess, type SpecificationRule, type SpecStatus } from '@/lib/assessment';
+import { partitionSpecifications } from '@/hooks/useSpecifications';
+import type { SpecificationVersionRow } from '@/hooks/useSamples';
 import type { MeasurementContext } from '@/lib/assessment';
 
 const MIGRATIONS = join(process.cwd(), 'supabase/migrations');
@@ -209,5 +211,122 @@ describe('a withdrawal is dated', () => {
     const m = CORPUS.find((c) => c.file.startsWith('0039'))!.sql;
     const supersedes = [...m.matchAll(/set status = 'superseded',\s*\n\s*effective_to = now\(\)/g)];
     expect(supersedes).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The screen's own arithmetic
+// ---------------------------------------------------------------------------
+
+describe('the limits screen counts the IMPORT, not what survived it', () => {
+  /*
+    THE DEFECT THIS EXISTS FOR, found on the live site minutes after 0039.
+
+    The screen splits versions by STATUS: `reference_only` on one side,
+    everything else on the other. The moment two workbook entries were
+    withdrawn, both moved to the "rules inside the approval workflow" side —
+    which they are not and never were — and the import check saw 32 of 34 and
+    announced, in red, that the import was incomplete or duplicated.
+
+    It was neither. Nothing was missing; two entries had been retired on
+    purpose. A false alarm on a quality screen is worse than no alarm: it
+    teaches the reader that the red text is noise, and the next one is real.
+
+    What identifies an imported row is `workbook_entry_no` — set at import,
+    frozen by the guard. Status says what has happened since. So the split is
+    by provenance and the count is over every row that came from the
+    workbook, withdrawn or not.
+  */
+  const row = (over: Partial<SpecificationVersionRow>): SpecificationVersionRow =>
+    ({
+      id: Math.random().toString(36).slice(2),
+      specification_id: 's',
+      version: 1,
+      parameter_key: 'x.y',
+      stage: 'ground',
+      material: null,
+      feed_type: null,
+      sampling_point: null,
+      test_method: null,
+      unit: null,
+      lower_bound: null,
+      upper_bound: null,
+      status: 'reference_only',
+      effective_from: '2026-01-01T00:00:00.000Z',
+      effective_to: null,
+      proposed_by: null,
+      proposed_by_name: null,
+      approved_by: null,
+      approved_by_name: null,
+      approved_at: null,
+      decision_reason: null,
+      source_note: 's',
+      workbook_entry_no: 1,
+      workbook_status: 'To set',
+      sample_label: null,
+      test_label: null,
+      // The spread was missing here on the first attempt, and `as` swallowed
+      // it: every row came back with the defaults, three assertions failed
+      // loudly, and had they happened to agree with the defaults they would
+      // have passed while testing one fixed row four times over.
+      ...over,
+    }) as SpecificationVersionRow;
+
+  it('keeps a withdrawn workbook entry out of the approval workflow', () => {
+    const set = partitionSpecifications([
+      row({ workbook_entry_no: 25, status: 'superseded' }),
+      row({ workbook_entry_no: 26, status: 'superseded' }),
+      row({ workbook_entry_no: 1, status: 'reference_only' }),
+      row({ workbook_entry_no: null, status: 'draft' }),
+    ]);
+    expect(set.reference).toHaveLength(1);
+    expect(set.withdrawn).toHaveLength(2);
+    // The one row with no workbook provenance. A withdrawn IMPORT is not a
+    // rule somebody is drafting, and listing it as one is how the screen
+    // came to claim the import was broken.
+    expect(set.rules).toHaveLength(1);
+    expect(set.rules[0]!.status).toBe('draft');
+  });
+
+  it('the import total is unchanged by a withdrawal', () => {
+    const imported = [
+      row({ workbook_entry_no: 1 }),
+      row({ workbook_entry_no: 2 }),
+      row({ workbook_entry_no: 3 }),
+    ];
+    const before = partitionSpecifications(imported);
+    const after = partitionSpecifications([
+      imported[0]!,
+      imported[1]!,
+      { ...imported[2]!, status: 'superseded' },
+    ]);
+    expect(before.reference.length + before.withdrawn.length).toBe(3);
+    expect(after.reference.length + after.withdrawn.length).toBe(3);
+    // And the control: the figure the screen USED to compute does move, which
+    // is precisely the false alarm.
+    expect(before.reference.length).toBe(3);
+    expect(after.reference.length).toBe(2);
+  });
+
+  it('a locally authored draft is never counted as an import', () => {
+    // The six parameters 0039 added have no workbook entry number. If they
+    // were counted, the import check would read 40 of 34 and cry wolf in the
+    // other direction.
+    const set = partitionSpecifications([
+      row({ workbook_entry_no: 1 }),
+      row({ workbook_entry_no: null, status: 'draft' }),
+      row({ workbook_entry_no: null, status: 'draft' }),
+    ]);
+    expect(set.reference.length + set.withdrawn.length).toBe(1);
+    expect(set.rules).toHaveLength(2);
+  });
+
+  it('only an approved rule with a recorded approver is counted as approved', () => {
+    const set = partitionSpecifications([
+      row({ workbook_entry_no: null, status: 'approved', approved_by: 'p1' }),
+      row({ workbook_entry_no: null, status: 'approved', approved_by: null }),
+      row({ workbook_entry_no: null, status: 'draft' }),
+    ]);
+    expect(set.approvedCount).toBe(1);
   });
 });

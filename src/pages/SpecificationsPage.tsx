@@ -533,9 +533,15 @@ export default function SpecificationsPage() {
 
   const rules = specs.data?.rules ?? [];
   const reference = specs.data?.reference ?? [];
+  const withdrawn = specs.data?.withdrawn ?? [];
   const approvedCount = specs.data?.approvedCount ?? 0;
+  // Counted against every row that CAME FROM the workbook, withdrawn ones
+  // included. A check on the import must not move because a test was later
+  // retired — see `SpecificationSet.withdrawn` for the false alarm that
+  // taught this.
   const importMismatch =
-    specs.data !== undefined && reference.length !== VERIFIED_REFERENCE_ENTRY_COUNT;
+    specs.data !== undefined &&
+    reference.length + withdrawn.length !== VERIFIED_REFERENCE_ENTRY_COUNT;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
@@ -586,9 +592,19 @@ export default function SpecificationsPage() {
             </p>
             <p className="mt-1 text-base text-slate-800">
               {reference.length} workbook {reference.length === 1 ? 'entry' : 'entries'}{' '}
-              {reference.length === 1 ? 'was' : 'were'} imported from the <code>Limits</code> tab
+              {reference.length === 1 ? 'is' : 'are'} loaded from the <code>Limits</code> tab
               for reference, and <strong>0 of {reference.length}</strong> is an approval — an
               imported entry carries no approver, so it can never decide conformity.
+              {withdrawn.length > 0 ? (
+                <>
+                  {' '}
+                  A further {withdrawn.length}{' '}
+                  {withdrawn.length === 1 ? 'entry has' : 'entries have'} been{' '}
+                  <strong>withdrawn</strong>: the test is no longer performed, or its method
+                  changed so the figures no longer describe it. They are kept for the audit
+                  trail and listed below.
+                </>
+              ) : null}
             </p>
             {approvedCount === 0 ? (
               <p className="mt-1 text-base font-medium text-slate-900">
@@ -601,7 +617,8 @@ export default function SpecificationsPage() {
               <p role="alert" className="mt-2 text-sm font-semibold text-red-900">
                 The workbook verification of 24 October 2026 recorded{' '}
                 {VERIFIED_REFERENCE_ENTRY_COUNT} entries on the <code>Limits</code> tab, but{' '}
-                {reference.length} are loaded here. The import is incomplete or has been
+                {reference.length + withdrawn.length} are loaded here ({reference.length}{' '}
+                standing, {withdrawn.length} withdrawn). The import is incomplete or has been
                 duplicated — check it before relying on this list.
               </p>
             ) : null}
@@ -784,6 +801,45 @@ export default function SpecificationsPage() {
               </div>
             )}
           </Card>
+
+          {withdrawn.length > 0 ? (
+            <Card
+              title="Withdrawn workbook entries"
+              description="Imported entries that no longer describe a test the plant performs. They are kept, not deleted: a specification version is immutable and the record that a characteristic was once controlled is part of the audit trail."
+            >
+              <ul className="rounded-md border border-slate-300 px-3">
+                {withdrawn.map((entry) => (
+                  <li key={entry.id} className="border-b border-slate-200 py-3 last:border-b-0">
+                    <p className="flex flex-wrap items-center gap-2 text-base font-semibold text-slate-900">
+                      <Archive aria-hidden className="h-5 w-5" />
+                      {entry.test_label ?? entry.parameter_key}
+                      <span className="font-normal text-slate-700">
+                        · workbook entry #{entry.workbook_entry_no ?? '—'} · version{' '}
+                        {entry.version}
+                      </span>
+                    </p>
+                    <p className="mt-1 text-sm text-slate-700">
+                      It read {boundsText(entry)}
+                      {entry.unit !== null ? ` in ${entry.unit}` : ''}, status &ldquo;
+                      {entry.workbook_status ?? 'not recorded'}&rdquo;. The figures are kept
+                      exactly as imported — a version is immutable, so what a past decision was
+                      made under stays readable.
+                    </p>
+                    {/* The reason is the whole point of keeping the row. A
+                        withdrawn entry with no stated reason is a deletion
+                        that happens to still be on disk. */}
+                    {entry.decision_reason !== null ? (
+                      <p className="mt-1 text-sm text-slate-800">{entry.decision_reason}</p>
+                    ) : (
+                      <p className="mt-1 text-sm font-semibold text-red-900">
+                        No reason was recorded for this withdrawal.
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
         </div>
       )}
 

@@ -133,8 +133,32 @@ export const WORKBOOK_STATUS_NOTES: Record<string, string> = {
 export interface SpecificationSet {
   /** Rules that live in the approval workflow: draft/proposed/approved/... */
   readonly rules: readonly SpecificationVersionRow[];
-  /** The imported workbook entries. Reference only, never assessable. */
+  /** Imported workbook entries still standing. Reference only, never assessable. */
   readonly reference: readonly SpecificationVersionRow[];
+  /**
+   * Imported workbook entries that have been withdrawn.
+   *
+   * ===========================================================================
+   * WHY THIS IS A THIRD LIST AND NOT A STATUS FILTER
+   * ===========================================================================
+   * These were split on STATUS — `reference_only` to one side, everything else
+   * to the other — and that was wrong the first time a workbook entry was
+   * withdrawn. Migration 0039 superseded two, because 0038 had removed the
+   * protein-solubility column and changed the urease test from a pH figure to
+   * a visual grade. Both rows instantly became "rules inside the approval
+   * workflow", which they are not and never were, and the import check saw 32
+   * of 34 and reported on screen, in red, that the import was incomplete or
+   * duplicated. It was neither. Nothing was missing; two entries had been
+   * retired on purpose.
+   *
+   * What identifies an imported row is `workbook_entry_no`, which is set at
+   * import and immutable thereafter — the guard freezes it. Status says what
+   * has HAPPENED to the row since. So the split is by provenance, and the
+   * import count is provenance too: it stays 34 however many are later
+   * withdrawn, which is what makes it a check on the IMPORT rather than a
+   * count that drifts every time the plant stops running a test.
+   */
+  readonly withdrawn: readonly SpecificationVersionRow[];
   readonly approvedCount: number;
 }
 
@@ -182,12 +206,29 @@ export async function fetchSpecifications(): Promise<SpecificationSet> {
     proposed_by_name: row.proposed_by === null ? null : personName(people.get(row.proposed_by)),
     approved_by_name: row.approved_by === null ? null : personName(people.get(row.approved_by)),
   }));
-  const reference = rows.filter((r) => r.status === 'reference_only');
-  const rules = rows.filter((r) => r.status !== 'reference_only');
+  return partitionSpecifications(rows);
+}
+
+/**
+ * Split the version rows three ways: provenance first, then status.
+ *
+ * Extracted from `fetchSpecifications` and exported so the rule can be
+ * tested without a database. The split used to be two lines inside the fetch
+ * and was wrong for a year before anything exercised it — see
+ * `SpecificationSet.withdrawn` for what that cost on screen.
+ */
+export function partitionSpecifications(
+  rows: readonly SpecificationVersionRow[],
+): SpecificationSet {
+  const imported = rows.filter((r) => r.workbook_entry_no !== null);
+  const reference = imported.filter((r) => r.status === 'reference_only');
+  const withdrawn = imported.filter((r) => r.status !== 'reference_only');
+  const rules = rows.filter((r) => r.workbook_entry_no === null);
 
   return {
     rules,
     reference,
+    withdrawn,
     approvedCount: rules.filter((r) => r.status === 'approved' && r.approved_by !== null).length,
   };
 }

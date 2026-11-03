@@ -464,6 +464,16 @@ export interface SpecificationVersionRow {
   readonly approved_by: string | null;
   readonly approved_by_name: string | null;
   readonly approved_at: string | null;
+  /**
+   * Why a version was approved, rejected or withdrawn, in the words of the
+   * person or migration that decided it.
+   *
+   * Added when migration 0039 withdrew two workbook entries. A withdrawn
+   * entry whose reason is not displayed is a deletion that happens to still
+   * be on disk — the row proves the characteristic existed, and only this
+   * field says why it stopped.
+   */
+  readonly decision_reason: string | null;
   readonly source_note: string | null;
   /** `Limits` tab entry number 1-34, for the reference listing only. */
   readonly workbook_entry_no: number | null;
@@ -485,7 +495,7 @@ export interface SpecificationVersionRow {
  * detail page read the same table successfully. One list, one mapper.
  */
 export const SPECIFICATION_VERSION_COLUMNS =
-  'id,specification_id,version,parameter_key,stage,material_code,feed_type_code,sampling_point,test_method,unit,lower_bound,upper_bound,status,effective_from,effective_to,proposed_by,approved_by,approved_at,source_evidence,workbook_entry_no,workbook_status' as const;
+  'id,specification_id,version,parameter_key,stage,material_code,feed_type_code,sampling_point,test_method,unit,lower_bound,upper_bound,status,effective_from,effective_to,proposed_by,approved_by,approved_at,decision_reason,source_evidence,workbook_entry_no,workbook_status' as const;
 
 export interface SpecificationVersionDbRow {
   readonly id: string;
@@ -506,6 +516,7 @@ export interface SpecificationVersionDbRow {
   readonly proposed_by: string | null;
   readonly approved_by: string | null;
   readonly approved_at: string | null;
+  readonly decision_reason: string | null;
   readonly source_evidence: string | null;
   readonly workbook_entry_no: number | null;
   readonly workbook_status: string | null;
@@ -543,6 +554,7 @@ export function toSpecificationVersionRow(row: SpecificationVersionDbRow): Speci
     proposed_by: row.proposed_by,
     approved_by: row.approved_by,
     approved_at: row.approved_at,
+    decision_reason: row.decision_reason,
     // NULL here because no name column exists: `specification_versions`
     // stores `proposed_by` and `approved_by` as uuids and nothing else.
     //
