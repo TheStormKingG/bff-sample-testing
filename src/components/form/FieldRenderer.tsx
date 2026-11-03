@@ -3,6 +3,7 @@ import type { UseFormRegisterReturn } from 'react-hook-form';
 import type { FieldDef } from '@/forms/types';
 import { fieldIds } from './FieldShell';
 import { DateField } from './DateField';
+import { ImageChoiceField } from './ImageChoiceField';
 import { NumberField } from './NumberField';
 import { SelectField } from './SelectField';
 import { TextField } from './TextField';
@@ -58,7 +59,16 @@ export function FieldRenderer({
     case 'yesno':
       return <YesNoField {...props} />;
     case 'select':
-      return <SelectField {...props} />;
+      // One branch on PRESENTATION, not on a new field type. A gallery adds
+      // photographs to a list that is already a `select` everywhere it
+      // matters — the schema, the Edge validator and the SQL assertion — so
+      // introducing a `FieldType` for it would fork the validation contract
+      // to change how one field is drawn. See `OptionGalleryEntry`.
+      return field.optionGallery !== undefined ? (
+        <ImageChoiceField {...props} />
+      ) : (
+        <SelectField {...props} />
+      );
     case 'date':
       return <DateField {...props} />;
     case 'time':

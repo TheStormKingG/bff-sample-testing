@@ -256,8 +256,8 @@ describe('StageForm — section bands', () => {
         ).length,
       0,
     );
-    // 239: see `tests/registry.test.ts` for the per-tab arithmetic.
-    expect(columns).toBe(239);
+    // 238: see `tests/registry.test.ts` for the per-tab arithmetic.
+    expect(columns).toBe(238);
     // Was 7 — one column A per stage. Then 17, when DGM added nine
     // server-computed columns. Then 44, when three more tabs gained the sieve
     // test. Now 54: eight column As, nine computed columns on each of the

@@ -276,19 +276,28 @@ Three rules follow, and all three are enforced in code:
 | C | `collection_time` | Time | time | Sample details | — | registration | — | — |
 | D | `run_no` | Run no. | text | Sample details | — | registration | — | — |
 | E | `raw_soya_lot_no` | Raw soya lot no. | text | Sample details | — | registration | — | — |
-| F | `sampled_by` | Sampled by | text | Sample details | — | registration | — | — |
+| F | `sampled_by` | Sampled by | select | Sample details | — | registration | — | administrator-editable list `samplers` (0037) |
 | G | `crusher_roller_gap_mm` | Crusher roller gap (mm) | number | Settings when sampled | mm | registration | `extruded_soya.crusher_roller_gap` | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 100 (confirmable, never assessed); 2 dp preserved |
 | H | `steam_line_pct` | Steam line (%) | number | Settings when sampled | % | registration | `extruded_soya.steam_line` | hard bounds 0..100 (impossibility, not an acceptance limit); 1 dp preserved |
 | I | `steam_line_temperature_c` | Steam line temperature (°C) | number | Settings when sampled | °C | registration | `extruded_soya.steam_line_temperature` | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 400 (confirmable, never assessed); 1 dp preserved |
 | J | `extruder_temperature_c` | Extruder temperature (°C) | number | Settings when sampled | °C | registration | `extruded_soya.extruder_temperature` | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 400 (confirmable, never assessed); 1 dp preserved |
 | K | `amount_ton_hr` | Amount (ton/hr) | number | Settings when sampled | ton/hr | registration | `extruded_soya.amount` | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 200 (confirmable, never assessed); 2 dp preserved |
 | L | `moisture_pct` | Moisture (%) | number | Test results | % | testing | `extruded_soya.moisture` | hard bounds 0..100 (impossibility, not an acceptance limit); 2 dp preserved |
-| M | `urease_ph_rise` | Urease (pH rise) | number | Test results | pH rise | testing | `extruded_soya.urease` | hard bounds 0..∞ (impossibility, not an acceptance limit); typo guard above 14 (confirmable, never assessed); 3 dp preserved |
-| N | `protein_solubility_pct` | Protein solubility (%) | number | Test results | % | testing | `extruded_soya.protein_solubility` | hard bounds 0..100 (impossibility, not an acceptance limit); 1 dp preserved |
-| O | `tested_by_qo` | Tested by (QO) | text | Follow-up | — | testing | — | — |
-| P | `comments` | Comments | textarea | Follow-up | — | optional | — | — |
+| M | `urease_qualitative` | Qualitative urease | select | Test results | — | testing | — | four codes read off a reference card: `over_cooked`, `properly_cooked_slight`, `properly_cooked_moderate`, `under_cooked`. No parameter key: a visual grade cannot be assessed against a numeric limit. Rendered as four photographs (0038) |
+| N | `tested_by_qo` | Tested by (QO) | select | Follow-up | — | testing | — | administrator-editable list `testers` (0037) |
+| O | `comments` | Comments | textarea | Follow-up | — | optional | — | — |
 
-*16 mapped fields; the registry declares 16 columns; agreement: **yes**.*
+*15 mapped fields; the registry declares 15 columns; agreement: **yes**.*
+
+**0038 changed this tab.** `Urease (pH rise)`, a 3-dp number against an unapproved
+0.05–0.20 band, became `Qualitative urease` — the plant runs the visual urea-phenol-red
+test, which has no number in it, and asking for one invited the operator to copy a figure
+off the reference card that belongs to the quantitative buffer method. `Protein solubility
+(%)` was removed at the plant's request; `Tested by (QO)` and `Comments` slid left from O
+and P. Neither removed column held a value in the database or in the workbook. See
+`docs/workbook-restructure-0038.md` and migration `0038_qualitative_urease.sql`.
+`extruded_soya.urease` and `extruded_soya.protein_solubility` remain in
+`specification_parameters` as unapproved drafts that nothing can now cite.
 
 
 ## Tab 6 — Crumble  (`6 Crumble`)

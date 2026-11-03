@@ -405,12 +405,15 @@ describe('the instrument works before anything it says is believed', () => {
     //        columns on `4 Pellets` (11 -> 41) and 2 on `6 Crumble` (39 ->
     //        41), the other 124 being moves of columns that already existed
     //  -  2  deleted by 0033: the drum speed on Ground and on Mash
+    //  +  1  inserted by 0038: `Qualitative urease` on `5 Extruded soya`
+    //  -  2  deleted by 0038: the pH-rise number it replaces, and
+    //        `Protein solubility (%)`
     //
     // It is also the positive control for the DELETE parser: one that read
-    // no DELETEs would land on 246, and one that mistook the upsert for a
-    // plain insert would land on 363.
-    expect(98 + 35 + 81 - 5 + 32 - 2).toBe(239);
-    expect(STAGE_FIELD_ROWS).toHaveLength(239);
+    // no DELETEs would land on 247, and one that mistook the upsert for a
+    // plain insert would land on 362.
+    expect(98 + 35 + 81 - 5 + 32 - 2 + 1 - 2).toBe(238);
+    expect(STAGE_FIELD_ROWS).toHaveLength(238);
     expect(STAGE_DEFINITION_ROWS).toHaveLength(8);
     expect(PREFIX_ROWS).toHaveLength(9);
   });

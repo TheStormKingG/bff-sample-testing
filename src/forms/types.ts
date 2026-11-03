@@ -95,6 +95,44 @@ export interface SelectOption {
   readonly retired?: boolean;
 }
 
+/**
+ * One option shown as a photograph rather than a line of a dropdown.
+ *
+ * ===========================================================================
+ * WHY THIS IS PRESENTATION AND NOT A SECOND LIST
+ * ===========================================================================
+ * The field stays `type: 'select'` and `options` stays the validation
+ * contract — the same list the browser schema, `validateStagePayload` and
+ * `assert_measurement_in_options` all enforce, and the same list an
+ * administrator's table can replace. A gallery entry adds a picture, a
+ * caption and a reference figure to an option that already exists; it can
+ * never introduce a code, because a code that reaches the server without
+ * being in `options` is refused by three separate layers.
+ *
+ * `tests/qualitativeUrease.test.tsx` asserts that every gallery entry names
+ * an option and that every offered option has one, so a list that grows
+ * without a photograph fails rather than rendering a blank tile.
+ */
+export interface OptionGalleryEntry {
+  /** The `SelectOption.value` this picture belongs to. */
+  readonly value: string;
+  /**
+   * Path under the application base, NOT an absolute `/` path: the app is
+   * served from `bountyfarmltd.com/FeedQualityApp/`, so a literal leading
+   * slash 404s. See `BrandMark` for the same reasoning.
+   */
+  readonly image: string;
+  /**
+   * What the photograph shows, for a reader who cannot see it. It describes
+   * the OBSERVATION the operator is matching against — not "a petri dish".
+   */
+  readonly imageAlt: string;
+  /** The observation in the standard's own words. */
+  readonly observation: string;
+  /** The reference figure the observation corresponds to. */
+  readonly reference: string;
+}
+
 /** Condition under which a field applies at all (e.g. BC-only moisture). */
 export interface AppliesWhen {
   readonly field: string;
@@ -229,6 +267,19 @@ export interface FieldDef {
    * than silently accepted.
    */
   readonly hidden?: boolean;
+
+  /**
+   * Render this `select` as a row of photographs instead of a dropdown.
+   *
+   * For an option an operator chooses BY LOOKING. The qualitative urease test
+   * is read off a petri dish against four reference photographs, and a
+   * dropdown reading "Properly cooked (moderately active)" asks them to hold
+   * a picture in their head and translate it into words before choosing. The
+   * photographs are the instrument; showing them is not decoration.
+   *
+   * Presentation only — see `OptionGalleryEntry`. Absent means a dropdown.
+   */
+  readonly optionGallery?: readonly OptionGalleryEntry[];
 }
 
 export interface StageSchema {

@@ -288,7 +288,9 @@ describe('the three tabs without a sieve test are untouched', () => {
     const widths = STAGES.filter((s) => !SIEVE_STAGES.includes(s)).map(
       (s) => STAGE_SCHEMAS[s].columnCount,
     );
-    expect(widths).toEqual([19, 13, 16]);
+    // Extruded soya went 16 -> 15 in 0038, which removed `Protein
+    // solubility (%)`. The sieve test still touches none of these three.
+    expect(widths).toEqual([19, 13, 15]);
   });
 
   it('widened exactly the four tabs that carry the test', () => {

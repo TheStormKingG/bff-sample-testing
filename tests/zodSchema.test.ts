@@ -648,7 +648,7 @@ describe('the schema is generated, not hand-written per stage', () => {
       expect(new Set(actualKeys).size, stage).toBe(actualKeys.length);
       for (const key of expectedKeys) expect(actualKeys, `${stage} missing ${key}`).toContain(key);
     }
-    // 111 number fields + 33 controlled-code fields across the eight tabs.
+    // 109 number fields + 34 controlled-code fields across the eight tabs.
     //
     // The numbers were 47 before the sieve test moved onto `2 Ground`,
     // `6 Crumble` and `7 Mash`: each tab gained 17 numeric sieve columns and
@@ -674,9 +674,16 @@ describe('the schema is generated, not hand-written per stage', () => {
     // being `system` and so outside this sweep); and `4 Pellets` gained 2
     // numeric settings, 14 masses and the 2 weighings (+18).
     //
+    // 0038 moved the numbers from 111 to 109 and the codes from 33 to 34,
+    // and the two movements are ONE change seen twice: `5 Extruded soya`
+    // lost `Protein solubility (%)` outright (-1 number) and its urease
+    // column stopped being a 3-dp pH rise and became a four-option visual
+    // grade (-1 number, +1 code). A sweep that counted only the total would
+    // have reported -1 and said nothing about a measurement changing kind.
+    //
     // Asserted so that a registry change dropping fields out of the sweep
     // fails here rather than passing quietly with less coverage than claimed.
-    expect(checked).toBe(111 + 33);
+    expect(checked).toBe(109 + 34);
   });
 
   it('never emits a key the registry does not define for the stage', () => {
@@ -684,11 +691,12 @@ describe('the schema is generated, not hand-written per stage', () => {
       ...emptyStageValues('mash'),
       // Mash has no steam pressure column; a stray key must be dropped.
       steam_pressure_reading: '2.5',
-      urease_ph_rise: '0.1',
+      // Not a mash column either, and not a column anywhere any more.
+      urease_qualitative: 'over_cooked',
     });
     if (!result.ok) throw new Error('expected valid');
     expect('steam_pressure_reading' in result.values).toBe(false);
-    expect('urease_ph_rise' in result.values).toBe(false);
+    expect('urease_qualitative' in result.values).toBe(false);
   });
 
   it('never emits the server-assigned sample_id', () => {

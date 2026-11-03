@@ -106,7 +106,7 @@ const VERIFIED_HEADERS: Record<Stage, { tab: string; headers: string[] }> = {
       'Sample ID', 'Date', 'Time', 'Run no.', 'Raw soya lot no.', 'Sampled by',
       'Crusher roller gap (mm)', 'Steam line (%)', 'Steam line temperature (°C)',
       'Extruder temperature (°C)', 'Amount (ton/hr)', 'Moisture (%)',
-      'Urease (pH rise)', 'Protein solubility (%)', 'Tested by (QO)', 'Comments',
+      'Qualitative urease', 'Tested by (QO)', 'Comments',
     ],
   },
   crumble: {
@@ -203,18 +203,24 @@ describe('registry: workbook contract', () => {
     expect(columnLetterToIndex(s.lastColumn)).toBe(s.columnCount - 1);
   });
 
-  it('total verified columns across the eight tabs is 239', () => {
+  it('total verified columns across the eight tabs is 238', () => {
     // Stated as the sum of its parts rather than as one number, so a change
     // names which side moved. Each line below is one tab's own arithmetic
     // against the width it was last verified at, so a stage that moves for an
     // unrelated reason cannot hide inside the total.
     //
     // The original seven were 98 when they were transcribed on 2026-10-24.
-    // THREE UNTOUCHED TABS still account for exactly their original width —
-    // `4 Pellets` left that group when it gained the sieve test.
-    const THREE_UNTOUCHED: readonly Stage[] = ['raw_materials', 'conditioned', 'extruded_soya'];
-    const untouched = THREE_UNTOUCHED.reduce((n, s) => n + STAGE_SCHEMAS[s].columnCount, 0);
-    expect(untouched).toBe(19 + 13 + 16);
+    // TWO UNTOUCHED TABS still account for exactly their original width.
+    // `4 Pellets` left that group when it gained the sieve test, and
+    // `5 Extruded soya` left it at 0038.
+    const TWO_UNTOUCHED: readonly Stage[] = ['raw_materials', 'conditioned'];
+    const untouched = TWO_UNTOUCHED.reduce((n, s) => n + STAGE_SCHEMAS[s].columnCount, 0);
+    expect(untouched).toBe(19 + 13);
+
+    // 5 Extruded soya: 16 transcribed, minus `Protein solubility (%)`. The
+    // urease column did not move the width — it stopped being a number and
+    // became a four-option select in the same letter.
+    expect(STAGE_SCHEMAS.extruded_soya.columnCount).toBe(16 - 1);
 
     // The sieve test is 27 columns wherever it lands: 4 settings, 14 masses,
     // 9 computed — minus the drum speed on the two tabs whose product is
@@ -239,7 +245,7 @@ describe('registry: workbook contract', () => {
     expect(STAGE_SCHEMAS.dgm.columnCount).toBe(35);
 
     const total = STAGES.reduce((n, s) => n + STAGE_SCHEMAS[s].columnCount, 0);
-    expect(total).toBe(239)
+    expect(total).toBe(238)
   });
 
   it.each(STAGES)('%s: field keys are unique', (stage) => {

@@ -18,6 +18,7 @@
 import {
   STAGES,
   type FieldDef,
+  type OptionGalleryEntry,
   type Requiredness,
   type Stage,
   type StageSchema,
@@ -129,6 +130,87 @@ const TESTED_BY_OPTIONS = [
 ] as const;
 
 /**
+ * The qualitative urease test on `5 Extruded soya`, as four assessments.
+ *
+ * ===========================================================================
+ * WHAT THE OPERATOR IS ACTUALLY DOING
+ * ===========================================================================
+ * 0.2 g of meal is wetted with urea-phenol red. Any urease left in the soya
+ * splits the urea, the pH climbs, and the indicator turns red exactly where
+ * it happened — so the dish ends up speckled in proportion to how much raw
+ * enzyme survived extrusion. The operator reads it by eye against four
+ * reference dishes. That is the instrument: there is no number to type.
+ *
+ * ===========================================================================
+ * WHY THE CODE IS NOT A NUMBER, AND WHY THE RANGES ARE ONLY A FOOTNOTE
+ * ===========================================================================
+ * The reference figures below (0.00, 0.05-0.10, 0.10-0.20, above 0.20) are
+ * the pH RISE the quantitative buffer method would report for a dish that
+ * looks like this — they are not a pH, and they are not what was measured
+ * here. Storing one against a visual match would be recording a reading
+ * nobody took, so the stored value is the assessment and the figure is shown
+ * beside the picture as orientation only. This field has no `parameterKey`
+ * for the same reason: a visual grade cannot be assessed against a numeric
+ * acceptance limit, approved or otherwise.
+ *
+ * The two middle options are both "Properly cooked" in the source table and
+ * are distinguished by activity, which is the honest reading of it: the
+ * difference between them is how much enzyme is left, not whether the batch
+ * passes.
+ *
+ * Source: Table 1, "Visual examination of soybean meal treated with
+ * Urea-Phenol Red solution", supplied by Bounty Farm 2026-11-02.
+ */
+const UREASE_QUALITATIVE_OPTIONS = [
+  { value: 'over_cooked', label: 'Over cooked (urease inactive)' },
+  { value: 'properly_cooked_slight', label: 'Properly cooked (slightly active)' },
+  { value: 'properly_cooked_moderate', label: 'Properly cooked (moderately active)' },
+  { value: 'under_cooked', label: 'Under cooked (very active)' },
+] as const;
+
+/**
+ * The four reference dishes, in the order the source table lists them —
+ * least red to most red, which is also overcooked to undercooked.
+ *
+ * The photographs were matched to the assessments BY MEASUREMENT, not by the
+ * order they arrived in: the strongly-red pixel fraction inside each dish is
+ * 0.04%, 3.99%, 7.69% and 56.67% respectively, which is a strictly increasing
+ * sequence and agrees with the captions printed under the source figure. The
+ * file names say the same thing, so a future reader does not have to trust
+ * this comment.
+ */
+const UREASE_QUALITATIVE_GALLERY: readonly OptionGalleryEntry[] = [
+  {
+    value: 'over_cooked',
+    image: 'urease/over-cooked.webp',
+    imageAlt: 'An even orange dish with no red specks anywhere.',
+    observation: 'No visible red colour',
+    reference: 'pH rise about 0.00',
+  },
+  {
+    value: 'properly_cooked_slight',
+    image: 'urease/properly-cooked-slight.webp',
+    imageAlt: 'An orange dish with a few scattered red specks.',
+    observation: 'A few scattered red particles',
+    reference: 'pH rise about 0.05 to 0.10',
+  },
+  {
+    value: 'properly_cooked_moderate',
+    image: 'urease/properly-cooked-moderate.webp',
+    imageAlt: 'An orange dish with red specks spread across about a quarter of it.',
+    observation: 'About a quarter red particles',
+    reference: 'pH rise about 0.10 to 0.20',
+  },
+  {
+    value: 'under_cooked',
+    image: 'urease/under-cooked.webp',
+    imageAlt: 'A dish about half covered in dense red specks.',
+    observation: 'About half or more red particles',
+    reference: 'pH rise above 0.20',
+  },
+] as const;
+
+/**
  * Structured sampling-point codes for `2 Ground`. The CODE drives the sample-ID
  * prefix and the BC-moisture rule; the LABEL is what the sheet cell receives.
  * PRD §5.2: "derive prefix AM or BC directly from structured point code rather
@@ -169,9 +251,7 @@ const HELP = {
   pdi: 'How well pellets or crumbles hold together when shaken in the durability tester. A low number means more dust and broken pieces.',
   size: 'The size of feed the birds get. Crumble size affects how much the birds eat.',
   urease:
-    'How much of the raw soya enzyme is left after extrusion. Too high means the soya is undercooked.',
-  proteinSolubility:
-    'How much of the soya protein the birds can still use. Too low means the soya is overcooked.',
+    'How much of the raw soya enzyme is left after extrusion. Match the dish against the four pictures and pick the one it looks most like. More red means more enzyme left, which means the soya is undercooked; no red at all means it was cooked too hard.',
   mycotoxin:
     'Poisons made by mould on grain. They harm bird health and the immune system.',
   visual:
@@ -1268,8 +1348,8 @@ const extrudedSoya: StageSchema = {
   ordinal: 5,
   title: 'Extruded Soya',
   sheetTab: '5 Extruded soya',
-  lastColumn: 'P',
-  columnCount: 16,
+  lastColumn: 'O',
+  columnCount: 15,
   prefix: 'ES',
   description: 'Full-fat soya after the extruder',
   instruction:
@@ -1401,38 +1481,21 @@ const extrudedSoya: StageSchema = {
       help: HELP.moisture,
     },
     {
-      key: 'urease_ph_rise',
+      // Replaces `urease_ph_rise`, a 3-dp number nobody ever recorded: the
+      // plant reads this test off the dish, not off a pH meter. See
+      // `UREASE_QUALITATIVE_OPTIONS` and migration 0038.
+      key: 'urease_qualitative',
       columnLetter: 'M',
-      sheetHeader: 'Urease (pH rise)',
-      label: 'Urease',
-      type: 'number',
+      sheetHeader: 'Qualitative urease',
+      label: 'Qualitative urease',
+      type: 'select',
+      options: UREASE_QUALITATIVE_OPTIONS,
+      optionGallery: UREASE_QUALITATIVE_GALLERY,
       section: 'test_results',
       required: 'testing',
-      unit: 'pH rise',
-      unitConfirmed: true,
-      min: 0,
-      implausibleAbove: 14,
-      decimals: 3,
-      parameterKey: 'extruded_soya.urease',
       help: HELP.urease,
     },
-    {
-      key: 'protein_solubility_pct',
-      columnLetter: 'N',
-      sheetHeader: 'Protein solubility (%)',
-      label: 'Protein solubility',
-      type: 'number',
-      section: 'test_results',
-      required: 'testing',
-      unit: '%',
-      unitConfirmed: true,
-      min: 0,
-      max: 100,
-      decimals: 1,
-      parameterKey: 'extruded_soya.protein_solubility',
-      help: HELP.proteinSolubility,
-    },
-    ...testedByAndComments('O', 'P'),
+    ...testedByAndComments('N', 'O'),
   ],
 };
 

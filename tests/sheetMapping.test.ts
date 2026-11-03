@@ -171,7 +171,12 @@ describe('toSheetRow: zero is not blank (Master Prompt §10, PRD §6.1)', () => 
     // sieve test plus the two weighings: 3 settings that take a number, the
     // sieve-series select, 14 masses and 2 weights, so +18 on a tab that had
     // 2. 93 - 1 - 1 + 1 + 19 = 111.
-    expect(checked).toBe(111);
+    //
+    // 0038 then moved it to 109. `5 Extruded soya` lost both of its last two
+    // numeric columns: `Urease (pH rise)` became a four-option select read
+    // off a reference card, and `Protein solubility (%)` was removed. So
+    // extruded soya went 8 -> 6, and 111 - 2 = 109.
+    expect(checked).toBe(109);
   });
 });
 
@@ -191,8 +196,12 @@ describe('toSheetRow: decimal precision is preserved as entered', () => {
   });
 
   it('does not reformat or round a numeric value', () => {
-    const row = toSheetRow('extruded_soya', 'ES-261024-01', { urease_ph_rise: 0.055 });
-    expect(row[columnLetterToIndex('M')]).toBe('0.055');
+    // `steam_line_pct` declares 1 decimal and receives three. `decimals` is
+    // a DISPLAY hint, never a rounding instruction: what the operator
+    // entered is what the sheet records. This used to be asserted on
+    // `urease_ph_rise`, which 0038 replaced with a select.
+    const row = toSheetRow('extruded_soya', 'ES-261024-01', { steam_line_pct: 0.055 });
+    expect(row[columnLetterToIndex('H')]).toBe('0.055');
   });
 
   it('rejects a non-finite measurement rather than writing "NaN" or "Infinity"', () => {
