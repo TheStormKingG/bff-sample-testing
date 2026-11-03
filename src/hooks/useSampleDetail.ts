@@ -24,6 +24,7 @@ import {
   type HoldTrigger,
   type MeasurementContext,
   type SpecificationRule,
+  type AssessmentResult,
 } from '@/lib/assessment';
 import { evaluateRelease, type ReleaseEvaluation } from '@/lib/workflow';
 import { newIdempotencyKey } from '@/hooks/useRegisterSample';
@@ -94,6 +95,13 @@ export interface MeasurementView {
   readonly recordedAt: string | null;
 }
 
+/** A verdict on a server-computed result. */
+export interface DerivedAssessment {
+  readonly result: AssessmentResult;
+  /** The version of the rule that decided it, when one did. */
+  readonly ruleVersion: number | null;
+}
+
 export interface SampleDetail {
   readonly sample: SampleRow;
   /** Every operator-visible field of the stage, in registry (column) order. */
@@ -117,6 +125,8 @@ export interface SampleDetail {
    * nobody.
    */
   readonly derived: Readonly<Record<string, string>>;
+  /** The verdict on each computed result that has one. See below. */
+  readonly derivedAssessment: Readonly<Record<string, DerivedAssessment>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -428,7 +438,7 @@ export async function fetchSampleDetail(sampleUuid: string): Promise<SampleDetai
       .or(`from_sample.eq.${sampleUuid},to_sample.eq.${sampleUuid}`),
     db
       .from(TABLES.derivedResults)
-      .select('result_key,display_text,numeric_value,computed_at')
+      .select('result_key,display_text,numeric_value,computed_at,assessment_result,rule_version')
       .eq('sample_uuid', sampleUuid),
   ]);
 
@@ -466,11 +476,31 @@ export async function fetchSampleDetail(sampleUuid: string): Promise<SampleDetai
    * A stage with no computed columns simply returns no rows.
    */
   const derived: Record<string, string> = {};
+  /**
+   * The verdict on a computed result, where it has one.
+   *
+   * Only three computed columns carry a parameter — average particle size,
+   * size spread and durability — so the rest have NO verdict rather than a
+   * verdict of "Not assessable". The distinction is deliberate and is kept
+   * all the way to the screen: "nothing judged this" and "something judged
+   * this and could not decide" are different facts, and showing the second
+   * against a control total would be noise an operator has to learn to
+   * ignore.
+   */
+  const derivedAssessment: Record<string, DerivedAssessment> = {};
   for (const row of (derivedRes.data ?? []) as Array<{
     result_key: string;
     display_text: string;
+    assessment_result: AssessmentResult | null;
+    rule_version: number | null;
   }>) {
     derived[row.result_key] = row.display_text;
+    if (row.assessment_result !== null) {
+      derivedAssessment[row.result_key] = {
+        result: row.assessment_result,
+        ruleVersion: row.rule_version,
+      };
+    }
   }
 
   const measurementRows = ((measurementRes.data ?? []) as MeasurementDbRow[]).map((row) =>
@@ -591,6 +621,7 @@ export async function fetchSampleDetail(sampleUuid: string): Promise<SampleDetai
     approvedRuleCount,
     referenceRuleCount,
     derived,
+    derivedAssessment,
   };
 }
 

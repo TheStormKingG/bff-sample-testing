@@ -1,7 +1,9 @@
 import { Calculator } from 'lucide-react';
 
+import { AssessmentChip } from '@/components/ui/AssessmentChip';
 import { STAGE_SCHEMAS } from '@/forms/registry';
 import type { Stage } from '@/forms/types';
+import type { AssessmentResult } from '@/lib/assessment';
 import { dgmStanding, DGM_STANDING_LABELS, type DgmTargetRange } from '@/lib/dgmTargets';
 
 /** The one computed column that is lifted out of the list below. */
@@ -16,6 +18,19 @@ export interface DerivedResultsTableProps {
    * `null` shows the sample's own figure with no limits either side of it.
    */
   readonly target?: DgmTargetRange | null;
+  /**
+   * The verdict on each computed result that has one.
+   *
+   * Absent on the registration confirmation, where the figures have only
+   * just been computed and the screen is showing what was recorded rather
+   * than a reviewed record. Present on the sample detail page.
+   *
+   * Only the three computed columns linked to a parameter — average particle
+   * size, size spread, durability — ever appear here. A control total and a
+   * distribution summary have no verdict, which is different from having one
+   * of "Not assessable", and the difference is kept rather than flattened.
+   */
+  readonly assessments?: Readonly<Record<string, { readonly result: AssessmentResult }>>;
   readonly className?: string;
 }
 
@@ -53,6 +68,7 @@ export function DerivedResultsTable({
   stage,
   derived,
   target = null,
+  assessments,
   className,
 }: DerivedResultsTableProps): JSX.Element | null {
   const schema = STAGE_SCHEMAS[stage];
@@ -175,9 +191,23 @@ export function DerivedResultsTable({
         <section className="mt-3" aria-labelledby={`dgm-${stage}-heading`}>
           <h4
             id={`dgm-${stage}-heading`}
-            className="text-sm font-semibold text-slate-900"
+            className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900"
           >
             Average particle size (DGM)
+            {/*
+              The verdict belongs HERE and not only in the list below: DGM is
+              lifted out of that list into its own block, so a chip placed
+              with the other computed columns would miss the one computed
+              column anybody sets a limit on.
+
+              It sits beside the heading rather than inside the blue sample
+              line, because the band in that block is the target and this is
+              the decision. Showing them as one thing is what the whole
+              migration chain was undoing.
+            */}
+            {assessments?.[DGM_KEY] !== undefined ? (
+              <AssessmentChip result={assessments[DGM_KEY]!.result} size="sm" />
+            ) : null}
           </h4>
 
           <ul className="mt-2 space-y-1.5">
@@ -243,6 +273,7 @@ export function DerivedResultsTable({
         {valueRows.map((field) => {
           const value = derived[field.key] ?? '';
           const shown = value.trim() !== '';
+          const verdict = assessments?.[field.key];
           return (
             <div
               key={field.key}
@@ -250,9 +281,18 @@ export function DerivedResultsTable({
             >
               <dt className="text-sm text-slate-700">
                 {field.label}
-                {field.unit !== undefined && (
+                {/*
+                  `dimensionless` is the stored unit on GSD — a confirmed
+                  unit, so the engine will compare it, rather than a null the
+                  engine must refuse. It is not something to print beside a
+                  number on a shop-floor screen.
+                */}
+                {field.unit !== undefined && field.unit !== 'dimensionless' && (
                   <span className="text-slate-600"> ({field.unit})</span>
                 )}
+                {verdict !== undefined ? (
+                  <AssessmentChip result={verdict.result} size="sm" className="ml-2" />
+                ) : null}
               </dt>
               <dd
                 className={

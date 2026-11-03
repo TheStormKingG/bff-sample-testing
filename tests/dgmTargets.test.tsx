@@ -459,3 +459,54 @@ describe('a write drops the cache the screens read it from', () => {
     ).toContain("queryKey: ['sieve-series']");
   });
 });
+
+// ---------------------------------------------------------------------------
+// The verdict on a computed result
+// ---------------------------------------------------------------------------
+
+describe('a computed result shows its verdict, and only where it has one', () => {
+  /*
+    Before 0041 a computed result could not be judged at all: the table it
+    lives in had no verdict column and the engine was never called on that
+    path. The screen therefore showed DGM, GSD and PDI as bare numbers while
+    every typed measurement beside them carried an assessment chip — the two
+    halves of one sieve test, presented as though only one of them counted.
+
+    What is asserted here is the distinction that was deliberately preserved:
+    a column with no parameter has NO verdict, which is not the same as a
+    verdict of "Not assessable". Flattening the two would put a chip on a
+    control total, and an operator who learns to ignore a chip on a running
+    total will ignore the one on the particle size.
+  */
+  it('draws a chip for a judged column and none for an unjudged one', () => {
+    render(
+      <DerivedResultsTable
+        stage="dgm"
+        derived={stored('dgm')}
+        assessments={{ dgm_um: { result: 'not_assessable' } }}
+      />,
+    );
+    // `dgm_um` is linked to `dgm.avg_particle_size`, so it is judged.
+    expect(screen.getAllByText(/Not assessable/i).length).toBeGreaterThan(0);
+    // `total_retained_g` is a control total with no parameter. One chip in
+    // the whole table, not one per row.
+    expect(screen.getAllByText(/Not assessable/i)).toHaveLength(1);
+  });
+
+  it('draws no chip at all when nothing has been judged', () => {
+    // The registration confirmation passes no assessments: the figures have
+    // just been computed and the screen is showing what was recorded, not a
+    // reviewed record.
+    render(<DerivedResultsTable stage="dgm" derived={stored('dgm')} />);
+    expect(screen.queryByText(/Not assessable/i)).toBeNull();
+  });
+
+  it('does not print "dimensionless" beside the size spread', () => {
+    // GSD's stored unit is the literal word, so the engine has a confirmed
+    // unit to compare rather than a null it must refuse. That is a database
+    // concern and has no business on a shop-floor screen.
+    const { container } = render(<DerivedResultsTable stage="dgm" derived={stored('dgm')} />);
+    expect(container.textContent).toContain('Geometric standard deviation');
+    expect(container.textContent).not.toContain('dimensionless');
+  });
+});

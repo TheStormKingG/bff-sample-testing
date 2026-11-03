@@ -350,6 +350,7 @@ export default function SampleDetailPage() {
             <DerivedResultsTable
               stage={data.sample.stage}
               derived={data.derived}
+              assessments={data.derivedAssessment}
               target={dgmTargets.data?.document.ranges[data.sample.stage] ?? null}
             />
           </Card>
