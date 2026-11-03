@@ -18,10 +18,12 @@
  * written in prose has no referent the compiler can check, so it rots in
  * silence and is found by a person reading the screen, if at all.
  *
- * The dashboard's own warning line gets this right — it derives
- * `stagesWithoutFrequency` and renders "5 of 8 stages have no approved
- * sampling frequency", which was correct the moment DGM existed. The rule is
- * therefore: a count shown to a user is DERIVED or it is ABSENT. Never typed.
+ * The example this used to cite was the dashboard's warning line, which
+ * derived its own count and so read "5 of 8 stages have no approved sampling
+ * frequency" correctly the moment DGM existed. That line is gone — sampling
+ * frequency was removed from the system on 2026-11-03 — but the rule it
+ * illustrated is unchanged and is what this file enforces: a count shown to
+ * a user is DERIVED or it is ABSENT. Never typed.
  *
  * ===========================================================================
  * WHAT THIS DELIBERATELY DOES NOT CHECK

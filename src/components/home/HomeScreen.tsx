@@ -1,6 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
-import { AlertTriangle, ChevronRight, LayoutGrid, Wifi, WifiOff } from 'lucide-react';
+import { LayoutGrid, Wifi, WifiOff } from 'lucide-react';
 import { DASHBOARD_ORDER } from '@/forms/registry';
 import { cn } from '@/lib/cn';
 import { StatusChip } from '@/components/ui/StatusChip';
@@ -77,11 +76,6 @@ interface Cell {
  * WHERE THE OLD SCREEN'S INFORMATION WENT. Nothing was dropped to win space:
  *
  *  - Per-stage "collected today" counts stay, on their own tile.
- *  - The "sampling frequency not yet set" warning, true of four of the seven
- *    stages, is now a corner marker on each affected tile (with the wording
- *    spoken to a screen reader) plus one summary strip under the grid that
- *    links to Approved limits. Seven repetitions of the same sentence became
- *    one sentence plus four markers; the gap is MORE visible, not less.
  *  - The three "Needs attention" queue figures moved inside 'More', keeping
  *    their own separate numbers. They are not summed into one badge: three
  *    different kinds of work do not add up to a meaningful number.
@@ -98,11 +92,6 @@ export function HomeScreen({
   const { can } = useAccess();
   const online = useOnline();
   const [moreOpen, setMoreOpen] = useState(false);
-
-  const stagesWithoutFrequency = useMemo(
-    () => DASHBOARD_ORDER.filter((schema) => !schema.frequencyApproved).length,
-    [],
-  );
 
   const queueCounts: readonly QueueCount[] = useMemo(
     () => [
@@ -163,7 +152,6 @@ export function HomeScreen({
         label={schema.title}
         icon={STAGE_ICON[schema.stage]}
         to={`/stage/${schema.stage}`}
-        flag={schema.frequencyApproved ? undefined : 'Sampling frequency not yet set'}
       />
     ),
   }));
@@ -175,8 +163,6 @@ export function HomeScreen({
   // worse than a layout fault — so the cap is what has to move when a stage is
   // added, and this assertion is where that is noticed.
   const rows = Math.min(Math.ceil(cells.length / 2), MAX_CELLS / 2);
-
-  const frequencyNotice = `${stagesWithoutFrequency} of ${DASHBOARD_ORDER.length} stages have no approved sampling frequency`;
 
   return (
     <div
@@ -263,38 +249,6 @@ export function HomeScreen({
           ))}
         </ul>
       </nav>
-
-      {/*
-        The known gap, kept on screen.
-        Some stages record their sampling frequency as "To set" in the live
-        workbook, so no due or overdue claim may be made for them (FR-020,
-        risk R-08). The number is deliberately not written in this comment:
-        it read "four of the seven" until DGM arrived, and a tally in prose
-        goes stale the moment a stage is added. `stagesWithoutFrequency`
-        below is the only count, and it is derived. Dropping the warning to win grid height would
-        have hidden a real finding, so it is summarised here instead — and
-        made actionable, since Approved limits is the screen that fixes it.
-      */}
-      {stagesWithoutFrequency > 0 &&
-        (can('report.view') ? (
-          <Link
-            to="/specifications"
-            className="neu-strip flex min-h-tap shrink-0 items-center gap-2.5 px-3 py-2"
-          >
-            <AlertTriangle aria-hidden="true" className="h-5 w-5 shrink-0 text-amber-700" />
-            <span className="flex-1 text-sm font-semibold leading-tight text-amber-800">
-              {frequencyNotice}
-            </span>
-            <ChevronRight aria-hidden="true" className="h-5 w-5 shrink-0 text-slate-600" />
-          </Link>
-        ) : (
-          <p className="neu-strip flex min-h-tap shrink-0 items-center gap-2.5 px-3 py-2">
-            <AlertTriangle aria-hidden="true" className="h-5 w-5 shrink-0 text-amber-700" />
-            <span className="flex-1 text-sm font-semibold leading-tight text-amber-800">
-              {frequencyNotice}
-            </span>
-          </p>
-        ))}
 
       <MoreSheet open={moreOpen} onClose={() => setMoreOpen(false)} queueCounts={queueCounts} />
     </div>

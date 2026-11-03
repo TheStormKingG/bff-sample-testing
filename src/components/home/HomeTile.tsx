@@ -16,9 +16,9 @@ export interface HomeTileProps {
   /** A handler, for a tile that opens something in place. */
   readonly onClick?: () => void;
   /**
-   * A known gap in the record, e.g. no approved sampling frequency. Rendered
-   * as a corner marker PLUS this wording for a screen reader — never as
-   * colour alone (PRD §11).
+   * A known gap in the record, e.g. a queue needing attention. Rendered as a
+   * corner marker PLUS this wording for a screen reader — never as colour
+   * alone (PRD §11).
    */
   readonly flag?: string;
   readonly className?: string;

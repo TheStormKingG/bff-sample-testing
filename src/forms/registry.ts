@@ -915,8 +915,6 @@ const rawMaterials: StageSchema = {
   description: 'Corn, rice and soya as delivered',
   instruction:
     'Sample every load at the inspection gate, before the load is allowed to offload. Test before any grinding.',
-  frequency: 'Every load',
-  frequencyApproved: true,
   fields: [
     ...idDateTime(),
     {
@@ -1105,8 +1103,6 @@ const ground: StageSchema = {
   description: 'Ground material, before conditioning',
   instruction:
     'AM: single grain at the new sampling door after the mill. BC: mixed mash just before the conditioner. Record the screen size and hammer distance in use.',
-  frequency: 'To set',
-  frequencyApproved: false,
   fields: [
     ...idDateTime(),
     {
@@ -1276,8 +1272,6 @@ const conditioned: StageSchema = {
   description: 'Mash after conditioning, before pelleting',
   instruction:
     'Sample at the conditioner outlet, before the pellet die. Record the conditioner settings in use. Use the same batch no. as the ground material record. If that batch cannot be found, a documented exception is recorded. The unit for the steam pressure reading is not yet confirmed (bar or kg/cm²), so that value is recorded but never assessed against a limit.',
-  frequency: 'To set',
-  frequencyApproved: false,
   fields: [
     ...idDateTime(),
     {
@@ -1422,8 +1416,6 @@ const pellets: StageSchema = {
   description: 'Pellets after the die, before crumbling',
   instruction:
     'Sample at the pellet die outlet, before the crumbler. Use the same batch no. as the conditioned mash record. For durability, weigh the sample, tumble it, then weigh what is left whole; for particle size, weigh each empty sieve and weigh it again with what stayed on it.',
-  frequency: 'To set',
-  frequencyApproved: false,
   fields: [
     ...idDateTime(),
     {
@@ -1517,8 +1509,6 @@ const extrudedSoya: StageSchema = {
   description: 'Full-fat soya after the extruder',
   instruction:
     'Sample at the end of every extrusion run. Record the extruder settings and the raw soya lot no. from the raw materials record. If the lot is not on file, an authorised traceability exception is recorded.',
-  frequency: 'Every run',
-  frequencyApproved: true,
   fields: [
     ...idDateTime(),
     {
@@ -1676,8 +1666,6 @@ const crumble: StageSchema = {
   description: 'Finished crumble',
   instruction:
     'Sample finished crumble at the crumbler outlet. Record the roll gap in use.',
-  frequency: 'To set',
-  frequencyApproved: false,
   fields: [
     ...idDateTime(),
     {
@@ -1793,8 +1781,6 @@ const mash: StageSchema = {
   description: 'Finished mash',
   instruction:
     'Sample finished mash at the mixer discharge, once per production run.',
-  frequency: 'Once per production run',
-  frequencyApproved: true,
   fields: [
     ...idDateTime(),
     {
@@ -1895,8 +1881,6 @@ const dgm: StageSchema = {
   description: 'Particle size by sieve analysis',
   instruction:
     'Run the sieve test on crumbled product. Weigh each empty sieve, then weigh it again with the sample retained on it.',
-  frequency: 'To set',
-  frequencyApproved: false,
   fields: [
     ...idDateTime(),
     {

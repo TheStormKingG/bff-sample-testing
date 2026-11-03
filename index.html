@@ -13,15 +13,21 @@
          NFR-006 and FR-015 forbid. Offline capture is FR-021, out of scope. -->
     <link rel="manifest" href="./manifest.webmanifest" />
     <!--
-      TWO MARKS, EACH WHERE IT READS. The Bounty Farm logo is a detailed
-      circular badge: at 16px in a browser tab it is a coloured smudge, so the
-      tab keeps the flask drawn for that size. Everywhere the icon is rendered
-      LARGE — an iOS home screen, an Android install, the task switcher — the
-      real logo is used, because that is where a company mark earns its place
-      and where the detail survives.
+      ONE MARK, GENERATED ONCE. Both files come from
+      `scripts/make-app-icon.py`: the blue tile and flask this app has always
+      used, with the Bounty Farm logo added at the lower left the way Word,
+      Excel and PowerPoint place their letter (asked for 2026-11-03).
+
+      The SVG and the PNG are emitted from the same geometry constants so the
+      browser tab and the home screen cannot drift apart. Regenerate rather
+      than hand-editing either file.
+
+      The logo is a detailed circular badge, so below about 48px it reads as a
+      coloured dot rather than a rooster. That is expected and is why the
+      flask still carries the shape of the icon at every size.
     -->
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="apple-touch-icon" href="./bounty-farm-logo-192.png" />
+    <link rel="apple-touch-icon" href="./app-icon-192.png" />
     <title>BFF Sample Testing</title>
     <!--
       Canonical host.

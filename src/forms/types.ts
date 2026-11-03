@@ -309,15 +309,6 @@ export interface StageSchema {
   readonly description: string;
   /** Where and when to take the sample. From the workbook row-2 instruction. */
   readonly instruction: string;
-  /** Sampling frequency as stated in the workbook `Read me` tab. */
-  readonly frequency: string;
-  /**
-   * False when the workbook states the frequency as "To set". Five of eight
-   * stages are unset — the original four plus DGM, whose frequency the lab
-   * has not stated — so no overdue flag or sampling-adherence KPI may be
-   * computed for them (FR-020, risk R-08).
-   */
-  readonly frequencyApproved: boolean;
   readonly fields: readonly FieldDef[];
 }
 

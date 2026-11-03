@@ -357,9 +357,10 @@ Honest limits, so nobody searches for a control that does not exist:
 
 - **No approved limits exist.** Only a Quality Supervisor can approve one, and only
   prospectively.
-- **Sampling frequency is "To set" for four stages**, so no overdue flag and no adherence
-  KPI can be produced for them. There is no screen to set it, because the frequency is a
-  process-owner decision, not a configuration value (D-04, R-08).
+- **Sampling frequency is not in the system at all** (removed 2026-11-03). There is no
+  screen to set one, no overdue flag and no adherence KPI, because how often to sample is
+  a process instruction the plant gives its operators rather than something this
+  application tracks. See D-04.
 - **The spreadsheet id cannot be changed from the UI.** It is an Edge Function secret with
   no default, set with `supabase secrets set`.
 - **Controlled-list sort order cannot be edited** — the server accepts no such field.

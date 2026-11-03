@@ -492,10 +492,11 @@ describe('stage_definitions matches the registry, field for field', () => {
     expect(row['last_column'], `${stage}.last_column`).toBe(schema.lastColumn);
     expect(row['column_count'], `${stage}.column_count`).toBe(schema.columnCount);
     expect(row['default_prefix'], `${stage}.default_prefix`).toBe(schema.prefix);
-    expect(row['frequency'], `${stage}.frequency`).toBe(schema.frequency);
-    expect(row['frequency_approved'], `${stage}.frequency_approved`).toBe(
-      schema.frequencyApproved,
-    );
+    // `frequency` and `frequency_approved` were compared here until
+    // 2026-11-03. Migration 0046 dropped both columns and the registry
+    // dropped both properties in the same change — which is precisely what
+    // this gate exists to force: the table and the registry move together or
+    // one of them is wrong.
   });
 });
 

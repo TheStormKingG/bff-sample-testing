@@ -12,16 +12,17 @@
  * 2. Every metric declares its numerator, denominator, timestamp convention
  *    and missing-data handling. The declaration travels with the number.
  *
- * 3. No sampling-adherence or overdue figure is produced for a stage whose
- *    frequency is not approved. Four of the seven stages read "To set" in the
- *    workbook, so a compliance percentage for them would be invented
- *    (FR-020, risk R-08).
+ * 3. No sampling-adherence or overdue figure at all. One existed until
+ *    2026-11-03, refusing to report for the stages whose frequency the
+ *    workbook left unset; Bounty Farm then removed sampling frequency from
+ *    the system, which removed the target the ratio was measured against.
+ *    See the note where that code used to be, further down this file.
  *
  * Reports are views of stored records, never a second set of records.
  */
 
 import type { Stage } from '@/forms/types';
-import { RECORD_STAGE_ORDER, getSchema } from '@/forms/registry';
+import { RECORD_STAGE_ORDER } from '@/forms/registry';
 import { PLANT_TIME_ZONE, plantLocalDate } from '@/lib/time';
 import type { CaptureState, Disposition } from '@/lib/workflow';
 
@@ -344,112 +345,17 @@ export function countUpdatedSince(facts: readonly SampleFact[], sinceIso: string
 }
 
 // ---------------------------------------------------------------------------
-// Sampling adherence — refused where the frequency is not approved
+// Sampling adherence was here, and is gone.
+//
+// It computed "did sampling happen as often as the approved frequency
+// requires", refused outright for the stages whose frequency the workbook
+// recorded as "To set", and reported the refusal rather than a figure.
+//
+// Bounty Farm removed sampling frequency from the system on 2026-11-03. The
+// cadence is a process instruction the plant gives its operators, not
+// something this application records a target for — and adherence is a ratio
+// whose denominator was that target. With no target the ratio has no meaning,
+// so the measure goes rather than being left reporting "not available" for
+// every stage for ever. PRD FR-020 and risk R-08 are retired with it; see
+// docs/open-decisions.md D-04.
 // ---------------------------------------------------------------------------
-
-export type AdherenceResult =
-  | {
-      readonly kind: 'available';
-      readonly stage: Stage;
-      readonly percent: number;
-      readonly numerator: number;
-      readonly denominator: number;
-      readonly frequency: string;
-    }
-  | {
-      readonly kind: 'not_produced';
-      readonly stage: Stage;
-      readonly reason: string;
-      readonly frequency: string;
-    }
-  | {
-      readonly kind: 'insufficient_data';
-      readonly stage: Stage;
-      readonly reason: string;
-      readonly frequency: string;
-    };
-
-/** Is a sampling-adherence figure legitimate for this stage at all? */
-export function adherenceIsReportable(stage: Stage): boolean {
-  return getSchema(stage).frequencyApproved;
-}
-
-/**
- * Sampling adherence for one stage.
- *
- * Refuses outright when the workbook states the frequency as "To set" — four
- * of seven stages — even if a denominator is supplied, because the denominator
- * would then be measuring against a target nobody approved. The refusal is not
- * "insufficient data": more data would not make the figure legitimate.
- */
-export function samplingAdherence(args: {
-  readonly stage: Stage;
-  readonly samplesTaken: CountSource;
-  /** Expected sampling events (loads, runs, production runs) in the period. */
-  readonly expectedEvents: CountSource;
-}): AdherenceResult {
-  const schema = getSchema(args.stage);
-
-  if (!schema.frequencyApproved) {
-    return {
-      kind: 'not_produced',
-      stage: args.stage,
-      frequency: schema.frequency,
-      reason: `The sampling frequency for ${schema.title} is recorded in the workbook as "${schema.frequency}". No adherence or overdue figure is reported for this stage, because there is no approved target to measure against.`,
-    };
-  }
-
-  if (!args.samplesTaken.available) {
-    return {
-      kind: 'insufficient_data',
-      stage: args.stage,
-      frequency: schema.frequency,
-      reason: args.samplesTaken.reason,
-    };
-  }
-  if (!args.expectedEvents.available) {
-    return {
-      kind: 'insufficient_data',
-      stage: args.stage,
-      frequency: schema.frequency,
-      reason: args.expectedEvents.reason,
-    };
-  }
-  if (args.expectedEvents.value === 0) {
-    return {
-      kind: 'insufficient_data',
-      stage: args.stage,
-      frequency: schema.frequency,
-      reason: `No ${schema.frequency.toLowerCase()} events were recorded for the period, so there is nothing to measure adherence against.`,
-    };
-  }
-
-  const numerator = args.samplesTaken.value;
-  const denominator = args.expectedEvents.value;
-  return {
-    kind: 'available',
-    stage: args.stage,
-    numerator,
-    denominator,
-    percent: (numerator / denominator) * 100,
-    frequency: schema.frequency,
-  };
-}
-
-/** Stages for which an adherence figure may legitimately be shown. */
-export function reportableAdherenceStages(): readonly Stage[] {
-  return RECORD_STAGE_ORDER.filter((s) => s.frequencyApproved).map((s) => s.stage);
-}
-
-/** Stages for which adherence is deliberately withheld, with the reason. */
-export function withheldAdherenceStages(): readonly {
-  stage: Stage;
-  title: string;
-  frequency: string;
-}[] {
-  return RECORD_STAGE_ORDER.filter((s) => !s.frequencyApproved).map((s) => ({
-    stage: s.stage,
-    title: s.title,
-    frequency: s.frequency,
-  }));
-}

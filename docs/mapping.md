@@ -115,7 +115,6 @@ Three rules follow, and all three are enforced in code:
 | Stage key | `raw_materials` |
 | Range | A:S (19 columns) |
 | Sample-ID prefix | **RM** |
-| Sampling frequency | Every load |
 | Sampling instruction | Sample every load at the inspection gate, before the load is allowed to offload. Test before any grinding. |
 | Dashboard description | Corn, rice and soya as delivered |
 
@@ -151,7 +150,6 @@ Three rules follow, and all three are enforced in code:
 | Stage key | `ground` |
 | Range | A:AN (40 columns) |
 | Sample-ID prefix | **AM or BC** |
-| Sampling frequency | To set  — **NOT APPROVED**: no overdue flag and no adherence KPI may be computed (FR-020, R-08) |
 | Sampling instruction | AM: single grain at the new sampling door after the mill. BC: mixed mash just before the conditioner. Record the screen size and hammer distance in use. |
 | Dashboard description | Ground material, before conditioning |
 
@@ -207,7 +205,6 @@ Three rules follow, and all three are enforced in code:
 | Stage key | `conditioned` |
 | Range | A:M (13 columns) |
 | Sample-ID prefix | **AC** |
-| Sampling frequency | To set  — **NOT APPROVED**: no overdue flag and no adherence KPI may be computed (FR-020, R-08) |
 | Sampling instruction | Sample at the conditioner outlet, before the pellet die. Record the conditioner settings in use. Use the same batch no. as the ground material record. |
 | Dashboard description | Mash after conditioning, before pelleting |
 
@@ -237,7 +234,6 @@ Three rules follow, and all three are enforced in code:
 | Stage key | `pellets` |
 | Range | A:K (11 columns) |
 | Sample-ID prefix | **AP** |
-| Sampling frequency | To set  — **NOT APPROVED**: no overdue flag and no adherence KPI may be computed (FR-020, R-08) |
 | Sampling instruction | Sample at the pellet die outlet, before the crumbler. Use the same batch no. as the conditioned mash record. |
 | Dashboard description | Pellets after the die, before crumbling |
 
@@ -265,7 +261,6 @@ Three rules follow, and all three are enforced in code:
 | Stage key | `extruded_soya` |
 | Range | A:P (16 columns) |
 | Sample-ID prefix | **ES** |
-| Sampling frequency | Every run |
 | Sampling instruction | Sample at the end of every extrusion run. Record the extruder settings and the raw soya lot no. from the raw materials record. |
 | Dashboard description | Full-fat soya after the extruder |
 
@@ -307,7 +302,6 @@ and P. Neither removed column held a value in the database or in the workbook. S
 | Stage key | `crumble` |
 | Range | A:AM (39 columns) |
 | Sample-ID prefix | **CR** |
-| Sampling frequency | To set  — **NOT APPROVED**: no overdue flag and no adherence KPI may be computed (FR-020, R-08) |
 | Sampling instruction | Sample finished crumble at the crumbler outlet. Record the roll gap in use. |
 | Dashboard description | Finished crumble |
 
@@ -362,7 +356,6 @@ and P. Neither removed column held a value in the database or in the workbook. S
 | Stage key | `mash` |
 | Range | A:AJ (36 columns) |
 | Sample-ID prefix | **MS** |
-| Sampling frequency | Once per production run |
 | Sampling instruction | Sample finished mash at the mixer discharge, once per production run. |
 | Dashboard description | Finished mash |
 
@@ -420,8 +413,7 @@ and P. Neither removed column held a value in the database or in the workbook. S
 | `FIRST_DATA_ROW` | 5 | `src/forms/registry.ts` |
 | Reference tabs, never written | `Read me`, `Limits` | `REFERENCE_TABS` |
 | Sample-ID prefixes | `RM AM BC AC AP ES CR MS` | `ALL_PREFIXES` |
-| Stages with an approved sampling frequency | 3 of 7 (raw materials, extruded soya, mash) | `frequencyApproved` |
-| Fields whose unit is not confirmed | 2 — `conditioned.steam_pressure_reading`, `raw_materials.other_mycotoxin_result` | `unitConfirmed: false` |
+| Fields whose unit is not confirmed | 1 — `raw_materials.other_mycotoxin_result` | `unitConfirmed: false` |
 | Fields with an adverse answer that forces a hold | 4, all on tab 1 | `adverseValue` |
 | Conditionally-applicable fields | 1 — `ground.moisture_pct_bc`, BC only | `appliesWhen` |
 

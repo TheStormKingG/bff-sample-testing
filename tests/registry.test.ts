@@ -587,27 +587,41 @@ describe('registry: quality-critical flags', () => {
   });
 });
 
-describe('registry: sampling frequency honesty (FR-020, R-08)', () => {
-  it('marks the four unset frequencies as unapproved', () => {
-    expect(STAGE_SCHEMAS.ground.frequencyApproved).toBe(false);
-    expect(STAGE_SCHEMAS.conditioned.frequencyApproved).toBe(false);
-    expect(STAGE_SCHEMAS.pellets.frequencyApproved).toBe(false);
-    expect(STAGE_SCHEMAS.crumble.frequencyApproved).toBe(false);
+describe('registry: sampling frequency is not a concept here', () => {
+  /*
+    THIS BLOCK USED TO ASSERT THE OPPOSITE, and that is why it still exists.
+
+    Until 2026-11-03 every stage carried `frequency` (the cadence the
+    workbook's `Read me` tab stated) and `frequencyApproved` (false wherever
+    it read "To set"), and this block checked the two agreed. Bounty Farm
+    removed sampling frequency from the system: how often to sample is a
+    process instruction the plant gives its operators, not something this
+    application records or measures adherence against.
+
+    Deleting the block outright would have left nothing to notice a
+    re-introduction. A half-restored `frequency` — a property on some stages
+    and not others, with no screen reading it — is exactly the kind of change
+    that passes a review, so the assertion is inverted rather than dropped.
+  */
+  it('no stage schema carries a sampling frequency', () => {
+    const offenders = STAGES.flatMap((stage) => {
+      const schema = STAGE_SCHEMAS[stage] as unknown as Record<string, unknown>;
+      return ['frequency', 'frequencyApproved'].filter((k) => k in schema).map((k) => `${stage}.${k}`);
+    });
+    expect(offenders).toEqual([]);
   });
 
-  it('marks the three stated frequencies as approved', () => {
-    expect(STAGE_SCHEMAS.raw_materials.frequency).toBe('Every load');
-    expect(STAGE_SCHEMAS.raw_materials.frequencyApproved).toBe(true);
-    expect(STAGE_SCHEMAS.extruded_soya.frequency).toBe('Every run');
-    expect(STAGE_SCHEMAS.extruded_soya.frequencyApproved).toBe(true);
-    expect(STAGE_SCHEMAS.mash.frequency).toBe('Once per production run');
-    expect(STAGE_SCHEMAS.mash.frequencyApproved).toBe(true);
-  });
-
-  it('every stage whose frequency reads "To set" is unapproved', () => {
-    for (const stage of STAGES) {
-      const s = STAGE_SCHEMAS[stage];
-      if (s.frequency === 'To set') expect(s.frequencyApproved, stage).toBe(false);
-    }
+  it('but the sieve shaker frequency survives, because it is a measurement', () => {
+    /*
+      The trap this guards. "Sieve shaker frequency (Hz)" is how fast the
+      shaker runs, recorded per sieve test on five tabs. It shares one word
+      with a sampling cadence and nothing else, and a sweep for "frequency"
+      would take it out along with the thing actually being removed.
+    */
+    const shaker = STAGES.flatMap((stage) =>
+      STAGE_SCHEMAS[stage].fields.filter((f) => f.key === 'sieve_shaker_hz'),
+    );
+    expect(shaker.length).toBeGreaterThan(0);
+    for (const f of shaker) expect(f.unit).toBe('Hz');
   });
 });

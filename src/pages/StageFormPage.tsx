@@ -23,9 +23,9 @@
  * 2. No Google Sheets claim. `isSheetConfirmed()` is the only test, and the
  *    registration response always says `pending` because the row is queued,
  *    not written (build rule 6).
- * 3. No approved sampling frequency where none exists. Four of the seven
- *    stages read "To set" in the workbook, and `InstructionStrip` says that in
- *    words instead of printing an unapproved rule (FR-020, risk R-08).
+ * 3. No sampling frequency at all. `InstructionStrip` used to print one, or
+ *    warn that none was approved; Bounty Farm removed the concept on
+ *    2026-11-03, so the strip now carries only WHERE the sample is taken.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';

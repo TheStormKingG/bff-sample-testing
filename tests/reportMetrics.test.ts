@@ -8,14 +8,15 @@
  *   2. The plant-local day boundary is resolved in America/Guyana, so a 21:00
  *      sample stays in its own Guyana day instead of migrating to the next
  *      UTC day.
- *   3. No sampling-adherence figure is produced for a stage whose frequency is
- *      unapproved — not even when a denominator is handed to the function.
+ *   3. No sampling-adherence surface exists at all. It was removed with
+ *      sampling frequency on 2026-11-03; the block that tested it is now an
+ *      inverted guard that the exports stay gone.
  */
 
 import { describe, expect, it } from 'vitest';
 
+import * as metrics from '@/lib/reportMetrics';
 import {
-  adherenceIsReportable,
   buildOperationsReport,
   countAwaitingResults,
   countOnHold,
@@ -26,20 +27,16 @@ import {
   INSUFFICIENT_DATA_TEXT,
   isNumeric,
   METRIC_DEFINITIONS,
-  NOT_PRODUCED_TEXT,
   plantDayOf,
   renderMetric,
-  reportableAdherenceStages,
   samplesOnPlantDay,
   samplesTodayByStage,
-  samplingAdherence,
   toMetricValue,
   unavailable,
-  withheldAdherenceStages,
   type SampleFact,
 } from '@/lib/reportMetrics';
 import { RECORD_STAGE_ORDER } from '@/forms/registry';
-import { STAGES, type Stage } from '@/forms/types';
+import { STAGES } from '@/forms/types';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -223,86 +220,30 @@ describe('the plant-local day boundary is America/Guyana, not UTC', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3. No adherence figure for an unapproved frequency
+// 3. The adherence surface stays removed
 // ---------------------------------------------------------------------------
 
-describe('sampling adherence is withheld where the frequency is unapproved', () => {
-  // DGM joins the unapproved four: the lab has not stated a sampling frequency
-  // for it either, so no overdue flag or adherence percentage may be computed
-  // — the figure would be fabricated (FR-020, risk R-08).
-  const UNAPPROVED: readonly Stage[] = ['ground', 'conditioned', 'pellets', 'crumble', 'dgm'];
-  const APPROVED: readonly Stage[] = ['raw_materials', 'extruded_soya', 'mash'];
+describe('sampling adherence is gone, not merely unreported', () => {
+  /*
+    This block tested a measure that refused to produce a figure for any
+    stage whose frequency the workbook left as "To set". Bounty Farm removed
+    sampling frequency on 2026-11-03, so the ratio lost its denominator and
+    migration 0046 took the columns with it.
 
-  it('matches the workbook: five of the eight stages have no approved frequency', () => {
-    const withheld = withheldAdherenceStages().map((s) => s.stage);
-    expect(withheld).toHaveLength(5);
-    expect([...withheld].sort()).toEqual([...UNAPPROVED].sort());
-    expect([...reportableAdherenceStages()].sort()).toEqual([...APPROVED].sort());
-    expect(withheld.length + reportableAdherenceStages().length).toBe(STAGES.length);
-  });
-
-  it('produces no percentage for an unapproved stage even when given a denominator', () => {
-    for (const stage of UNAPPROVED) {
-      expect(adherenceIsReportable(stage)).toBe(false);
-
-      const result = samplingAdherence({
-        stage,
-        samplesTaken: counted(8),
-        expectedEvents: counted(10),
-      });
-
-      expect(result.kind).toBe('not_produced');
-      expect(result).not.toHaveProperty('percent');
-      if (result.kind !== 'not_produced') throw new Error('expected a refusal');
-      expect(result.reason).toContain('To set');
-      expect(result.reason).toContain('no approved target');
+    What is asserted now is that the module exports none of it. A re-added
+    `samplingAdherence` reading an undefined `frequency` would compute
+    against `undefined` rather than throw, so the absence is worth a check.
+  */
+  it('exports no adherence surface', () => {
+    const exported = metrics as unknown as Record<string, unknown>;
+    for (const name of [
+      'samplingAdherence',
+      'adherenceIsReportable',
+      'reportableAdherenceStages',
+      'withheldAdherenceStages',
+    ]) {
+      expect(exported[name], name).toBeUndefined();
     }
-  });
-
-  it('calls the refusal "not produced", not "insufficient data"', () => {
-    // More data cannot make the figure legitimate, so the two states must not
-    // be conflated: one invites a retry, the other requires an approval.
-    const result = samplingAdherence({
-      stage: 'crumble',
-      samplesTaken: counted(10),
-      expectedEvents: counted(10),
-    });
-    expect(result.kind).toBe('not_produced');
-    if (result.kind === 'not_produced') {
-      expect(renderMetric({ kind: 'not_produced', reason: result.reason })).toBe(NOT_PRODUCED_TEXT);
-    }
-  });
-
-  it('computes adherence for an approved frequency when both sides are measured', () => {
-    const result = samplingAdherence({
-      stage: 'raw_materials',
-      samplesTaken: counted(9),
-      expectedEvents: counted(12),
-    });
-    expect(result.kind).toBe('available');
-    if (result.kind === 'available') {
-      expect(result.numerator).toBe(9);
-      expect(result.denominator).toBe(12);
-      expect(result.percent).toBeCloseTo(75);
-      expect(result.frequency).toBe('Every load');
-    }
-  });
-
-  it('reports insufficient data, not 100%, when an approved stage has no denominator', () => {
-    const noDenominator = samplingAdherence({
-      stage: 'extruded_soya',
-      samplesTaken: counted(4),
-      expectedEvents: unavailable('The number of extrusion runs is not recorded in the app.'),
-    });
-    expect(noDenominator.kind).toBe('insufficient_data');
-
-    const zeroDenominator = samplingAdherence({
-      stage: 'mash',
-      samplesTaken: counted(0),
-      expectedEvents: counted(0),
-    });
-    expect(zeroDenominator.kind).toBe('insufficient_data');
-    expect(zeroDenominator).not.toHaveProperty('percent');
   });
 });
 

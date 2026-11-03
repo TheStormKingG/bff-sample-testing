@@ -17,22 +17,20 @@
  *    "Insufficient data" with its reason. `MetricValue` makes the two
  *    impossible to confuse by construction.
  *
- * 3. NO ADHERENCE FIGURE WITHOUT AN APPROVED FREQUENCY. The workbook's
- *    `Read me` tab states a sampling frequency for only three of the seven
- *    stages; the other four read "To set". A compliance percentage for those
- *    four would be measured against a target nobody approved, so none is
- *    produced — and the page says which stages and why, rather than leaving a
- *    gap (FR-020, risk R-08, Master Prompt §8: "do not claim 100% sampling
- *    compliance when approved test frequencies are missing").
+ * 3. NO SAMPLING-ADHERENCE SECTION. This page carried one until 2026-11-03:
+ *    a percentage per stage, refused for the stages whose frequency the
+ *    workbook recorded as "To set". Bounty Farm removed sampling frequency
+ *    from the system, and adherence was a ratio against that target, so the
+ *    section went with it rather than reporting "not available" for every
+ *    stage for ever. FR-020 and risk R-08 are retired; see D-04.
  *
  * Reports are views of the stored records. Nothing here is a second ledger.
  * ===========================================================================
  */
 
 import { useMemo, useState } from 'react';
-import { CalendarDays, Download, FileSpreadsheet, Info, Ruler } from 'lucide-react';
+import { CalendarDays, Download, FileSpreadsheet } from 'lucide-react';
 
-import { RECORD_STAGE_ORDER } from '@/forms/registry';
 import {
   PLANT_TIME_ZONE,
   formatPlantDateTimeLabelled,
@@ -44,10 +42,6 @@ import {
   NOT_PRODUCED_TEXT,
   buildOperationsReport,
   renderMetric,
-  samplingAdherence,
-  unavailable,
-  withheldAdherenceStages,
-  type AdherenceResult,
 } from '@/lib/reportMetrics';
 import {
   EMPTY_FILTERS,
@@ -84,38 +78,6 @@ const METRIC_DESTINATIONS: Record<string, string> = {
   recently_updated: '/samples',
 };
 
-function AdherenceRow({ result, title }: { result: AdherenceResult; title: string }) {
-  const tone =
-    result.kind === 'available'
-      ? 'text-slate-900'
-      : result.kind === 'not_produced'
-        ? 'text-slate-700'
-        : 'text-amber-900';
-
-  return (
-    <li className="border-b border-slate-100 py-3 last:border-b-0">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <p className="text-base font-medium text-slate-900">{title}</p>
-        <p className={`text-base font-semibold ${tone}`}>
-          {result.kind === 'available'
-            ? `${result.percent.toFixed(0)}% (${result.numerator} of ${result.denominator})`
-            : result.kind === 'not_produced'
-              ? NOT_PRODUCED_TEXT
-              : INSUFFICIENT_DATA_TEXT}
-        </p>
-      </div>
-      <p className="mt-0.5 text-sm text-slate-600">
-        Workbook frequency: <strong>{result.frequency}</strong>
-      </p>
-      {result.kind !== 'available' ? (
-        <p className={`mt-1 text-sm ${result.kind === 'not_produced' ? 'text-slate-700' : 'text-amber-900'}`}>
-          {result.reason}
-        </p>
-      ) : null}
-    </li>
-  );
-}
-
 export default function ReportsPage() {
   const { user, allows } = useAuthority();
   const operations = useOperationsReport();
@@ -130,45 +92,6 @@ export default function ReportsPage() {
     () => (operations.data === undefined ? null : buildOperationsReport(operations.data)),
     [operations.data],
   );
-
-  /**
-   * Sampling adherence, computed stage by stage through the shared function so
-   * the refusal for an unapproved frequency is the library's decision and not
-   * this screen's opinion.
-   *
-   * The expected-events denominator is deliberately reported as unavailable:
-   * the ledger records samples taken, not loads received or production runs
-   * started, so there is no honest denominator for the three stages whose
-   * frequency IS approved either. An unmeasured denominator reads
-   * "Insufficient data"; an unapproved target reads "Not reported". They are
-   * different problems and only one of them could be fixed by more data.
-   */
-  const adherence = useMemo(() => {
-    const facts = operations.data?.todayFacts ?? null;
-    return RECORD_STAGE_ORDER.map((schema) => ({
-      schema,
-      result: samplingAdherence({
-        stage: schema.stage,
-        samplesTaken:
-          facts === null
-            ? unavailable('The sample list could not be read.')
-            : {
-                available: true as const,
-                value: facts.filter((f) => f.stage === schema.stage).length,
-              },
-        expectedEvents: unavailable(
-          'The system records samples taken, not the number of loads, runs or production runs that happened. Until that denominator is recorded, no adherence percentage can be calculated.',
-        ),
-      }),
-    }));
-  }, [operations.data]);
-
-  const withheld = withheldAdherenceStages();
-  // Derived, never typed. Both numbers below used to be written out as
-  // words — "four stages", "the other four" — and the eighth stage made
-  // them wrong without breaking anything. tests/stageCountProse.test.ts
-  // now refuses a stage count that is not read from the registry.
-  const stated = RECORD_STAGE_ORDER.length - withheld.length;
 
   async function runExport(plantDate: string) {
     setExporting(true);
@@ -337,67 +260,6 @@ export default function ReportsPage() {
             </p>
           </section>
 
-          <Card
-            title="Sampling adherence"
-            description="Whether sampling happened as often as the approved frequency requires."
-          >
-            <div className="flex flex-col gap-4">
-              <div
-                role="region"
-                aria-label={`Why ${withheld.length} of ${RECORD_STAGE_ORDER.length} stages have no adherence figure`}
-                className="rounded-md border-2 border-amber-400 bg-amber-50 p-4"
-              >
-                <p className="flex items-center gap-2 text-base font-bold text-amber-900">
-                  <Ruler aria-hidden className="h-5 w-5" />
-                  No adherence or overdue figure is produced for {withheld.length} of{' '}
-                  {RECORD_STAGE_ORDER.length} stages
-                </p>
-                <p className="mt-1 text-base text-amber-900">
-                  The workbook&rsquo;s <code>Read me</code> tab records the sampling frequency for
-                  these stages as <strong>&ldquo;To set&rdquo;</strong>, so there is no approved
-                  target to measure against. A percentage would have to invent one. These stages
-                  are therefore absent from the figures below by design, not by omission:
-                </p>
-                <ul className="mt-2 list-inside list-disc text-base text-amber-900">
-                  {withheld.map((stage) => (
-                    <li key={stage.stage}>
-                      <strong>{stage.title}</strong> — frequency recorded as &ldquo;
-                      {stage.frequency}&rdquo;
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-2 text-sm text-amber-900">
-                  An overdue flag is withheld for the same reason: &ldquo;overdue&rdquo; is only
-                  meaningful relative to an approved interval.
-                </p>
-              </div>
-
-              <ul className="rounded-md border border-slate-200 px-3">
-                {adherence.map(({ schema, result }) => (
-                  <AdherenceRow
-                    key={schema.stage}
-                    result={result}
-                    title={`${schema.ordinal}. ${schema.title}`}
-                  />
-                ))}
-              </ul>
-
-              <p className="flex items-start gap-2 text-sm text-slate-700">
-                <Info aria-hidden className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                <span>
-                  The {stated} stage{stated === 1 ? '' : 's'} with a stated frequency read
-                  {stated === 1 ? 's' : ''}{' '}
-                  <strong>{INSUFFICIENT_DATA_TEXT}</strong> rather than a percentage, because the
-                  denominator — how many loads arrived, runs were made or production runs were
-                  started — is not recorded anywhere in the system yet. That is a missing
-                  measurement and could be fixed by recording it. The other {withheld.length} read
-                  {withheld.length === 1 ? 's' : ''}{' '}
-                  <strong>{NOT_PRODUCED_TEXT}</strong>, which no amount of extra data would
-                  change: the target itself has not been approved.
-                </span>
-              </p>
-            </div>
-          </Card>
 
           <Card
             title="Metrics not in this release"

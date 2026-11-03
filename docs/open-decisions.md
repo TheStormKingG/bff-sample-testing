@@ -22,7 +22,7 @@ to pretend, and a refusal that nobody revisits quietly becomes the permanent beh
 | D-01 | Which Google accounts will staff use? | Management + IT | consent-screen type, access model | 🔴 |
 | D-02 | **21 limits proposed by one Stefan account, approvable by the other.** No second person exists | Quality function | every conformity decision | 🔴 |
 | D-03 | Who may release material or clear a hold? | Management + Quality | FR-011 acceptance | 🔴 |
-| D-04 | Sampling frequencies for Ground, Conditioned, Pellets, Crumble | Feed Factory Process Owner | FR-020, any adherence KPI | 🟠 |
+| D-04 | ~~Sampling frequencies for Ground, Conditioned, Pellets, Crumble~~ **WITHDRAWN 2026-11-03: the system no longer tracks frequency** | Feed Factory Process Owner | — | ✅ |
 | D-05 | ~~What is the steam-pressure unit?~~ **CLOSED 2026-11-03: bar** | Process Owner + Polinutri | — | ✅ |
 | D-06 | Which fields are mandatory at which stage? | Quality function | FR-008 acceptance | 🟡 |
 | D-07 | **The workbook is a draft owned by a personal Gmail account (B-07)** | Management + IT | **cutover** | 🔴 |
@@ -123,22 +123,35 @@ authority. A Quality Officer can **raise** a hold but not clear one.
 who covers them when they are away? The delegation mechanism exists; nobody has said who
 may use it.
 
-### D-04 🟠 Sampling frequencies for Ground, Conditioned, Pellets and Crumble
+### D-04 ✅ Sampling frequencies — **WITHDRAWN 2026-11-03: not a question this system asks**
 
-*PRD §16 Q3, R-08, FR-020.* The workbook says **"To set"** for all four. Only Raw
-materials (*every load*), Extruded soya (*every run*) and Mash (*once per production run*)
-are stated.
+*PRD §16 Q3, R-08, FR-020.* The workbook said **"To set"** for five of the eight stages;
+only Raw materials (*every load*), Extruded soya (*every run*) and Mash (*once per
+production run*) were stated. The open question was what the other five should be.
 
-**Who decides:** the Feed Factory Process Owner.
-**Blocks:** FR-020, and any sampling-adherence KPI.
-**Safe default today:** **no adherence percentage is produced for any stage**, and no
-overdue flag exists. Four stages read *Not reported* — no approved target, so more data
-would not help. The three with a stated frequency read *Insufficient data* — the
-denominator (loads received, runs made, production runs started) is **recorded nowhere in
-the ledger**. The Reports page states both reasons and the difference between them.
-**Note:** resolving the frequency fixes only half of this. An adherence percentage also
-needs a recorded denominator, which means recording how many loads arrived and how many
-runs were made — a second decision nobody has been asked for yet.
+**Withdrawn, not answered.** Bounty Farm decided on 2026-11-03 that sampling frequency
+does not belong in this application. How often to sample is a process instruction the
+plant gives its operators; the system's job is to record the sample that was taken and
+judge it against an approved limit, not to count whether enough samples were taken.
+
+**What went with it:** the `frequency` and `frequency_approved` columns on
+`stage_definitions` (migration 0046), both registry properties, the per-stage warnings on
+the home screen and dashboard, the "How often" line and its amber warning on every form,
+the whole sampling-adherence section of the Reports page, and the
+`sampling_frequency_kpi_enabled` setting that existed only to keep the KPI switched off.
+
+**PRD FR-020 and risk R-08 are retired with it.** Both existed to stop the system
+claiming compliance against a target nobody had approved. There is now no target and no
+claim, which satisfies the concern by removing its subject rather than by guarding it.
+
+**The second half of this decision was never needed.** An adherence percentage would also
+have required a denominator — loads received, runs made, production runs started — which
+is recorded nowhere. That second decision is now moot.
+
+**Still true, and worth keeping in view:** the workbook's `Read me` tab still states a
+frequency for three stages. The app does not read it and never did write it. If those
+lines should go, somebody has to edit the spreadsheet; this application cannot, because
+`Read me` is a reference tab it is forbidden to write to.
 
 ### D-05 ✅ What is the steam-pressure measurement unit? — **CLOSED 2026-11-03: bar**
 

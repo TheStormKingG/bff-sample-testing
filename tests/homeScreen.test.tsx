@@ -143,64 +143,30 @@ describe('the tile grid', () => {
   });
 });
 
-describe('the sampling-frequency gap is stated, not dropped', () => {
-  it('marks every stage without an approved frequency, and no others', () => {
+describe('the removed sampling-frequency warning stays removed', () => {
+  /*
+    This block used to assert the opposite: that every stage without an
+    approved frequency carried a "Sampling frequency not yet set" marker, and
+    that a strip under the grid summarised the count. Bounty Farm removed
+    sampling frequency from the system on 2026-11-03.
+
+    Kept as an inverted guard rather than deleted, because the wording is the
+    kind that gets pasted back from an old branch, and nothing else on this
+    screen would notice.
+  */
+  it('shows no sampling-frequency wording anywhere on the home screen', () => {
     renderHome(['quality_officer']);
+    expect(document.body.textContent ?? '').not.toMatch(/sampling frequency/i);
+  });
 
-    const without = DASHBOARD_ORDER.filter((s) => !s.frequencyApproved);
-    const withApproved = DASHBOARD_ORDER.filter((s) => s.frequencyApproved);
-
-    // Both sets must be non-empty, or one half of this test is vacuous.
-    expect(without.length).toBeGreaterThan(0);
-    expect(withApproved.length).toBeGreaterThan(0);
-
-    for (const schema of without) {
-      const tile = stageLinks().find((a) => a.getAttribute('href') === `/stage/${schema.stage}`);
-      expect(tile?.textContent, `${schema.stage} should carry the warning`).toContain(
-        'Sampling frequency not yet set',
-      );
+  it('still renders a tile per stage, so the check above is not vacuous', () => {
+    renderHome(['quality_officer']);
+    for (const schema of DASHBOARD_ORDER) {
+      expect(
+        stageLinks().some((a) => a.getAttribute('href') === `/stage/${schema.stage}`),
+        schema.stage,
+      ).toBe(true);
     }
-    // The negative control. Without it, a change that marked ALL seven tiles
-    // would pass the loop above.
-    for (const schema of withApproved) {
-      const tile = stageLinks().find((a) => a.getAttribute('href') === `/stage/${schema.stage}`);
-      expect(tile?.textContent, `${schema.stage} should NOT carry the warning`).not.toContain(
-        'Sampling frequency not yet set',
-      );
-    }
-  });
-
-  it('summarises the gap in a strip, with the figure read from the registry', () => {
-    renderHome(['quality_officer']);
-    const expected = DASHBOARD_ORDER.filter((s) => !s.frequencyApproved).length;
-    expect(
-      screen.getByText(
-        `${expected} of ${DASHBOARD_ORDER.length} stages have no approved sampling frequency`,
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it('makes the strip a link to Approved limits only for someone who may open it', () => {
-    // A quality officer holds `report.view`.
-    renderHome(['quality_officer']);
-    expect(
-      screen.getAllByRole('link').some((a) => a.getAttribute('href') === '/specifications'),
-    ).toBe(true);
-  });
-
-  it('states the same gap as plain text when the role may not open Approved limits', () => {
-    renderHome(['operator']);
-    // An operator holds no `report.view`, so the figure is still on screen...
-    const expected = DASHBOARD_ORDER.filter((s) => !s.frequencyApproved).length;
-    expect(
-      screen.getByText(
-        `${expected} of ${DASHBOARD_ORDER.length} stages have no approved sampling frequency`,
-      ),
-    ).toBeInTheDocument();
-    // ...but it is not offered as a destination they would be refused at.
-    expect(
-      screen.getAllByRole('link').some((a) => a.getAttribute('href') === '/specifications'),
-    ).toBe(false);
   });
 });
 
