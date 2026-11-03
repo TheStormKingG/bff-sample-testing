@@ -190,14 +190,26 @@ begin
     p_material, p_feed_type, p_sampling_point, p_test_method, p_grind_purpose,
     p_unit, p_lower_bound, p_upper_bound,
     'draft',
-    -- The proposal instant, and it is immutable. 0045 removes a claim that
-    -- stood here: that approve-specification "refuses a version whose
-    -- plant-local effective date has already passed, so a draft is approvable
-    -- on the plant-local DAY IT WAS PROPOSED and must be re-proposed after
-    -- that". There is no such check in rpc_approve_specification and there
-    -- never was one. A draft stays approvable. The comment was describing an
-    -- expiry the system does not implement, which is worse than no comment:
-    -- it would have had somebody re-propose twenty-one limits for nothing.
+    -- The proposal instant, and it is immutable. The comment that stood here
+    -- said approve-specification "refuses a version whose plant-local
+    -- effective date has already passed, so a draft is approvable on the
+    -- plant-local DAY IT WAS PROPOSED and must be re-proposed after that".
+    --
+    -- THAT IS TRUE, and an earlier draft of this migration wrongly called it
+    -- false. The check is real; it is simply not in the function the comment
+    -- named. `rpc_approve_specification` contains no date logic, so reading
+    -- the SQL alone says the expiry does not exist. It lives one layer up, in
+    -- the `approve-specification` Edge handler, which compares
+    -- `plantLocalDate(version.effective_from)` against today and refuses with
+    -- `effective_date_in_the_past` -- the control that makes "a newly
+    -- approved limit never silently re-judges decisions already recorded" a
+    -- check rather than a hope.
+    --
+    -- The mistake is worth leaving written down, because it is the same one
+    -- 0045 exists to fix: a behaviour was looked for in the database, not
+    -- found, and declared absent, when the callers were where it lived. The
+    -- consequence of believing it would have been a set of proposals left to
+    -- expire quietly overnight.
     v_now,
     p_actor, v_now,
     btrim(p_reason)

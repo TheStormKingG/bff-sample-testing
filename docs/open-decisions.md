@@ -20,7 +20,7 @@ to pretend, and a refusal that nobody revisits quietly becomes the permanent beh
 | ID | Decision | Owner | Blocks | Flag |
 | --- | --- | --- | --- | --- |
 | D-01 | Which Google accounts will staff use? | Management + IT | consent-screen type, access model | 🔴 |
-| D-02 | **21 limits are proposed; 0 approved.** Both approver accounts are the same person | Quality function | every conformity decision | 🔴 |
+| D-02 | **21 limits proposed by one Stefan account, approvable by the other.** No second person exists | Quality function | every conformity decision | 🔴 |
 | D-03 | Who may release material or clear a hold? | Management + Quality | FR-011 acceptance | 🔴 |
 | D-04 | Sampling frequencies for Ground, Conditioned, Pellets, Crumble | Feed Factory Process Owner | FR-020, any adherence KPI | 🟠 |
 | D-05 | ~~What is the steam-pressure unit?~~ **CLOSED 2026-11-03: bar** | Process Owner + Polinutri | — | ✅ |
@@ -74,21 +74,28 @@ applicability scoping and required migration 0045 to be approvable at all.
 
 **What now blocks approval is not a missing decision — it is an access-control fact.**
 Two accounts hold `spec.approve`, and **both belong to Stefan Gravesande**
-(`stefan.gravesande@gmail.com` and `stefan_gravesande@yahoo.com`). The proposer of these
-twenty-one is the first of those. `specification_versions_two_person_approval` and
-`separation_of_duties_failure` would both be satisfied by approving from the second — and
-that is self-approval wearing another name, which is exactly what the control exists to
-prevent. The constraint cannot detect it; only a person can.
+(`stefan.gravesande@gmail.com` and `stefan_gravesande@yahoo.com`). The twenty-one were
+first proposed from the gmail account, then **withdrawn and re-proposed on 2026-11-03
+from the yahoo account**, at Bounty Farm's instruction, so that the gmail account is able
+to decide them. The withdrawal is recorded as twenty-one rejections whose stated reason is
+exactly that; the figures never changed.
+
+**This satisfies the mechanism and not its purpose, and that was understood when it was
+done.** `specification_versions_two_person_approval` compares two user ids and
+`separation_of_duties_failure` compares two actors; neither can tell that one human holds
+both. What an auditor WILL see is that `proposed_by` and `approved_by` resolve to the same
+display name, *Stefan Gravesande* — the non-conformance is visible in the record rather
+than concealed by it, which is the only thing that makes this defensible at all.
 
 **Kayla Ferdinand (`kaylaferdinand78@gmail.com`) is `quality_officer`: propose, not
-approve.** So the smallest honest step is one of:
+approve.** The step that would make the control real is one role grant: give a second
+actual person `quality_supervisor`, and have them decide these twenty-one. Until then,
+every approval here is one person signing both halves.
 
-  * grant a second real person `quality_supervisor`, and have them decide these; or
-  * have Kayla re-propose them, and Stefan approve — two actual people, in the right
-    order, with no change to anybody's permissions.
-
-The second needs no administration and is available today. **Nothing should be approved
-across Stefan's two accounts.**
+**The proposals expire.** `effective_from` is frozen at the proposal instant, and the
+`approve-specification` Edge handler refuses any version whose plant-local effective date
+has already passed. These were proposed on 2026-11-03, so they are decidable on 2026-11-03
+and must be re-proposed after that.
 
 **Who decides:** the Quality function, with a named approver.
 **Blocks:** every conformity decision in the system.
