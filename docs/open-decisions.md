@@ -250,6 +250,17 @@ Four of the nine already carry Polinutri reference numbers (#13, #14, #27 and, v
 *Confirm with Polinutri*, the urease and protein-solubility rows which are **product**
 tests). So the numbers are arriving before the question has been answered.
 
+> **Updated 2026-11-02 (migration 0039).** Two of those four are no longer live.
+> **#26 protein solubility** is withdrawn — the column was removed from the form by 0038
+> and no sample was ever tested for it. **#25 urease** is superseded by a version 2 with
+> no figures: 0.05–0.20 is the pH *rise* reported by the quantitative buffer method, and
+> the mill runs the visual urea-phenol-red comparison, which has no number in it. The
+> question for Polinutri is now **which of the four visual grades are accepted**, and the
+> system cannot yet record that answer — `specification_versions` has numeric bounds and
+> no way to express an accepted set of codes. So the settings question below now rests on
+> **#13, #14 and #27 alone**, all three of which are genuinely settings rather than
+> product tests, which sharpens it rather than softening it.
+
 **Safe default today:** all nine are imported as `reference_only`, so nothing is assessed
 and no hold can be raised from a setting. The registry gives seven of them a
 `parameterKey`, which means they *could* be assessed the moment somebody approved a rule —
