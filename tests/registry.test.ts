@@ -413,15 +413,35 @@ describe('registry: quality-critical flags', () => {
     expect(f.unitConfirmed).toBe(false);
   });
 
-  it('constrains every percentage field to 0-100', () => {
+  it('constrains every percentage field an operator types to 0-100', () => {
+    /*
+      `min` and `max` are a DATA-ENTRY guard: `apply_measurement` refuses a
+      value outside them, which is only reachable for a value somebody
+      submits. A `system` column is computed by the server and never passes
+      through that check, so bounds on one would be decoration — declared,
+      never enforced, and read by the next person as a constraint that
+      exists.
+
+      This mattered from 0041, which gave `pellet_durability_pdi_pct` the
+      unit `%` so it could be compared against an approved limit. A ratio of
+      two weighings above 100% would mean the drum returned more whole
+      pellets than went in, which is a weighing error — but catching it
+      belongs in the arithmetic that produces the figure, not in a bound
+      nothing evaluates.
+    */
+    const checked: string[] = [];
     for (const stage of STAGES) {
       for (const f of STAGE_SCHEMAS[stage].fields) {
-        if (f.unit === '%') {
+        if (f.unit === '%' && f.type !== 'system') {
           expect(f.min, `${stage}.${f.key} min`).toBe(0);
           expect(f.max, `${stage}.${f.key} max`).toBe(100);
+          checked.push(`${stage}.${f.key}`);
         }
       }
     }
+    // The sweep found something. Narrowing a rule to a subset that turns out
+    // to be empty is how an assertion quietly stops asserting.
+    expect(checked.length).toBeGreaterThan(5);
   });
 
   it('forbids negative values on every numeric measurement', () => {

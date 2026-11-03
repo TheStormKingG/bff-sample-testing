@@ -646,7 +646,7 @@ const sieveTestSettings = (
  * the contradiction on the screen beside the two numbers that caused it,
  * where it can be corrected.
  */
-const pdiFields = (startIndex: number): FieldDef[] => {
+const pdiFields = (startIndex: number, stage: Stage): FieldDef[] => {
   const at = (offset: number): string => indexToColumnLetter(startIndex + offset);
   const common = {
     type: 'number',
@@ -688,6 +688,7 @@ const pdiFields = (startIndex: number): FieldDef[] => {
       'Pellet durability (PDI, %)',
       'Pellet durability (PDI)',
       `${HELP.pdi} The two weights above as a percentage, worked out by the system.`,
+      { unit: '%', unitConfirmed: true, parameterKey: `${stage}.pellet_durability_pdi` },
     ),
   ];
 };
@@ -699,6 +700,24 @@ const derivedField = (
   sheetHeader: string,
   label: string,
   help: string,
+  /**
+   * Unit and parameter linkage, for the three computed columns a limit can
+   * be set on.
+   *
+   * A computed column is `system` — the operator never types it — but it is
+   * still a RESULT, and 0041 made it assessable: `sample_derived_results`
+   * now carries a verdict and the engine is called when the value is
+   * computed. For that to produce anything but `not_assessable` the field
+   * needs both halves the engine checks: a CONFIRMED UNIT, and a
+   * `parameterKey` naming the characteristic.
+   *
+   * The other six stay bare on purpose. `total_retained_g` is a control
+   * total, the three UI percentages are a distribution summary, and
+   * `dpg_legacy_index` carries units and scales with sample mass, so a bound
+   * on it would mean different things for different weigh-outs. `gsd_basis`
+   * is text. None of them is a characteristic anybody would specify.
+   */
+  extra: Partial<FieldDef> = {},
 ): FieldDef => ({
   key,
   columnLetter,
@@ -710,6 +729,7 @@ const derivedField = (
   section: 'test_results',
   required: 'system',
   help,
+  ...extra,
 });
 
 /**
@@ -722,7 +742,7 @@ const derivedField = (
  * removal — those two columns never held a value — and what replaces them
  * arrives with the weights that produced it in the record beside it.
  */
-const sieveDerivedFields = (startIndex: number): FieldDef[] => {
+const sieveDerivedFields = (startIndex: number, stage: Stage): FieldDef[] => {
   const at = (offset: number): string => indexToColumnLetter(startIndex + offset);
   return [
     derivedField(
@@ -745,6 +765,7 @@ const sieveDerivedFields = (startIndex: number): FieldDef[] => {
       'DGM (µm)',
       'DGM',
       'Average geometric diameter in micrometres. Worked out by the system.',
+      { unit: 'µm', unitConfirmed: true, parameterKey: `${stage}.avg_particle_size` },
     ),
     derivedField(
       'ui_coarse_pct',
@@ -780,6 +801,24 @@ const sieveDerivedFields = (startIndex: number): FieldDef[] => {
       'Geometric standard deviation',
       'Geometric standard deviation',
       'How even the grind is, as a proper dimensionless figure. Unlike the DPG index this does not change with how much sample was weighed.',
+      /*
+        THE UNIT IS THE LITERAL WORD, AND THAT IS NOT A FUDGE.
+
+        The engine refuses to assess a value whose unit is not confirmed, and
+        a NULL unit counts as unconfirmed — correctly, because the case that
+        rule exists for is `3 Conditioned` steam pressure, whose source cell
+        reads "to confirm". But GSD is not a quantity whose unit nobody has
+        established; it is a ratio of two particle sizes and HAS no unit, and
+        conflating "no unit" with "unit unknown" would leave it permanently
+        unassessable.
+
+        The fix is to say so in the data rather than to loosen the gate.
+        `dimensionless` is a confirmed unit like any other: it passes
+        `is_unit_confirmed`, and an approved GSD limit must state the same
+        word, so the unit-equality check keeps working exactly as specified
+        (UAT-07, risk R-02). Nothing about the control changed.
+      */
+      { unit: 'dimensionless', unitConfirmed: true, parameterKey: `${stage}.size_spread_gsd` },
     ),
     derivedField(
       'gsd_basis',
@@ -1105,7 +1144,7 @@ const ground: StageSchema = {
     // N..AA
     ...sieveMassFields(13, 'optional'),
     // AB..AJ
-    ...sieveDerivedFields(27),
+    ...sieveDerivedFields(27, 'ground'),
     actionTaken('AK'),
     ...testedByAndComments('AL', 'AM'),
   ],
@@ -1330,11 +1369,11 @@ const pellets: StageSchema = {
       help: HELP.size,
     },
     // M..O
-    ...pdiFields(12),
+    ...pdiFields(12, 'pellets'),
     // P..AC
     ...sieveMassFields(15, 'optional'),
     // AD..AL
-    ...sieveDerivedFields(29),
+    ...sieveDerivedFields(29, 'pellets'),
     actionTaken('AM'),
     ...testedByAndComments('AN', 'AO'),
   ],
@@ -1591,7 +1630,7 @@ const crumble: StageSchema = {
     // operator keyed. It is still at the same place in the reading order but
     // it is now the THIRD of three columns: the two weighings that produce
     // it, then the percentage itself, computed. See `pdiFields`.
-    ...pdiFields(12),
+    ...pdiFields(12, 'crumble'),
     {
       key: 'crumble_size_mm',
       columnLetter: 'P',
@@ -1611,7 +1650,7 @@ const crumble: StageSchema = {
     // Q..AD
     ...sieveMassFields(16, 'optional'),
     // AE..AM
-    ...sieveDerivedFields(30),
+    ...sieveDerivedFields(30, 'crumble'),
     ...testedByAndComments('AN', 'AO'),
   ],
 };
@@ -1697,7 +1736,7 @@ const mash: StageSchema = {
     // K..X
     ...sieveMassFields(10, 'optional'),
     // Y..AG
-    ...sieveDerivedFields(24),
+    ...sieveDerivedFields(24, 'mash'),
     ...testedByAndComments('AH', 'AI'),
   ],
 };
@@ -1849,7 +1888,7 @@ const dgm: StageSchema = {
     // K..X, the same fourteen weights the three inline sieve tabs carry.
     ...sieveMassFields(10, 'registration'),
     // Y..AG
-    ...sieveDerivedFields(24),
+    ...sieveDerivedFields(24, 'dgm'),
     {
       key: 'tested_by_qo',
       columnLetter: 'AH',
