@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+#
+# NC-YYYY-NNN must be unique under concurrent allocation.
+#
+# WHY THIS IS NOT A MIGRATION PROBE, AND NOT A VITEST TEST
+# --------------------------------------------------------
+# Two inserts inside one transaction test SEQUENTIAL allocation and look
+# identical in the output to a concurrency test. A probe's transaction
+# boundary decides which case it exercised, and it is chosen by the
+# invocation syntax rather than by the author's intent — so the proof has to
+# come from genuinely separate sessions.
+#
+# It is not a Vitest test either: that suite has no database access. It mocks
+# Supabase, and a mock answers whatever it is asked, so the test would pass
+# against any allocator at all — including the `max+1` this exists to rule
+# out. The first draft of the plan specified exactly that and would have
+# shipped a test incapable of failing.
+#
+# WHAT IT PROVES
+# --------------
+# N connections each allocate M numbers against the same year, concurrently.
+# A correct allocator issues N*M distinct numbers. `max(nc_number)+1` reads a
+# value another session is about to write and issues duplicates — a collision
+# that never reproduces in single-user testing.
+#
+# It also checks the three-digit padding survives past 99, because a
+# formatter written for two digits truncates or collides exactly there.
+#
+# THE FIXTURE IS DELIBERATELY NARROW. This project cannot be rebuilt from an
+# empty database (open decision D-12: verify-migrations.sh fails at 0039,
+# which asserts on seeded rows, and the seed itself fails on a missing
+# materials row). That is no loss here: the allocator's atomicity depends on
+# no other table, so a full schema could only obscure a failure.
+#
+# Usage: scripts/verify-nc-numbering.sh [dbname] [connections] [per_connection]
+#
+set -uo pipefail
+
+DB="${1:-bff_nc_numbering_check}"
+CONNECTIONS="${2:-20}"
+PER_CONNECTION="${3:-10}"
+YEAR=2099
+
+# The same guard verify-uat03-concurrency.sh uses: this script drops and
+# recreates its database, so it must never be pointed at a real one.
+if [[ ! "$DB" =~ ^bff_[a-z0-9_]*(check|verify|scratch|tmp)[a-z0-9_]*$ ]]; then
+  echo "REFUSING to touch database '$DB' — the name must mark it as scratch." >&2
+  exit 2
+fi
+
+TOTAL=$((CONNECTIONS * PER_CONNECTION))
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+dropdb --if-exists "$DB" >/dev/null 2>&1
+createdb "$DB" || { echo "could not create $DB" >&2; exit 2; }
+
+psql -q -v ON_ERROR_STOP=1 -d "$DB" >/dev/null <<'SQL'
+create table public.nc_number_sequence (
+  year        integer primary key,
+  last_number integer not null
+);
+
+create function public.allocate_nc_number(p_year integer)
+returns text language plpgsql set search_path = '' as $$
+declare v_next integer;
+begin
+  insert into public.nc_number_sequence (year, last_number)
+  values (p_year, 1)
+  on conflict (year) do update
+    set last_number = public.nc_number_sequence.last_number + 1
+  returning last_number into v_next;
+  return 'NC-' || p_year::text || '-' || lpad(v_next::text, 3, '0');
+end $$;
+SQL
+
+# MAX+1 MODE: install the naive allocator instead, to prove this script can
+# fail. A verifier that has only ever been seen to pass has not been tested.
+if [[ "${NC_NUMBERING_NAIVE:-0}" == "1" ]]; then
+  psql -q -v ON_ERROR_STOP=1 -d "$DB" >/dev/null <<'SQL'
+  create table public.nc_issued (nc_number text);
+  create or replace function public.allocate_nc_number(p_year integer)
+  returns text language plpgsql set search_path = '' as $$
+  declare v_next integer; v_num text;
+  begin
+    select coalesce(max(substring(nc_number from 9)::int), 0) + 1
+      into v_next from public.nc_issued;
+    v_num := 'NC-' || p_year::text || '-' || lpad(v_next::text, 3, '0');
+    perform pg_sleep(0.005);            -- widen the read-then-write window
+    insert into public.nc_issued values (v_num);
+    return v_num;
+  end $$;
+SQL
+  echo "NAIVE MODE: allocator replaced with max+1 — this run is EXPECTED TO FAIL."
+fi
+
+echo "Allocating ${TOTAL} numbers from ${CONNECTIONS} concurrent connections…"
+for ((c = 0; c < CONNECTIONS; c++)); do
+  (
+    for ((i = 0; i < PER_CONNECTION; i++)); do
+      psql -t -A -q -d "$DB" -c "select public.allocate_nc_number(${YEAR});"
+    done
+  ) >"$WORK/out.$c" 2>"$WORK/err.$c" &
+done
+wait
+
+cat "$WORK"/out.* | grep -E '^NC-' | sort >"$WORK/all"
+GOT=$(wc -l <"$WORK/all" | tr -d ' ')
+DISTINCT=$(sort -u "$WORK/all" | wc -l | tr -d ' ')
+
+fail=0
+
+# 1. Every allocation returned something.
+if [[ "$GOT" != "$TOTAL" ]]; then
+  echo "FAIL: ${GOT} numbers returned, expected ${TOTAL}" >&2
+  head -3 "$WORK"/err.* >&2
+  fail=1
+fi
+
+# 2. THE COLLISION CHECK.
+if [[ "$DISTINCT" != "$GOT" ]]; then
+  echo "FAIL: ${DISTINCT} distinct of ${GOT} — the allocator issued duplicates:" >&2
+  sort "$WORK/all" | uniq -d | head -5 >&2
+  fail=1
+fi
+
+# 3. Padding survives past 99. A two-digit formatter collides or truncates
+#    exactly here, which is why TOTAL is above 100 by default.
+WIDEST=$(sed 's/^NC-[0-9]*-//' "$WORK/all" | awk '{ print length }' | sort -rn | head -1)
+if (( TOTAL >= 100 )) && [[ "$WIDEST" -lt 3 ]]; then
+  echo "FAIL: widest sequence is ${WIDEST} digits; ${TOTAL} allocations need 3" >&2
+  fail=1
+fi
+
+# 4. The stored counter agrees with what was handed out.
+if [[ "${NC_NUMBERING_NAIVE:-0}" != "1" ]]; then
+  LAST=$(psql -t -A -q -d "$DB" -c \
+    "select last_number from public.nc_number_sequence where year = ${YEAR};")
+  if [[ "$LAST" != "$TOTAL" ]]; then
+    echo "FAIL: nc_number_sequence says ${LAST}, ${TOTAL} were issued" >&2
+    fail=1
+  fi
+fi
+
+dropdb --if-exists "$DB" >/dev/null 2>&1
+
+if (( fail )); then
+  echo "NC NUMBERING: FAILED"
+  exit 1
+fi
+echo "NC NUMBERING OK — ${DISTINCT} distinct numbers from ${CONNECTIONS} concurrent connections."
