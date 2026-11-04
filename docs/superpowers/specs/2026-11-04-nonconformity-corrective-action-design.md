@@ -104,6 +104,15 @@ taste, which is how severity fields become uniformly major.
 | `completion_note` | text null | Required to complete. |
 | `created_by` / `created_at` | | |
 
+**An action must be reassignable.** `assigned_to` can be changed while the
+action is incomplete, with the change audited. Without this, an action owned
+by somebody who has left the company can never be completed and never
+cleared, and the nonconformity holding it can never reach its first gate —
+a row stuck in a warning state that no action anybody takes will clear. The
+same trap was found in the specification lifecycle, where `reference_only`
+had no outgoing transition at all; a list with permanently unclearable items
+stops being read, which costs more than the stuck row.
+
 ### `nc_attachments`
 
 | Column | Type | Notes |
@@ -316,7 +325,10 @@ other way:
 
 1. each gate **refuses** when a required field is missing, and passes when it
    is present
-2. **two simultaneous raises receive different numbers**
+2. **two simultaneous raises receive different numbers.** The probe must use
+   two genuinely concurrent sessions. Two inserts inside one transaction test
+   nothing about concurrency — the transaction boundary, not the author's
+   intent, decides which case a probe actually exercised.
 3. raising a hold creates its nonconformity **in the same transaction**, so
    neither can exist without the other
 4. a **closed nonconformity cannot be edited**
