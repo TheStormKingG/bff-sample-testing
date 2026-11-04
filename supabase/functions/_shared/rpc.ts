@@ -112,6 +112,20 @@ export const RPC = {
   beginIdempotentRequest: 'rpc_begin_idempotent_request',
   completeIdempotentRequest: 'rpc_complete_idempotent_request',
   healthSnapshot: 'rpc_health_snapshot',
+
+  // Nonconformity and corrective action (migration 0051). The database layer
+  // landed first; the Edge handlers follow in phase 2. These names and
+  // parameter lists are declared here now so `tests/rpcContract.test.ts`
+  // checks them against the SQL from the day the SQL exists, rather than from
+  // the day a handler happens to call one.
+  raiseNonconformity: 'rpc_raise_nonconformity',
+  updateNonconformity: 'rpc_update_nonconformity',
+  addNcAction: 'rpc_add_nc_action',
+  completeNcAction: 'rpc_complete_nc_action',
+  reassignNcAction: 'rpc_reassign_nc_action',
+  submitNcForVerification: 'rpc_submit_nc_for_verification',
+  closeNonconformity: 'rpc_close_nonconformity',
+  voidNonconformity: 'rpc_void_nonconformity',
 } as const;
 
 export type RpcName = (typeof RPC)[keyof typeof RPC];
@@ -764,3 +778,166 @@ export const PGRST_FUNCTION_NOT_FOUND = 'PGRST202';
 export const PG_UNIQUE_VIOLATION = '23505';
 /** Raised by the RPCs for a stale `expectedRevision`. */
 export const PG_REVISION_CONFLICT = 'P0001';
+
+
+// ---------------------------------------------------------------------------
+// Nonconformity and corrective action (migration 0051).
+//
+// `p_classification` and `p_severity` are absent from the raise call on
+// purpose. They are required at the first gate, not at creation, so that a
+// nonconformity raised at the mill by whoever stopped the material costs that
+// person nothing beyond raising it. Guessing them at creation would fill two
+// columns with defaults nobody chose.
+// ---------------------------------------------------------------------------
+
+/** `rpc_raise_nonconformity`. Allocates NC-YYYY-NNN and returns it. */
+export interface RaiseNonconformityArgs extends RpcActorArgs {
+  readonly p_title: string;
+  readonly p_description: string;
+  /** Null for a nonconformity with no sample behind it: a complaint, an audit finding. */
+  readonly p_sample_uuid: string | null;
+  /** The earlier nonconformity this repeats, which is what makes "third time" queryable. */
+  readonly p_recurrence_of: string | null;
+}
+
+export interface RaiseNonconformityResult {
+  readonly nonconformity_id: string;
+  readonly nc_number: string;
+  readonly status: string;
+  readonly recorded_at: string;
+}
+
+/**
+ * `rpc_update_nonconformity`.
+ *
+ * Every field is optional in effect — the SQL coalesces a null onto the stored
+ * value, so a screen can save one section without resending the rest. The one
+ * mandatory field is `p_expected_revision`: a nonconformity is a working
+ * document two people may have open, and the second save is refused rather
+ * than silently overwriting the first.
+ */
+export interface UpdateNonconformityArgs extends RpcActorArgs {
+  readonly p_nc_id: string;
+  readonly p_expected_revision: number;
+  readonly p_classification: string | null;
+  readonly p_severity: string | null;
+  readonly p_correction: string | null;
+  readonly p_root_cause: string | null;
+  readonly p_root_cause_method: string | null;
+  readonly p_five_whys: readonly string[] | null;
+  /** The ISO 10.2.1(b) evaluation. Null is "not yet evaluated", not "no". */
+  readonly p_ca_required: boolean | null;
+  /** Mandatory at the gate whichever way `p_ca_required` was decided. */
+  readonly p_ca_rationale: string | null;
+}
+
+export interface UpdateNonconformityResult {
+  readonly nonconformity_id: string;
+  readonly revision: number;
+  readonly recorded_at: string;
+}
+
+/** `rpc_add_nc_action`. Overdue is never stored; it is due_date < today. */
+export interface AddNcActionArgs extends RpcActorArgs {
+  readonly p_nc_id: string;
+  readonly p_description: string;
+  readonly p_assigned_to: string;
+  /** Plant-local date, `YYYY-MM-DD`. */
+  readonly p_due_date: string;
+}
+
+export interface AddNcActionResult {
+  readonly action_id: string;
+  readonly recorded_at: string;
+}
+
+/**
+ * `rpc_complete_nc_action`.
+ *
+ * The note is mandatory. "Done" with nothing beside it is the single most
+ * common way a corrective-action register becomes unverifiable later.
+ */
+export interface CompleteNcActionArgs extends RpcActorArgs {
+  readonly p_action_id: string;
+  readonly p_completion_note: string;
+}
+
+export interface CompleteNcActionResult {
+  readonly action_id: string;
+  readonly completed_at: string;
+}
+
+/**
+ * `rpc_reassign_nc_action`.
+ *
+ * An action owned by somebody who has left the company could otherwise never
+ * be completed, and the nonconformity holding it could never reach its first
+ * gate — a row stuck in a warning state no action can resolve.
+ */
+export interface ReassignNcActionArgs extends RpcActorArgs {
+  readonly p_action_id: string;
+  readonly p_assigned_to: string;
+  readonly p_reason: string;
+}
+
+export interface ReassignNcActionResult {
+  readonly action_id: string;
+  readonly assigned_to: string;
+  readonly recorded_at: string;
+}
+
+/**
+ * `rpc_submit_nc_for_verification` — gate 1.
+ *
+ * Takes no fields of its own: it reads the record and refuses with EVERY unmet
+ * precondition named in one message, so the screen can show the whole list
+ * instead of making somebody submit six times to learn six things.
+ */
+export interface SubmitNcForVerificationArgs extends RpcActorArgs {
+  readonly p_nc_id: string;
+}
+
+export interface SubmitNcForVerificationResult {
+  readonly nonconformity_id: string;
+  readonly status: string;
+  readonly recorded_at: string;
+}
+
+/**
+ * `rpc_close_nonconformity` — gate 2.
+ *
+ * `self_verified` comes back computed and stored, not passed in: true when the
+ * verifier also detected the nonconformity or completed one of its actions.
+ * Self-verification is not refused — at a mill with three quality staff it is
+ * sometimes the only person who can do it, and forbidding it gets worked
+ * around by signing in as somebody else. It is recorded, visibly.
+ */
+export interface CloseNonconformityArgs extends RpcActorArgs {
+  readonly p_nc_id: string;
+  readonly p_verification_note: string;
+}
+
+export interface CloseNonconformityResult {
+  readonly nonconformity_id: string;
+  readonly status: string;
+  readonly self_verified: boolean;
+  readonly recorded_at: string;
+}
+
+/**
+ * `rpc_void_nonconformity`.
+ *
+ * Reachable from `open` AND `awaiting_verification`: a nonconformity raised on
+ * a mis-read can be discovered at verification, and closing it as though it
+ * were legitimate would put a fiction in the record.
+ */
+export interface VoidNonconformityArgs extends RpcActorArgs {
+  readonly p_nc_id: string;
+  readonly p_void_reason: string;
+}
+
+export interface VoidNonconformityResult {
+  readonly nonconformity_id: string;
+  readonly status: string;
+  readonly recorded_at: string;
+}

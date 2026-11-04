@@ -43,6 +43,9 @@ export const PERMISSIONS = [
   'hold.raise',
   'hold.clear',
   'disposition.override_release',
+  'nc.raise',
+  'nc.act',
+  'nc.close',
   'spec.propose',
   'spec.approve',
   'user.manage',
@@ -66,9 +69,15 @@ export type Permission = (typeof PERMISSIONS)[number];
  *  - `quality_officer` can RAISE a hold but cannot CLEAR one, and cannot
  *    approve a specification. Clearing and approval sit with the supervisor
  *    unless an explicitly recorded delegation exists.
+ *
+ * The nonconformity permissions follow the same shape: an operator can RAISE
+ * one (the person who sees the problem is the person who should record it),
+ * an officer can also investigate and complete actions (`nc.act`), and only a
+ * supervisor can CLOSE or VOID one (`nc.close`) — the verification step is
+ * the control, so it does not sit with whoever did the work.
  */
 const BASE_PERMISSIONS: Record<Role, readonly Permission[]> = {
-  operator: ['sample.view', 'sample.draft', 'sample.register', 'hold.raise'],
+  operator: ['sample.view', 'sample.draft', 'sample.register', 'hold.raise', 'nc.raise'],
 
   quality_officer: [
     'sample.view',
@@ -78,6 +87,8 @@ const BASE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'sample.correct',
     'sample.review',
     'hold.raise',
+    'nc.raise',
+    'nc.act',
     'spec.propose',
     'report.view',
     'sync.view',
@@ -96,6 +107,9 @@ const BASE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'disposition.rework',
     'hold.raise',
     'hold.clear',
+    'nc.raise',
+    'nc.act',
+    'nc.close',
     'spec.propose',
     'spec.approve',
     'report.view',
