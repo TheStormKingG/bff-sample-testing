@@ -95,7 +95,7 @@ decomposed. A clause with no entry is a plan defect, not a scope decision.
 | §5 `self_verified` computed **and stamped** at closure | Task 8 |
 | §6 numbering: atomic upsert, `max+1` forbidden | Task 2 |
 | §6 plant-local year | Task 2 |
-| §6 **concurrency proven with real sessions** | Task 3 |
+| §6 **concurrency proven with real sessions** | Task 3 (shell verifier, 20 psql connections) |
 | §7 hold raises NC in the same transaction | **Deferred: plan 2, Phase 4** |
 | §8 screens | **Deferred: plan 2** |
 | §9 gate refusals name what is missing | Tasks 7, 8 (message text asserted) |
@@ -303,7 +303,23 @@ attempt wrapped in a handler, and a post-condition query proving the state did
 not change. A bare attempt is not an assertion; it terminates the block on the
 success of the thing being tested.
 
-- [ ] **Step 4: Apply and verify**
+- [ ] **Step 4: Apply to the live project**
+
+**Local-first verification was attempted and is NOT AVAILABLE on this
+project.** `scripts/verify-migrations.sh` fails at migration 0039, which
+asserts on specification rows created by `supabase/seed/`, and the script
+runs seeds after migrations. Applying the seed by hand then fails too:
+`specification_versions_material_code_fkey` — `soya` is not in `materials`.
+
+That is open decision **D-12** ("Migration 0002 FK ordering breaks
+`db:reset`"), still live and broader than it is written: the project cannot
+be rebuilt from an empty database, so no new migration can be rehearsed
+locally. Fixing it is real work and belongs to D-12, not to a nonconformity
+task.
+
+What protects this apply instead is the migration's own rolled-back probe —
+the mechanism this project already relies on, and the one the schema in this
+task was developed against.
 
 ```bash
 python3 -I scripts/apply-remote-migrations.py ydvgxsbymnnidenkrvin --from=0048
@@ -368,51 +384,91 @@ probe from Task 1 Step 3. Apply and confirm `ok`.
 ## Task 3: Prove the numbering under real concurrency
 
 **Files:**
-- Create: `tests/ncNumbering.test.ts`
+- Create: `scripts/verify-nc-numbering.sh`
 
-**Review reference (Rule 2):** **spec §6** and `plan-extras` Rule 1 — *a
-probe's transaction boundary decides which case it tested.*
+**Review reference (Rule 2):** **spec §6**, and the live
+`scripts/verify-uat03-concurrency.sh`, whose structure this follows.
 
-This is its own task because **it cannot be done inside the migration.** Two
-inserts in one transaction do not test concurrent allocation; they test
-sequential allocation in a way that looks identical in the output. Observation
-0572 records exactly this.
+**Corrected during execution review.** This task originally specified a
+Vitest test calling a `runSql` helper. **The Vitest suite has no database
+access** — it mocks Supabase, and a mock answers whatever it is asked, so
+the test would have passed against any allocator including `max+1`. Database
+behaviour in this project is verified by shell scripts against a throwaway
+local database, and there is already a concurrency verifier to follow:
+`scripts/verify-uat03-concurrency.sh` drives 20 concurrent psql connections
+and guards its own database name.
 
-- [ ] **Step 1: Write the failing test**
+It is still its own task, for the original reason: two inserts in one
+transaction test sequential allocation while looking identical in the output
+(observation 0572).
 
-```ts
-import { describe, expect, it } from 'vitest';
+- [ ] **Step 1: Build a scratch database holding ONLY what this verifier needs**
 
-/**
- * Two genuinely concurrent sessions must receive different numbers.
- *
- * Fired through two separate HTTP requests issued without awaiting each
- * other, because the transaction boundary — not the author's intent —
- * decides which case a probe exercises. The same two calls awaited in
- * sequence would pass on an implementation that allocates with max+1.
- */
-it('allocates a distinct number to two concurrent sessions', async () => {
-  const call = () => runSql(`select public.allocate_nc_number(2099) as n;`);
-  const [a, b] = await Promise.all([call(), call()]);
-  expect(a).not.toEqual(b);
-});
+A full rebuild is impossible (D-12, see Task 1 Step 4), and this verifier
+does not need one. Create an empty database and apply just the sequence
+table and the allocator from 0048 — the subject under test and nothing else:
+
+```bash
+createdb bff_nc_check
+psql -q -d bff_nc_check -c "create table public.nc_number_sequence (year integer primary key, last_number integer not null);"
+psql -q -d bff_nc_check -f /dev/stdin <<'SQL'
+create function public.allocate_nc_number(p_year integer) returns text
+language plpgsql set search_path = '' as $$
+declare v_next integer;
+begin
+  insert into public.nc_number_sequence (year, last_number) values (p_year, 1)
+  on conflict (year) do update set last_number = public.nc_number_sequence.last_number + 1
+  returning last_number into v_next;
+  return 'NC-' || p_year::text || '-' || lpad(v_next::text, 3, '0');
+end $$;
+SQL
 ```
 
-- [ ] **Step 2: Run it against a `max+1` implementation to see it fail**
+A narrower fixture is also a better one here: the allocator's atomicity does
+not depend on any other table, so anything else in the database could only
+obscure a failure.
 
-Temporarily replace the allocator body with
-`select 'NC-' || p_year || '-' || lpad((coalesce(max(...),0)+1)::text,3,'0') from public.nonconformities`
-and run. Expected: **FAIL**, both sessions returning the same number.
+- [ ] **Step 2: Write the verifier**
+
+Copy the shape of `verify-uat03-concurrency.sh`: the same database-name guard
+(`^bff_[a-z0-9_]*(check|verify|scratch|tmp)[a-z0-9_]*$`), N background psql
+connections each calling `allocate_nc_number(2099)` M times, all results into
+one file.
+
+Assertions, in the script:
+- total rows allocated = N × M
+- **distinct rows = N × M** — the collision check
+- the maximum sequence rendered has at least three digits and did not truncate
+- `last_number` in `nc_number_sequence` for 2099 equals N × M
+
+- [ ] **Step 3: See it FAIL against a max+1 allocator**
+
+In the scratch database only:
+
+```sql
+create or replace function public.allocate_nc_number(p_year integer)
+returns text language plpgsql as $$
+begin
+  return 'NC-' || p_year || '-' || lpad((
+    (select coalesce(max(substring(nc_number from 9)::int),0)+1
+       from public.nonconformities))::text, 3, '0');
+end $$;
+```
+
+Run the verifier. Expected: **FAIL**, distinct < total.
 
 A test that has only ever been observed passing has not been tested.
 
-- [ ] **Step 3: Restore the upsert allocator, run again**
+- [ ] **Step 4: Restore the upsert allocator in the scratch database, re-run**
 
-Expected: PASS, two distinct numbers.
+Expected: PASS, distinct = total.
 
-- [ ] **Step 4: Clean up year 2099 from `nc_number_sequence` and commit**
+- [ ] **Step 5: Commit**
 
----
+```bash
+git add scripts/verify-nc-numbering.sh
+git commit -m "Prove NC numbering is atomic under 20 concurrent allocators"
+```
 
 ## Task 4: Row-level security
 
@@ -467,7 +523,7 @@ begin
 end $$;
 ```
 
-- [ ] **Step 3: Apply, confirm `ok`, commit**
+- [ ] **Step 3: Apply to the live project, confirm `ok`, commit** (local rehearsal unavailable — see Task 1 Step 4)
 
 ---
 
@@ -501,7 +557,7 @@ Assertions, each with a post-condition where it is a refusal: a raise produces
 a number matching `^NC-\d{4}-\d{3,}$`; a stale `p_expected_revision` is
 refused and the row is unchanged; a correct one succeeds and bumps `revision`.
 
-- [ ] **Step 4: Apply, confirm, commit**
+- [ ] **Step 4: Apply to the live project, confirm, commit** (local rehearsal unavailable — see Task 1 Step 4)
 
 ---
 
@@ -522,7 +578,7 @@ never be completed and never cleared, and the nonconformity holding it can
 never reach its first gate.
 
 - [ ] **Step 4: Probe, including the reassignment-after-completion refusal with its post-condition**
-- [ ] **Step 5: Apply, confirm, commit**
+- [ ] **Step 5: Apply to the live project, confirm, commit** (local rehearsal unavailable — see Task 1 Step 4)
 
 ---
 
@@ -558,7 +614,7 @@ missing exactly one field, plus one complete record that passes.
 The wording is the feature (spec §9). Assert that the message names the
 missing field and, where actions are incomplete, carries the count.
 
-- [ ] **Step 4: Apply, confirm, commit**
+- [ ] **Step 4: Apply to the live project, confirm, commit** (local rehearsal unavailable — see Task 1 Step 4)
 
 ---
 
@@ -593,7 +649,7 @@ different person closes** (the control — without it, a function hardcoded to
 `true` passes); void succeeds from both permitted states; void refused from
 `closed` with a post-condition.
 
-- [ ] **Step 4: Apply, confirm, commit**
+- [ ] **Step 4: Apply to the live project, confirm, commit** (local rehearsal unavailable — see Task 1 Step 4)
 
 ---
 
