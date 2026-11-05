@@ -55,27 +55,44 @@ trap 'rm -rf "$WORK"' EXIT
 dropdb --if-exists "$DB" >/dev/null 2>&1
 createdb "$DB" || { echo "could not create $DB" >&2; exit 2; }
 
-psql -q -v ON_ERROR_STOP=1 -d "$DB" >/dev/null <<'SQL'
-create table public.nc_number_sequence (
-  year        integer primary key,
-  last_number integer not null
-);
+# THE FIXTURE IS EXTRACTED FROM THE MIGRATION, NOT TRANSCRIBED.
+#
+# This script used to carry its own hand-written copy of the table and the
+# allocator. It raced that copy 200 times and printed a pass, and no change to
+# the SHIPPED allocator in 0048 could make it fail — the one regression it
+# exists to catch. A review pointed at the specification found it: replace the
+# real function's upsert with `max(last_number)+1` and this script stays green,
+# because it was never executing the real function at all.
+#
+# So the two objects are cut out of the migration by text. A full rebuild is
+# impossible here (open decision D-12: verify-migrations.sh fails at 0039), and
+# that is why the fixture is narrow — but narrow is not the same as a copy.
+MIG="$(cd "$(dirname "$0")/.." && pwd)/supabase/migrations/0048_nonconformity_schema.sql"
+[[ -r "$MIG" ]] || { echo "cannot read $MIG" >&2; exit 2; }
 
-create function public.allocate_nc_number(p_year integer)
-returns text language plpgsql set search_path = '' as $$
-declare v_next integer;
-begin
-  insert into public.nc_number_sequence (year, last_number)
-  values (p_year, 1)
-  on conflict (year) do update
-    set last_number = public.nc_number_sequence.last_number + 1
-  returning last_number into v_next;
-  return 'NC-' || p_year::text || '-' || lpad(v_next::text, 3, '0');
-end $$;
-SQL
+# The table, from its `create table` to the line that closes it.
+awk '/^create table public\.nc_number_sequence \(/,/^\);/' "$MIG" > "$WORK/fixture.sql"
+# The allocator, from its `create function` to the `end $$;` that ends it.
+awk '/^create function public\.allocate_nc_number\(/,/^end \$\$;/' "$MIG" >> "$WORK/fixture.sql"
 
-# MAX+1 MODE: install the naive allocator instead, to prove this script can
-# fail. A verifier that has only ever been seen to pass has not been tested.
+# INSTRUMENT CHECK. An awk range that matches nothing produces an empty file
+# and a silent, cheerful pass over a database with no allocator in it — which
+# is the same failure as before, wearing different clothes.
+grep -q 'create table public\.nc_number_sequence' "$WORK/fixture.sql" || {
+  echo "EXTRACTION FAILED: no nc_number_sequence table found in $MIG" >&2; exit 2; }
+grep -q 'create function public\.allocate_nc_number' "$WORK/fixture.sql" || {
+  echo "EXTRACTION FAILED: no allocate_nc_number function found in $MIG" >&2; exit 2; }
+grep -q 'end \$\$;' "$WORK/fixture.sql" || {
+  echo "EXTRACTION FAILED: the allocator was cut off before its end" >&2; exit 2; }
+
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$WORK/fixture.sql" >/dev/null || {
+  echo "the extracted fixture did not load — read $WORK/fixture.sql" >&2; exit 2; }
+
+# MAX+1 MODE: REPLACE the extracted allocator with the naive one, to prove
+# this script can fail. A verifier that has only ever been seen to pass has not
+# been tested. Note what this does and does not prove: it shows the harness
+# detects duplicate numbers. What makes the run meaningful is the extraction
+# above — that the function being raced is the one that ships.
 if [[ "${NC_NUMBERING_NAIVE:-0}" == "1" ]]; then
   psql -q -v ON_ERROR_STOP=1 -d "$DB" >/dev/null <<'SQL'
   create table public.nc_issued (nc_number text);

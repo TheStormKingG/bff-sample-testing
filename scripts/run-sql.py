@@ -9,7 +9,12 @@ in the Keychain. The token is held in memory only and is never printed — not
 on success, not on error.
 
 Usage:
-    scripts/run-sql.py <project-ref> < scripts/verify-0051-nc-rpcs.sql
+    scripts/run-sql.py [project-ref] < scripts/verify-nc-lifecycle.sql
+
+With no argument the ref is taken from VITE_SUPABASE_URL in `.env` — the
+project this checkout is pointed at. That is deliberate: a verification script
+whose target is a positional argument gets run against the wrong project once,
+and the one it gets run against is whichever one somebody typed.
 
 Exit status is 0 only if the server accepted the script. A verify-*.sql proof
 is silent on success and raises on failure, so a zero exit IS the result.
@@ -19,6 +24,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -35,12 +41,28 @@ def _load_apply():
     return module
 
 
+def _ref_from_env_file() -> str | None:
+    """The project ref out of VITE_SUPABASE_URL. Never the keys beside it."""
+    env = REPO / ".env"
+    if not env.is_file():
+        return None
+    for line in env.read_text().splitlines():
+        if line.startswith("VITE_SUPABASE_URL"):
+            host = line.split("=", 1)[1].strip().strip("\"'")
+            m = re.search(r"https://([a-z0-9]+)\.supabase\.co", host)
+            return m.group(1) if m else None
+    return None
+
+
 def main() -> int:
-    if len(sys.argv) != 2:
+    if len(sys.argv) > 2:
         print(__doc__.strip(), file=sys.stderr)
         return 2
 
-    ref = sys.argv[1]
+    ref = sys.argv[1] if len(sys.argv) == 2 else _ref_from_env_file()
+    if not ref:
+        print("no project ref given and none found in .env", file=sys.stderr)
+        return 2
     sql = sys.stdin.read()
     if not sql.strip():
         print("nothing on stdin", file=sys.stderr)

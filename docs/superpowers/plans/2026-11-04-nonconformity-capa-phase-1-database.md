@@ -738,3 +738,108 @@ npm run typecheck && npx vitest run && npm run lint && npm run build && ./script
 10. **A rejected class becoming intended?** No.
 11. **Generated values between steps?** Task 3's numbers are compared to each
     other inside one test, never retyped across steps.
+
+---
+
+## Amendment, 2026-11-04 — what the independent review found
+
+Every task above was complete and every gate green when four reviewers were
+given **the specification, the live schema and the files**, and told
+explicitly that this plan might itself be wrong. Twelve defects came back and
+survived an adversarial refutation pass; five more were refuted and are
+recorded below so the same ground is not re-ploughed.
+
+This is the plan-extras Rule 2 case, and it behaved exactly as that rule
+predicts. The plan contained the complete code, so the implementation matched
+it by construction and "does the code match the plan?" could only answer yes.
+None of the twelve was findable by asking that question.
+
+### The five that mattered, fixed in migration 0052
+
+1. **The read path did not exist.** Task 4 enabled RLS on `nonconformities`
+   and `nc_actions` and wrote a select policy for each, and never granted
+   SELECT to `authenticated`. A policy narrows a privilege; it does not confer
+   one. No account could read a nonconformity through the client. Every probe
+   in Tasks 1–8 runs as the table owner, which neither RLS nor table
+   privileges constrain, so the whole proof suite tested the write paths from
+   a position no browser occupies. **The plan never asked for the grant**, and
+   `samples` and `holds` both have one.
+
+2. **A trigger function left with PUBLIC EXECUTE, and the guard that says so
+   was never run.** `tg_nonconformities_guard()` was created with a null ACL.
+   `public.assert_function_privileges()` — which this schema calls at the end
+   of every other function-creating migration — fails on precisely that, and
+   0048 through 0051 all skipped it. It was already failing against the live
+   project when the review started.
+
+3. **Gate 1 was one-shot.** `rpc_update_nonconformity` refused only `closed`
+   and `voided`, and gate 2 re-checked none of gate 1's preconditions, so a
+   record could be submitted with `ca_required = false`, flipped to `true`,
+   and then closed and frozen asserting that corrective action was required
+   with no root cause and no action ever raised. Spec §3 says "Editable while
+   open"; the plan's own code read that as "until closed".
+
+4. **A race between adding an action and passing the gate.**
+   `rpc_add_nc_action` read the parent without `for update`, so its status
+   check could be satisfied by a value a concurrent submit was committing —
+   leaving an action that could never be completed on a record that had passed
+   a gate requiring every action to be complete.
+
+5. **Assertion A7 was proving something else.** Labelled "a nonconformity was
+   closed with no verification", it is satisfied by the lifecycle trigger
+   refusing the transition, not by the `nc_closed_is_verified` constraint it
+   appears to test. The constraint had no test anywhere.
+
+### The seven proof defects, fixed in the verifiers
+
+6. **The concurrency verifier raced a hand-written copy of the allocator**,
+   not the one in 0048, so no regression in the shipped function could make it
+   fail — the single thing it exists to catch. Task 3's correction fixed the
+   wrong half: it moved the proof out of Vitest and into real concurrent
+   sessions, and left the function under test a transcription. The fixture is
+   now cut out of the migration by text, with an extraction instrument check,
+   and mutating the shipped allocator to `max+1` now fails the script.
+7. Neither `self_verified` control exercised the `completed_by` limb; the limb
+   could be deleted and both pass. A third case covers it.
+8. The optimistic-concurrency control passed a revision **above** the row's,
+   which is not the stale case. Both directions are tested, plus the accepted
+   case.
+9. The rollback assertion required the live tables to be globally **empty** —
+   a precondition that disappears the first time the feature is used, after
+   which the proof can only fail and would be deleted. It now measures a
+   difference.
+10. Sections E and F matched their refusals as "any error at all". They name
+    the refusal now.
+11. 0048's probe skips, with a NOTICE and a successful migration, when
+    `profiles` holds no active row. Standing gates (`verify:nc-numbering` in
+    `verify:db`, and `verify:nc-lifecycle`) now cover the same ground and
+    refuse rather than skip.
+12. Gate 2's re-check cannot be made to fire through the RPCs once fix 3 is in
+    place, so the verifier drives it through a direct UPDATE — the path the
+    0048 guard still permits and the one a bad state would arrive by.
+
+### Refuted, and why — so this is not re-litigated
+
+- *"No migration proves the two gates; 0051 has no `do $$` block."* True of the
+  file and irrelevant: the proof is `scripts/verify-nc-lifecycle.sql`, which a
+  migration cannot replace because it needs real accounts with three different
+  permission sets.
+- *"The guard authorises `awaiting_verification -> open`, which the spec does
+  not draw."* The guard is a floor, not a ceiling, and no RPC performs that
+  transition. Adding or removing it is a spec question.
+- *"The zero-padding assertion takes the widest field and requires ≥ 3, so any
+  value satisfies it."* Misread; it is bounded on both sides.
+- *"Section G's header claims two proofs and contains one."* The header was
+  imprecise, not the test.
+- *"The DELETE branch of `sqlGrants()` is dead code."* It is unexercised by
+  today's migrations and deliberately present: a grant withdrawn by a future
+  migration would otherwise make the contract test demand `roles.ts` grant it
+  back. Per plan-extras Rule 4 it has a synthetic case in the mutation set.
+
+### What this changes about the method
+
+A review whose reference is the artefact under review cannot find a missing
+requirement, only an inconsistency. Four of the five schema defects above are
+**absences** — a grant not written, a guard not called, a constraint not
+tested, a lock not taken — and an absence is invisible to any reviewer reading
+the plan, because the plan is where the absence is.

@@ -30,8 +30,10 @@
     "verify:dgm-trigger": "scripts/verify-dgm-trigger.sh",
     "verify:rls": "scripts/verify-rls.sh",
     "verify:schema": "python3 scripts/check-frontend-schema.py",
+    "verify:nc-numbering": "scripts/verify-nc-numbering.sh",
+    "verify:nc-lifecycle": "scripts/run-sql.py < scripts/verify-nc-lifecycle.sql",
     "verify:uat03": "scripts/verify-uat03-concurrency.sh",
-    "verify:db": "scripts/verify-migrations.sh && scripts/verify-rls.sh && scripts/verify-uat03-concurrency.sh && python3 scripts/check-frontend-schema.py"
+    "verify:db": "scripts/verify-migrations.sh && scripts/verify-rls.sh && scripts/verify-uat03-concurrency.sh && scripts/verify-nc-numbering.sh && python3 scripts/check-frontend-schema.py"
   },
   "dependencies": {
     "@hookform/resolvers": "3.9.1",
