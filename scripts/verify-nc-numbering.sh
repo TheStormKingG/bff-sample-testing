@@ -141,11 +141,27 @@ if [[ "$DISTINCT" != "$GOT" ]]; then
   fail=1
 fi
 
-# 3. Padding survives past 99. A two-digit formatter collides or truncates
-#    exactly here, which is why TOTAL is above 100 by default.
-WIDEST=$(sed 's/^NC-[0-9]*-//' "$WORK/all" | awk '{ print length }' | sort -rn | head -1)
-if (( TOTAL >= 100 )) && [[ "$WIDEST" -lt 3 ]]; then
-  echo "FAIL: widest sequence is ${WIDEST} digits; ${TOTAL} allocations need 3" >&2
+# 3. Padding, asserted PER VALUE.
+#
+# This was `WIDEST=$(... | sort -rn | head -1)` followed by `[[ $WIDEST -lt 3
+# ]]` — a check on the maximum, which is satisfied by a set where exactly one
+# number is three digits and the rest are not. A review found it; the first
+# refutation was that no mutation of the real allocator could express the
+# weakness, because the subject was the script's own transcribed copy. That
+# ground disappeared when the fixture became an extract of the migration, so
+# the assertion is tightened: EVERY sequence field is at least three digits,
+# and the set contains at least one above 99, because padding is only tested
+# by a value that needs it.
+BAD_WIDTH=$(sed 's/^NC-[0-9]*-//' "$WORK/all" | awk 'length < 3 { c++ } END { print c + 0 }')
+if [[ "$BAD_WIDTH" != "0" ]]; then
+  echo "FAIL: ${BAD_WIDTH} sequence number(s) are under 3 digits:" >&2
+  sed 's/^NC-[0-9]*-//' "$WORK/all" | awk 'length < 3' | sort -u | head -5 >&2
+  fail=1
+fi
+# And the run must actually cross 99, or check 3 is vacuous on its own inputs.
+PAST_99=$(sed 's/^NC-[0-9]*-//' "$WORK/all" | awk '$0 + 0 > 99 { c++ } END { print c + 0 }')
+if (( TOTAL >= 100 )) && [[ "$PAST_99" == "0" ]]; then
+  echo "FAIL: ${TOTAL} allocations and not one number above 99 — padding was never tested" >&2
   fail=1
 fi
 
